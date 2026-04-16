@@ -30,13 +30,6 @@ class AuthController extends Controller
 
         $user = Auth::user();
 
-        //Validar si esta usuario activo
-        if(!$user->activo){
-            return response()->json([
-                'message' => 'Usuario desactivado'
-            ], 403);
-        }
-
         //Eliminacion de token antiguos
         $user->tokens()->delete();
 
