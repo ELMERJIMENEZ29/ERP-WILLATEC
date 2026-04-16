@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
         // Seeders
         $this->call([
             EstadoCotizacionSeeder::class,
+            RoleSeeder::class,
         ]);
     }
 
