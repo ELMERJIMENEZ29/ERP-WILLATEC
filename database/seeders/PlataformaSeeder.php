@@ -16,7 +16,8 @@ class PlataformaSeeder extends Seeder
         Plataforma::insert([
             ['nombre' => 'correo'],
             ['nombre' => 'wherex'],
-            ['nombre' => 'licitacion']
+            ['nombre' => 'licitacion'],
+            ['nombre' => 'via_telefonica'],
         ]);
     }
 }
