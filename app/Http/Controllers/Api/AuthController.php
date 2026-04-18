@@ -18,13 +18,17 @@ class AuthController extends Controller
             'password' => 'required'
         ]);
 
-        if(!Auth::attempt($request->only('email', 'password'))){
+        if(!Auth::attempt([
+            'email'=>$request->email,
+            'password'=>$request->password,
+            'activo'=> true,
+        ])){
             return response()->json([
-                'message'=> 'Credenciales incorrectas'
-                ], 401);
+                'message'=> 'Credenciales incorrectas o usuario inactivo'
+            ],401);
         }
 
-        $user= Auth::user();
+        $user = Auth::user();
 
         //Eliminacion de token antiguos
         $user->tokens()->delete();
