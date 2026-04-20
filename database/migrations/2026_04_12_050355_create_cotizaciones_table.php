@@ -14,9 +14,11 @@ return new class extends Migration
         Schema::create('cotizaciones', function (Blueprint $table) {
             $table->id();
             //Datos General
+            $table->string('numero')->unique();
             $table->date('fecha');
             $table->unsignedInteger('validez_dias')->default(10);
             $table->string('modo_distribucion')->default('POR_ITEM'); // POR_ITEM o POR_CANTIDAD
+            $table->string('moneda')->default('PEN');
 
             //Tipo de cambio
             $table->decimal('tipo_cambio', 10, 4);
@@ -28,6 +30,8 @@ return new class extends Migration
             $table->decimal('subtotal', 12, 2)->default(0);
             $table->decimal('igv', 12, 2)->default(0);
             $table->decimal('total', 12, 2)->default(0);
+            $table->decimal('ganancia', 12, 2)->default(0);
+            $table->decimal('total_gasto', 12, 2)->default(0);
 
             //Snapshot del cliente
             $table->string('cliente_nombre');
@@ -53,6 +57,10 @@ return new class extends Migration
                 ->nullable()
                 ->constrained()
                 ->nullOnDelete();
+
+            $table->foreignId('usuario_id')
+                ->constrained()
+                ->cascadeOnDelete();
 
             $table->timestamps();
         });

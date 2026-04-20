@@ -25,6 +25,8 @@ return new class extends Migration
             $table->decimal('margen', 5, 2)->default(0); // %
             $table->decimal('precio_venta', 12, 2)->default(0);
             $table->decimal('costo_base', 12, 2)->default(0);
+            $table->decimal('costo_total', 12, 2)->default(0);
+            $table->decimal('ganancia', 12, 2)->default(0);
 
             $table->decimal('subtotal', 12, 2);
             $table->string('imagen')->nullable();

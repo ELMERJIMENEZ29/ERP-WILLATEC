@@ -24,6 +24,8 @@ class CotizacionItem extends Model
         'cotizacion_id',
         'producto_id',
         'estado_cotizacion_item_id',
+        'costo_total',
+        'ganancia',
     ];
 
     public function cotizacion(): BelongsTo

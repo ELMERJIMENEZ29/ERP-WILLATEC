@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ProductoController;
+use App\Http\Controllers\Api\CotizacionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
@@ -40,5 +41,25 @@ Route::prefix('productos')->middleware('auth:sanctum')->group(function(){
     Route::patch('/{id}/desactivar', [ProductoController::class, 'desactivar'])->middleware('role:superadmin');
 
     Route::patch('/{id}/activar', [ProductoController::class, 'activar'])->middleware('role:superadmin');
+});
+
+Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function(){
+    Route::get('/', [CotizacionController::class, 'index']);
+    Route::get('/{id}', [CotizacionController::class, 'show']);
+
+    Route::post('/', [CotizacionController::class, 'store']);
+    Route::put('/{id}', [CotizacionController::class, 'update']);
+
+    //Recalcular
+    Route::patch('/{id}/recalcular', [CotizacionController::class, 'recalcular']);
+
+    //Costos adicionales
+    Route::delete('/costos/{id}', [CotizacionController::class, 'deleteCosto']);
+    Route::post('/{id}/costos', [CotizacionController::class, 'addCosto']);
+
+    //Items
+    Route::post('/{id}/items', [CotizacionController::class, 'addItem']);
+    Route::put('/items/{id}', [CotizacionController::class, 'updateItem']);
+    Route::delete('/items/{id}', [CotizacionController::class, 'deleteItem']);
 });
 
