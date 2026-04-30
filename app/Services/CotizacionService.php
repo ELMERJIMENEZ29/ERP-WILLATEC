@@ -54,7 +54,7 @@ class CotizacionService
                 $costoFinal = $costoBase + $costoExtraUnitario; // Si es por item, el costo extra es fijo por item
             }
 
-            $precioVenta = $costoFinal * (1 + $item->margen / 100);
+            $precioVenta = $costoFinal / (1 - ($item->margen / 100));
             // $subtotal = $item -> cantidad * $precioVenta;
 
             // $costoTotal = $item->cantidad * $costoFinal;
