@@ -24,9 +24,12 @@ return new class extends Migration
             $table->string('marca')->nullable();
             $table->string('unidad_medida')->nullable();
             $table->integer('cantidad');
+            $table->integer('cantidad_aprobada')->nullable();
 
             $table->decimal('costo_unitario', 12, 2);
             $table->decimal('costo_total', 12, 2);
+            $table->decimal('precio_venta_unitario',12,2)->nullable();
+            $table->decimal('subtotal',12,2)->nullable();
 
             $table->string('estado')->default('pendiente'); //PENDIENTE, COMPRADO, ENTREGADO
 

@@ -15,12 +15,19 @@ class OrdenCompraItem extends Model
         'marca',
         'unidad_medida',
         'cantidad',
+        'cantidad_aprobada',
         'costo_unitario',
         'costo_total',
+        'precio_venta_unitario',
+        'subtotal',
         'estado',
     ];
 
-    public function orden() : BelongsTo{
+    public function ordenCompra() : BelongsTo{
         return $this->belongsTo(OrdenCompra::class, 'orden_compra_id');
+    }
+
+    public function cotizacionItem() : BelongsTo{
+        return $this->belongsTo(CotizacionItem::class);
     }
 }

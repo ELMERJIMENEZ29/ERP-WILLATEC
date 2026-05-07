@@ -31,8 +31,8 @@ return new class extends Migration
             //Snapshot cliente
             $table->string('cliente_nombre');
             $table->string('cliente_ruc', 11);
-            $table->string('cliente_contacto');
-            $table->string('cliente_correo');
+            $table->string('cliente_contacto')->nullable();
+            $table->string('cliente_correo')->nullable();
 
             //Relaciones
             $table->foreignId('cotizacion_id')->unique()->constrained()->cascadeOnDelete();
