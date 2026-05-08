@@ -19,6 +19,7 @@ class EstadoCotizacionSeeder extends Seeder
             ['nombre' => 'parcialmente_aprobada'],
             ['nombre' => 'aprobada'],
             ['nombre' => 'rechazada'],
+            ['nombre' => 'oc_registrada']
         ]);    
     }
 }
