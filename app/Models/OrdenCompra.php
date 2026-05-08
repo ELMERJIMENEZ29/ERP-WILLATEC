@@ -24,7 +24,7 @@ class OrdenCompra extends Model
         'cliente_correo',
         'cotizacion_id',
         'cliente_id',
-        'usuario_id'
+        'user_id'
 
     ];
 

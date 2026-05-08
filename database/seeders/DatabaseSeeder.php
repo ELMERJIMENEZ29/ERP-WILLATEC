@@ -18,14 +18,18 @@ class DatabaseSeeder extends Seeder
         // User::factory(10)->create();
 
         User::factory()->create([
-            'name' => 'Test User',
+            'nombres' => 'Test',
+            'apellidos' => 'User',
             'email' => 'test@example.com',
+            'password' => 'password',
         ]);
 
         // Seeders
         $this->call([
             EstadoCotizacionSeeder::class,
             RoleSeeder::class,
+            EstadoCotizacionItemSeeder::class,
+            PlataformaSeeder::class,
         ]);
     }
 

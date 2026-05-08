@@ -35,9 +35,9 @@ return new class extends Migration
             $table->string('cliente_correo')->nullable();
 
             //Relaciones
-            $table->foreignId('cotizacion_id')->unique()->constrained()->cascadeOnDelete();
+            $table->foreignId('cotizacion_id')->unique()->constrained('cotizaciones')->cascadeOnDelete();
             $table->foreignId('cliente_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('usuario_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
 
             $table->timestamps();
         });

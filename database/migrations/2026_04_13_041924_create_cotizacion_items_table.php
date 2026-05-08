@@ -35,7 +35,7 @@ return new class extends Migration
 
             //Relaciones
             $table->foreignId('cotizacion_id')
-                ->constrained()
+                ->constrained('cotizaciones')
                 ->cascadeOnDelete();
 
             $table->foreignId('producto_id')

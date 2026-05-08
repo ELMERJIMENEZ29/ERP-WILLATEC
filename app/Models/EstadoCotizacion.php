@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EstadoCotizacion extends Model
 {
+    protected $table = 'estado_cotizaciones';
+
     protected $fillable = [
         'nombre',
     ];
