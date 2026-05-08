@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use App\Models\Profile;
 use Illuminate\Support\Facades\Hash;
+use Spatie\Permission\Models\Role;
 
 class AuthController extends Controller
 {
@@ -28,7 +29,9 @@ class AuthController extends Controller
             ],401);
         }
 
+        /** @var \App\Models\User $user */
         $user = Auth::user();
+        abort_if(!$user,401);
 
         //Eliminacion de token antiguos
         $user->tokens()->delete();
@@ -47,7 +50,7 @@ class AuthController extends Controller
             'apellidos' => 'required',
             'email'=> 'required|email|unique:users',
             'password'=> 'required|min:6|confirmed',
-            'role'=> 'required|exists:roles,name',
+            'role'=> 'required|exists:roles,id',
         ]);
 
         $user = User::create([
@@ -57,7 +60,8 @@ class AuthController extends Controller
             'password'=> Hash::make($request->password),
         ]);
 
-        $user-> assignRole($request->role);
+        $role = Role::findOrFail($request->role);
+        $user->assignRole($role);
 
         Profile::create([
             'user_id'=>$user->id,
@@ -69,6 +73,13 @@ class AuthController extends Controller
         return response()->json([
             'message'=> 'Usuario creado correctamente',
             'user'=> $user->loadMissing('profile', 'roles')
+        ]);
+    }
+
+    public function logout(Request $request){
+        $request->user()->currentAccessToken()->delete();
+        return response()->json([
+            'message' => 'Sesión Cerrada Correctamente'
         ]);
     }
 }
