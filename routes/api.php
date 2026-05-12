@@ -37,32 +37,32 @@ Route::prefix('productos')->middleware('auth:sanctum')->group(function(){
     Route::get('/', [ProductoController::class, 'index']);
     Route::get('/{id}', [ProductoController::class, 'show']);
 
-    Route::post('/', [ProductoController::class, 'store'])->middleware('role:superadmin|admin');
+    Route::post('/', [ProductoController::class, 'store'])->middleware('role:superadmin|ventas');
 
-    Route::put('/{id}', [ProductoController::class, 'update'])->middleware('role:superadmin|admin');
+    Route::put('/{id}', [ProductoController::class, 'update'])->middleware('role:superadmin|ventas');
 
-    Route::patch('/{id}/desactivar', [ProductoController::class, 'desactivar'])->middleware('role:superadmin');
+    Route::patch('/{id}/desactivar', [ProductoController::class, 'desactivar'])->middleware('role:superadmin|ventas');
 
-    Route::patch('/{id}/activar', [ProductoController::class, 'activar'])->middleware('role:superadmin');
+    Route::patch('/{id}/activar', [ProductoController::class, 'activar'])->middleware('role:superadmin|ventas');
 });
 
 Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function(){
-    Route::get('/', [CotizacionController::class, 'index']);
-    Route::get('/{id}', [CotizacionController::class, 'show']);
+    Route::get('/', [CotizacionController::class, 'index'])->middleware('role:superadmin|ventas');
+    Route::get('/{id}', [CotizacionController::class, 'show'])->middleware('role:superadmin|ventas');
 
-    Route::post('/', [CotizacionController::class, 'store']);
-    Route::put('/{id}', [CotizacionController::class, 'update']);
+    Route::post('/', [CotizacionController::class, 'store'])->middleware('role:superadmin|ventas');
+    Route::put('/{id}', [CotizacionController::class, 'update'])->middleware('role:superadmin|ventas');
 
     //Recalcular
-    Route::patch('/{id}/recalcular', [CotizacionController::class, 'recalcular']);
+    Route::patch('/{id}/recalcular', [CotizacionController::class, 'recalcular'])->middleware('role:superadmin|ventas');
 
     //Costos adicionales
-    Route::delete('/costos/{id}', [CotizacionController::class, 'deleteCosto']);
-    Route::post('/{id}/costos', [CotizacionController::class, 'addCosto']);
+    Route::delete('/costos/{id}', [CotizacionController::class, 'deleteCosto'])->middleware('role:superadmin|ventas');
+    Route::post('/{id}/costos', [CotizacionController::class, 'addCosto'])->middleware('role:superadmin|ventas');
 
     //Items
-    Route::post('/{id}/items', [CotizacionController::class, 'addItem']);
-    Route::put('/items/{id}', [CotizacionController::class, 'updateItem']);
-    Route::delete('/items/{id}', [CotizacionController::class, 'deleteItem']);
+    Route::post('/{id}/items', [CotizacionController::class, 'addItem'])->middleware('role:superadmin|ventas');
+    Route::put('/items/{id}', [CotizacionController::class, 'updateItem'])->middleware('role:superadmin|ventas');
+    Route::delete('/items/{id}', [CotizacionController::class, 'deleteItem'])->middleware('role:superadmin|ventas');
 });
 
