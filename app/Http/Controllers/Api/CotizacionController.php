@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 
 class CotizacionController extends Controller
 {
-    protected $service;
+    protected CotizacionService $service;
 
     public function __construct(CotizacionService $service)
     {
