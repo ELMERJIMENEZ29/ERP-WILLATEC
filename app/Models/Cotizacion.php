@@ -77,4 +77,7 @@ class Cotizacion extends Model
         public function ordenCompra() : HasOne{
             return $this->hasOne(OrdenCompra::class);
         }
+        public function profile() : HasOne{
+            return $this->hasOne(Profile::class);
+        }
 }

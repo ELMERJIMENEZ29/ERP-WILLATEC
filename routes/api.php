@@ -65,9 +65,12 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function(){
     Route::post('/{id}/items', [CotizacionController::class, 'addItem'])->middleware('role:superadmin|ventas');
     Route::put('/items/{id}', [CotizacionController::class, 'updateItem'])->middleware('role:superadmin|ventas');
     Route::delete('/items/{id}', [CotizacionController::class, 'deleteItem'])->middleware('role:superadmin|ventas');
+
+    //Exportación PDF
+    Route::get('/{cotizacion}/exportar-pdf', [CotizacionController::class, 'exportarPdf'])->middleware('role:superadmin|ventas');
 });
 
-Route::prefix('ordenes-compra')->group(function () {
+Route::prefix('ordencompra')->group(function () {
 
     Route::get('/', [OrdenCompraController::class, 'index']);
 

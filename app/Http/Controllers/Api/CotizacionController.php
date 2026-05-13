@@ -10,6 +10,7 @@ use App\Models\Cliente;
 use App\Models\CotizacionCostosAdicional;
 use App\Services\CotizacionService;
 use Illuminate\Support\Facades\DB;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 
 class CotizacionController extends Controller
@@ -36,7 +37,7 @@ class CotizacionController extends Controller
         return response()->json($query->latest()->paginate(10));
     }
 
-    public function show($id)
+    public function show(int $id)
     {
         $cotizacion = Cotizacion::with([
             'cliente',
@@ -57,50 +58,50 @@ class CotizacionController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-        'cliente_id' => 'required|exists:clientes,id',
-        'plantilla_id' => 'required|exists:plantillas,id',
-        'titulo' => 'required|string',
-        'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD'
+            'cliente_id' => 'required|exists:clientes,id',
+            'plantilla_id' => 'required|exists:plantillas,id',
+            'titulo' => 'required|string',
+            'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD'
         ]);
 
         $numero = $this->service->generarNumero();
         $cliente = Cliente::findOrFail($request->cliente_id);
 
         $cotizacion = Cotizacion::create([
-        'numero' => $numero,
-        'fecha' => now(),
-        'titulo' => $request->titulo ?? 'Cotizacion'.$numero,
-        'tipo_cambio' => 1, // luego lo conectamos a API
-        'validez_dias' => 10,
+            'numero' => $numero,
+            'fecha' => now(),
+            'titulo' => $request->titulo ?? 'Cotizacion' . $numero,
+            'tipo_cambio' => 1, // luego lo conectamos a API
+            'validez_dias' => 10,
 
-        'cliente_id' => $cliente->id,
-        'plantilla_id' => $request->plantilla_id,
-        'usuario_id' => $request->user()->id,
+            'cliente_id' => $cliente->id,
+            'plantilla_id' => $request->plantilla_id,
+            'usuario_id' => $request->user()->id,
 
-        'modo_distribucion' => $request->modo_distribucion ?? 'POR_ITEM',
+            'modo_distribucion' => $request->modo_distribucion ?? 'POR_ITEM',
 
-        'subtotal' => 0,
-        'igv' => 0,
-        'total' => 0,
+            'subtotal' => 0,
+            'igv' => 0,
+            'total' => 0,
 
-        // SNAPSHOT
-        'cliente_nombre' => $cliente->nombre,
-        'cliente_ruc' => $cliente->ruc,
-        'cliente_contacto' => $cliente->contacto,
-        'cliente_telefono' => $cliente->telefono,
-        'cliente_correo' => $cliente->correo,
+            // SNAPSHOT
+            'cliente_nombre' => $cliente->nombre,
+            'cliente_ruc' => $cliente->ruc,
+            'cliente_contacto' => $cliente->contacto,
+            'cliente_telefono' => $cliente->telefono,
+            'cliente_correo' => $cliente->correo,
 
-        // estado inicial (IMPORTANTE)
-        'estado_cotizacion_id' => 1, // ej: borrador o enviada
+            // estado inicial (IMPORTANTE)
+            'estado_cotizacion_id' => 1, // ej: borrador o enviada
         ]);
 
         return response()->json([
-            'message'=> 'Cotización creada correctamente',
+            'message' => 'Cotización creada correctamente',
             'cotizacion' => $cotizacion
         ], 201);
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, int $id)
     {
         $cotizacion = Cotizacion::findOrFail($id);
 
@@ -123,7 +124,7 @@ class CotizacionController extends Controller
         });
 
         return response()->json([
-            'message'=> 'Cotización actualizada correctamente',
+            'message' => 'Cotización actualizada correctamente',
             'cotizacion' => $cotizacion->load('items'),
         ]);
     }
@@ -132,7 +133,7 @@ class CotizacionController extends Controller
     // 📦 ITEMS
     // =========================
 
-    public function addItem(Request $request, $cotizacionId)
+    public function addItem(Request $request, int $cotizacionId)
     {
         $request->validate([
             'descripcion' => 'required|string',
@@ -143,9 +144,9 @@ class CotizacionController extends Controller
 
         DB::transaction(function () use ($request, $cotizacionId) {
 
-        $ultimoOrden = CotizacionItem::where('cotizacion_id', $cotizacionId)->max('orden') ?? 0;
+            $ultimoOrden = CotizacionItem::where('cotizacion_id', $cotizacionId)->max('orden') ?? 0;
 
-        $orden = $ultimoOrden + 1;
+            $orden = $ultimoOrden + 1;
 
             CotizacionItem::create([
                 'cotizacion_id' => $cotizacionId,
@@ -168,7 +169,7 @@ class CotizacionController extends Controller
         return response()->json(['message' => 'Item agregado']);
     }
 
-    public function updateItem(Request $request, $id)
+    public function updateItem(Request $request, int $id)
     {
         $item = CotizacionItem::findOrFail($id);
 
@@ -191,7 +192,7 @@ class CotizacionController extends Controller
         return response()->json(['message' => 'Item actualizado']);
     }
 
-    public function deleteItem($id)
+    public function deleteItem(int $id)
     {
         $item = CotizacionItem::findOrFail($id);
 
@@ -207,7 +208,7 @@ class CotizacionController extends Controller
         return response()->json(['message' => 'Item eliminado correctamente']);
     }
 
-    public function desactivarItem($id)
+    public function desactivarItem(int $id)
     {
         $item = CotizacionItem::findOrFail($id);
 
@@ -216,7 +217,7 @@ class CotizacionController extends Controller
         return response()->json(['message' => 'Item desactivado']);
     }
 
-    public function activarItem($id)
+    public function activarItem(int $id)
     {
         $item = CotizacionItem::findOrFail($id);
 
@@ -229,7 +230,7 @@ class CotizacionController extends Controller
     // 💰 COSTOS ADICIONALES
     // =========================
 
-    public function addCosto(Request $request, $cotizacionId)
+    public function addCosto(Request $request, int $cotizacionId)
     {
         $request->validate([
             'tipo' => 'required|string',
@@ -252,7 +253,7 @@ class CotizacionController extends Controller
         return response()->json(['message' => 'Costo agregado']);
     }
 
-    public function deleteCosto($id)
+    public function deleteCosto(int $id)
     {
         $costo = CotizacionCostosAdicional::findOrFail($id);
 
@@ -272,7 +273,7 @@ class CotizacionController extends Controller
     // 🔥 ACCIONES
     // =========================
 
-    public function recalcular($id)
+    public function recalcular(int $id)
     {
         $cotizacion = Cotizacion::findOrFail($id);
 
@@ -281,5 +282,41 @@ class CotizacionController extends Controller
         return response()->json([
             'message' => 'Recalculado correctamente'
         ]);
+    }
+
+    // =========================
+    // 🔥 EXPORTACION PDF
+    // =========================
+    public function exportarPdf(Cotizacion $cotizacion)
+    {
+        $cotizacion->load([
+            'cliente',
+            'items',
+            'user',
+            'plantilla'
+        ]);
+
+        //Validar plantilla:
+        if (!$cotizacion->plantilla || !$cotizacion->plantilla->activo) {
+            abort(404, 'Plantilla no disponible');
+        }
+
+        //Obtención formato PDF desde la plantilla
+        $formatoPdf = $cotizacion->plantilla->formato_pdf;
+
+        //Construir vista dinámica según formato
+        $vista = 'pdf.cotizaciones.' . $formatoPdf;
+
+        //Generar PDF usando la vista dinámica
+        $pdf = Pdf::loadView($vista, compact('cotizacion'))
+            ->setPaper('A4', 'portrait')
+            ->setOptions([
+                'isRemoteEnabled' => true
+            ]); // Permitir cargar imágenes remotas
+
+        // Vista previa en el navegador
+        return $pdf->stream(
+            "Cotizacion-{$cotizacion->numero}.pdf"
+        );
     }
 }
