@@ -11,12 +11,7 @@ class Plantilla extends Model
         'nombre',
         'incluye_igv',
         'formato_pdf',
-        'moneda_id',
         'activo',
     ];
 
-    public function moneda() : BelongsTo
-    {
-        return $this->belongsTo(Moneda::class);
-    }
 }

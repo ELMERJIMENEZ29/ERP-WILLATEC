@@ -30,6 +30,7 @@ class DatabaseSeeder extends Seeder
             RoleSeeder::class,
             EstadoCotizacionItemSeeder::class,
             PlataformaSeeder::class,
+            MonedaSeeder::class,
         ]);
     }
 

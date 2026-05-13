@@ -12,8 +12,8 @@ class Moneda extends Model
         'simbolo',
     ];
 
-    public function plantillas() : HasMany
+    public function cotizaciones(): HasMany
     {
-        return $this->hasMany(Plantilla::class);
+        return $this->hasMany(Cotizacion::class);
     }
 }

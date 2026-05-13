@@ -30,54 +30,63 @@ class Cotizacion extends Model
         'plantilla_id',
         'estado_cotizacion_id',
         'user_id',
+        'moneda_id',
 
         'cliente_nombre',
         'cliente_ruc',
         'cliente_contacto',
         'cliente_telefono',
-        'cliente_correo'        
+        'cliente_correo'
     ];
 
-        // Relaciones
-        public function cliente() : BelongsTo
-        {
-            return $this->belongsTo(Cliente::class);
-        }
-    
-        public function plantilla() : BelongsTo
-        {
-            return $this->belongsTo(Plantilla::class);
-        }
-    
-        public function estadoCotizacion() : BelongsTo
-        {
-            return $this->belongsTo(EstadoCotizacion::class, 'estado_cotizacion_id');
-        }
-    
-        public function items() : HasMany
-        {
-            return $this->hasMany(CotizacionItem::class);
-        }
+    // Relaciones
+    public function cliente(): BelongsTo
+    {
+        return $this->belongsTo(Cliente::class);
+    }
 
-        public function plataforma() : BelongsTo
-        {
-            return $this->belongsTo(Plataforma::class);
-        }
+    public function plantilla(): BelongsTo
+    {
+        return $this->belongsTo(Plantilla::class);
+    }
 
-        public function costosAdicionales() : HasMany
-        {
-            return $this->hasMany(CotizacionCostosAdicional::class);
-        }
+    public function estadoCotizacion(): BelongsTo
+    {
+        return $this->belongsTo(EstadoCotizacion::class, 'estado_cotizacion_id');
+    }
 
-        public function user() : BelongsTo
-        {
-            return $this->belongsTo(User::class);
-        }
+    public function items(): HasMany
+    {
+        return $this->hasMany(CotizacionItem::class);
+    }
 
-        public function ordenCompra() : HasOne{
-            return $this->hasOne(OrdenCompra::class);
-        }
-        public function profile() : HasOne{
-            return $this->hasOne(Profile::class);
-        }
+    public function plataforma(): BelongsTo
+    {
+        return $this->belongsTo(Plataforma::class);
+    }
+
+    public function costosAdicionales(): HasMany
+    {
+        return $this->hasMany(CotizacionCostosAdicional::class);
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function ordenCompra(): HasOne
+    {
+        return $this->hasOne(OrdenCompra::class);
+    }
+
+    public function profile(): HasOne
+    {
+        return $this->hasOne(Profile::class);
+    }
+
+    public function moneda() : BelongsTo
+    {
+        return $this->belongsTo(Moneda::class);
+    }
 }
