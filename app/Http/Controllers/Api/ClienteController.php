@@ -17,7 +17,7 @@ class ClienteController extends Controller
             $query->where('activo', $request->activo);
         }
 
-        return response()->json($query->get());
+        return response()->json($query->paginate($request->per_page ?? 10));
     }
 
     //Crear cliente
@@ -33,7 +33,7 @@ class ClienteController extends Controller
             'moneda_id' => 'nullable|exists:monedas,id',
         ]);
 
-        $cliente = Cliente::create($request->only([
+        $cliente = Cliente::create([
             'nombre' => $request->nombre,
             'ruc' => $request->ruc,
             'correo' => $request->correo,
@@ -42,7 +42,7 @@ class ClienteController extends Controller
             'estado' => $request->estado ?? 'activo',
             'tipo_cliente_id' => $request->tipo_cliente_id,
             'moneda_id' => $request->moneda_id,
-        ]));
+        ]);
 
         return response()->json([
             'message' => 'Cliente creado correctamente',
@@ -59,6 +59,8 @@ class ClienteController extends Controller
             'message' => 'Cliente no encontrado'
         ], 404);
         }
+
+        return response()->json($cliente);
     }
 
     //Actualizar cliente
