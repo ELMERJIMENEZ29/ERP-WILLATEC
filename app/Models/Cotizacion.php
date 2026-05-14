@@ -18,7 +18,7 @@ class Cotizacion extends Model
         'tipo_cambio',
         'titulo',
         'modo_distribucion',
-        'moneda',
+        'moneda_id',
 
         'subtotal',
         'igv',
@@ -30,7 +30,6 @@ class Cotizacion extends Model
         'plantilla_id',
         'estado_cotizacion_id',
         'user_id',
-        'moneda_id',
 
         'cliente_nombre',
         'cliente_ruc',

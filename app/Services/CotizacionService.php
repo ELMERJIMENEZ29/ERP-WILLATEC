@@ -74,7 +74,7 @@ class CotizacionService
 
             // Detectar plantilla
             $incluyeIgv = $cotizacion->plantilla->incluye_igv;
-            $moneda = $cotizacion->moneda;
+            $moneda = $cotizacion->moneda_id;
 
             // Tipo de cambio fijo (según tu negocio)
             $tipoCambioVenta = 3.5; // USD → PEN

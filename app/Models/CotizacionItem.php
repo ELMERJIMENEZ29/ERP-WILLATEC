@@ -26,6 +26,9 @@ class CotizacionItem extends Model
         'estado_cotizacion_item_id',
         'costo_total',
         'ganancia',
+        'garantia_meses',
+        'disponibilidad_tipo',
+        'disponibilidad_dias',
     ];
 
     public function cotizacion(): BelongsTo
@@ -33,14 +36,13 @@ class CotizacionItem extends Model
         return $this->belongsTo(Cotizacion::class);
     }
 
-    public function producto() : BelongsTo
+    public function producto(): BelongsTo
     {
         return $this->belongsTo(Producto::class);
     }
 
-    public function estadoCotizacionItem() : BelongsTo
+    public function estadoCotizacionItem(): BelongsTo
     {
         return $this->belongsTo(EstadoCotizacionItem::class, 'estado_cotizacion_item_id');
     }
-
 }

@@ -108,7 +108,7 @@ class CotizacionController extends Controller
         $request->validate([
             'cliente_id' => 'required|exists:clientes,id',
             'plantilla_id' => 'required|exists:plantillas,id',
-            'moneda' => 'required|in:PEN,USD',
+            'moneda_id' => 'required|exists:monedas,id',
             'modo_distribucion' => 'required|string',
         ]);
 
@@ -116,7 +116,7 @@ class CotizacionController extends Controller
             $cotizacion->update($request->only([
                 'cliente_id',
                 'plantilla_id',
-                'moneda',
+                'moneda_id',
                 'modo_distribucion',
             ]));
 
@@ -140,6 +140,9 @@ class CotizacionController extends Controller
             'cantidad' => 'required|numeric|min:1',
             'costo_base' => 'required|numeric|min:0',
             'margen' => 'required|numeric|min:0',
+            'garantia_meses' => 'nullable|integer|in:3,6,12,24,36',
+            'disponibilidad_tipo' => 'required|in:stock,importacion',
+            'disponibilidad_dias' => 'required|integer|min:1|max:50',
         ]);
 
         DB::transaction(function () use ($request, $cotizacionId) {
@@ -158,6 +161,9 @@ class CotizacionController extends Controller
                 'codigo' => $request->codigo,
                 'unidad_medida' => $request->unidad_medida,
                 'disponibilidad' => $request->disponibilidad,
+                'garantia_meses' => $request->garantia_meses,
+                'disponibilidad_tipo' => $request->disponibilidad_tipo,
+                'disponibilidad_dias' => $request->disponibilidad_dias,
                 'orden' => $orden,
             ]);
 
@@ -184,6 +190,9 @@ class CotizacionController extends Controller
                 'codigo',
                 'unidad_medida',
                 'disponibilidad',
+                'garantia_meses',
+                'disponibilidad_tipo',
+                'disponibilidad_dias',
             ]));
 
             $this->service->recalcular($item->cotizacion);
@@ -289,12 +298,13 @@ class CotizacionController extends Controller
     // =========================
     public function exportarPdf(Cotizacion $cotizacion)
     {
-        $cotizacion->load([
+        $cotizacion = Cotizacion::with([
             'cliente',
             'items',
-            'user',
-            'plantilla'
-        ]);
+            'user.profile',
+            'plantilla',
+            'moneda'
+        ])->findOrFail($cotizacion->id);
 
         //Validar plantilla:
         if (!$cotizacion->plantilla || !$cotizacion->plantilla->activo) {

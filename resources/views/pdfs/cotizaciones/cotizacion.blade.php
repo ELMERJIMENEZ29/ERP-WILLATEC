@@ -8,7 +8,7 @@ $fechaEmision = Carbon::parse($cotizacion->fecha)->format('d/m/Y');
 $fechaValidez = Carbon::parse($cotizacion->fecha)
 ->addDays($cotizacion->validez_dias ?? 10)
 ->format('d/m/Y');
-$simbolo = $cotizacion->moneda == 'USD' ? '$' : 'S/';
+$simbolo = $cotizacion->moneda->simbolo ?? 'S/';
 @endphp
 
 <style>
@@ -29,7 +29,7 @@ $simbolo = $cotizacion->moneda == 'USD' ? '$' : 'S/';
     }
 
     tr {
-    page-break-inside: avoid;
+        page-break-inside: avoid;
     }
 
     /* ── WRAPPER CON FRANJA LATERAL ── */
@@ -210,6 +210,10 @@ $simbolo = $cotizacion->moneda == 'USD' ? '$' : 'S/';
         border-collapse: collapse;
         font-size: 11.5px;
         page-break-inside: auto;
+    }
+
+    thead {
+        display: table-header-group;
     }
 
     .items-table thead tr {
@@ -629,6 +633,7 @@ $simbolo = $cotizacion->moneda == 'USD' ? '$' : 'S/';
                             <th class="th-right" style="width:60px">Cant.</th>
                             <th class="th-right" style="width:90px">P. Unit.</th>
                             <th class="th-right" style="width:90px">Subtotal</th>
+                            <th class="th-right" style="width:90px">Disponibilidad</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -637,7 +642,8 @@ $simbolo = $cotizacion->moneda == 'USD' ? '$' : 'S/';
                             <td class="td-num">{{ $loop->iteration }}</td>
                             <td>
                                 <span class="td-strong">{{ $item->descripcion }}</span><br>
-                                <span class="td-sub">Marca: {{ $item->marca }}</span>
+                                <span class="td-sub">Marca: {{ $item->marca }}</span><br>
+                                <span class="td-sub">Garantia: {{ $item->garantia_meses }} meses</span>
                             </td>
                             <td class="td-right" style="text-align:center">
                                 @if($item->imagen)
@@ -652,6 +658,43 @@ $simbolo = $cotizacion->moneda == 'USD' ? '$' : 'S/';
                             <td class="td-right">{{ $item->cantidad }}</td>
                             <td class="td-right">{{ $simbolo }} {{ number_format($item->precio_venta, 2) }}</td>
                             <td class="td-total">{{ $simbolo }} {{ number_format($item->subtotal, 2) }}</td>
+                            <td style="text-align:center;">
+
+                                @if($item->disponibilidad_tipo == 'importacion')
+
+                                <div style="
+                                    background:#FFF3CD;
+                                    color:#856404;
+                                    padding:6px;
+                                    border-radius:4px;
+                                    font-size:10px;
+                                    font-weight:600;
+                                    line-height:1.4;
+                                ">
+                                    IMPORTACIÓN<br>
+                                    Entrega en {{ $item->disponibilidad_dias }} días calendarios.<br>
+                                    Puesta la Orden de Compra.
+                                </div>
+
+                                @else
+
+                                <div style="
+                                    background:#E8F5E9;
+                                    color:#2E7D32;
+                                    padding:6px;
+                                    border-radius:4px;
+                                    font-size:10px;
+                                    font-weight:600;
+                                    line-height:1.4;
+                                ">
+                                    Stock disponible<br>
+                                    Entrega en {{ $item->disponibilidad_dias }} días calendarios.<br>
+                                    Puesta la Orden de Compra.
+                                </div>
+
+                                @endif
+
+                            </td>
                         </tr>
                         @endforeach
                     </tbody>
@@ -664,7 +707,6 @@ $simbolo = $cotizacion->moneda == 'USD' ? '$' : 'S/';
                     <td class="bottom-left">
                         <div class="condiciones-title">Condiciones comerciales</div>
                         <div class="condicion-item"><span class="cond-prefix">&rsaquo;</span>Forma de Pago: Credito a 30 dias calendarios</div>
-                        <div class="condicion-item"><span class="cond-prefix">&rsaquo;</span>Tiempo de entrega: {{ $cotizacion->items->first()->disponibilidad ?? '10 a 15' }} dias calendarios puesta la Orden de Compra.</div>
                         <div class="condicion-item"><span class="cond-prefix">&rsaquo;</span>Incluye entrega en oficinas del cliente, Lima Metropolitana. Para otras ubicaciones, consultar costo adicional.</div>
                         <div class="condicion-item"><span class="cond-prefix">&rsaquo;</span>Precios en Dolares Americanos (USD) y NO incluyen IGV.</div>
                         <div class="condicion-item"><span class="cond-prefix">&rsaquo;</span>Precios sujetos a cambio sin previo aviso.</div>
@@ -695,7 +737,7 @@ $simbolo = $cotizacion->moneda == 'USD' ? '$' : 'S/';
                                 <td class="tf-amount">{{ $simbolo }} {{ number_format($cotizacion->total, 2) }}</td>
                             </tr>
                             <tr class="moneda-row">
-                                <td colspan="2">Moneda: Dolares Americanos (USD)</td>
+                                <td colspan="2">Moneda: {{$cotizacion->moneda->codigo}} {{$simbolo}}</td>
                             </tr>
                         </table>
                     </td>
