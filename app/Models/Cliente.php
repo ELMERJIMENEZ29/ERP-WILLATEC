@@ -15,7 +15,7 @@ class Cliente extends Model
         'correo',
         'estado',
         'tipo_cliente_id',
-        'plantilla_id',
+        'moneda_id',
     ];
 
     public function tipoCliente() : BelongsTo
@@ -23,9 +23,9 @@ class Cliente extends Model
         return $this->belongsTo(TipoCliente::class);
     }
 
-    public function plantilla() : BelongsTo
+    public function moneda() : BelongsTo
     {
-        return $this->belongsTo(Plantilla::class);
+        return $this->belongsTo(Moneda::class);
     }
 
     public function cotizaciones() : HasMany

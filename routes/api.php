@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ProductoController;
 use App\Http\Controllers\Api\CotizacionController;
 use App\Http\Controllers\Api\OrdenCompraController;
+use App\Http\Controllers\Api\ClienteController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
@@ -20,7 +21,7 @@ Route::middleware(['auth:sanctum'])->group(function(){
     Route::get('/roles', function () {return Role::select('id','name')->get();});
 
     //USUARIOS
-    Route::post('/register',[AuthController::class, 'register'])->middleware('role:superadmin|admin');
+    Route::post('/users',[AuthController::class, 'register'])->middleware('role:superadmin|admin');
 
     Route::get('/users', [UserController::class, 'index'])->middleware('role:superadmin|admin');
 
@@ -72,11 +73,11 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function(){
 
 Route::prefix('ordencompra')->group(function () {
 
-    Route::get('/', [OrdenCompraController::class, 'index']);
+    Route::get('/', [OrdenCompraController::class, 'index'])->middleware('role:superadmin|ventas');
 
-    Route::post('/', [OrdenCompraController::class, 'store']);
+    Route::post('/', [OrdenCompraController::class, 'store'])->middleware('role:superadmin|ventas');
 
-    Route::get('{id}', [OrdenCompraController::class, 'show']);
+    Route::get('{id}', [OrdenCompraController::class, 'show'])->middleware('role:superadmin|ventas');
 
     Route::patch(
         '{id}/estado',
@@ -87,5 +88,13 @@ Route::prefix('ordencompra')->group(function () {
         'items/{id}/estado',
         [OrdenCompraController::class, 'updateEstadoItem']
     );
+});
+
+Route::prefix('clientes')->group(function () {
+    Route::get('/', [ClienteController::class, 'index'])->middleware('role:superadmin|ventas');
+    Route::post('/', [ClienteController::class, 'store'])->middleware('role:superadmin|ventas');
+    Route::get('/{id}', [ClienteController::class, 'show'])->middleware('role:superadmin|ventas');
+    Route::put('/{id}', [ClienteController::class, 'update'])->middleware('role:superadmin|ventas');
+    Route::delete('/{id}', [ClienteController::class, 'destroy'])->middleware('role:superadmin|ventas');
 });
 

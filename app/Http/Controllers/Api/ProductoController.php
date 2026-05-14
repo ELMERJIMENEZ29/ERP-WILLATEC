@@ -21,7 +21,7 @@ class ProductoController extends Controller
     }
 
     //Ver detalle
-    public function show($id){
+    public function show( int $id){
         $producto = Producto::findOrFail($id);
 
         if(!$producto){

@@ -19,7 +19,7 @@ class UserController extends Controller
     }
 
     //Ver detalle
-    public function show($id){
+    public function show(int $id){
         $user = User::with(['profile', 'roles'])->findOrFail($id);
 
         return response()->json($user);
@@ -34,6 +34,7 @@ class UserController extends Controller
             'apellidos' => 'required',
             'email' => "required|email|unique:users,email,$id",
             'role' => 'required|exists:roles,name',
+            'activo'=> 'boolean',
         ]);
 
         DB::transaction(function() use ($request, $user){
@@ -42,6 +43,7 @@ class UserController extends Controller
                 'nombres'=> $request->nombres,
                 'apellidos'=> $request->apellidos,
                 'email'=> $request->email,
+                'activo'=> $request->activo ?? $user->activo,
             ]);
 
             //Actualizar rol
@@ -65,7 +67,7 @@ class UserController extends Controller
     }
 
     //Desactivar usuario
-    public function desactivar($id){
+    public function desactivar(int $id){
         $user = User::findOrFail($id);
 
         $user->update([
@@ -79,7 +81,7 @@ class UserController extends Controller
     }
 
     //Reactivar usuario
-    public function activar($id){
+    public function activar(int $id){
         $user = User::findOrFail($id);
 
         $user->update([
