@@ -43,9 +43,7 @@ Route::prefix('productos')->middleware('auth:sanctum')->group(function(){
 
     Route::put('/{id}', [ProductoController::class, 'update'])->middleware('role:superadmin|ventas');
 
-    Route::patch('/{id}/desactivar', [ProductoController::class, 'desactivar'])->middleware('role:superadmin|ventas');
-
-    Route::patch('/{id}/activar', [ProductoController::class, 'activar'])->middleware('role:superadmin|ventas');
+    Route::delete('/{id}', [ProductoController::class, 'destroy'])->middleware('role:superadmin|ventas');
 });
 
 Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function(){
@@ -71,7 +69,7 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function(){
     Route::get('/{cotizacion}/exportar-pdf', [CotizacionController::class, 'exportarPdf'])->middleware('role:superadmin|ventas');
 });
 
-Route::prefix('ordencompra')->group(function () {
+Route::prefix('ordencompra')->middleware('auth:sanctum')->group(function () {
 
     Route::get('/', [OrdenCompraController::class, 'index'])->middleware('role:superadmin|ventas');
 
@@ -90,7 +88,7 @@ Route::prefix('ordencompra')->group(function () {
     );
 });
 
-Route::prefix('clientes')->group(function () {
+Route::prefix('clientes')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [ClienteController::class, 'index'])->middleware('role:superadmin|ventas');
     Route::post('/', [ClienteController::class, 'store'])->middleware('role:superadmin|ventas');
     Route::get('/{id}', [ClienteController::class, 'show'])->middleware('role:superadmin|ventas');

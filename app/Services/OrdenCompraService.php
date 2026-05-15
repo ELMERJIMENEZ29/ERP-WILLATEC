@@ -26,15 +26,14 @@ class OrdenCompraService
             }
 
             //Cargar relaciones necesarias
-            $cotizacion->load(['items', 'cliente']);
+            $cotizacion->load(['items.producto', 'cliente']);
 
             //Obtener items válidos
             $items = $cotizacion->items
                 ->whereIn('id', array_keys($itemsSeleccionados))
-                ->where('activo', true)
-                ->get();
+                ->where('activo', true);
 
-            if($items->isEmpty()){
+            if ($items->isEmpty()) {
                 throw new \Exception('No se han seleccionado items válidos para generar la orden de compra.');
             }
 
@@ -94,7 +93,6 @@ class OrdenCompraService
                     'codigo' => $item->codigo,
                     'marca' => $item->marca,
                     'unidad_medida' => $item->unidad_medida,
-                    'producto_id' => $item->producto_id,
 
                     //Cantidad original cotizada
                     'cantidad' => $item->cantidad,
@@ -111,6 +109,12 @@ class OrdenCompraService
 
                     'estado'=> 'pendiente', // Estado inicial
                 ]);
+
+                if ($item->producto) {
+                    $product = $item->producto;
+                    $updatedStock = max(0, $product->stock - $cantidadAprobada);
+                    $product->update(['stock' => $updatedStock]);
+                }
 
                 $subtotal += $subtotalItem;
             }

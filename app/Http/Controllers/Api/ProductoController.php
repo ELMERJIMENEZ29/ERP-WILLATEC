@@ -17,7 +17,7 @@ class ProductoController extends Controller
             $query->where('activo', $request->activo);
         }
 
-        return response()->json($query->get());
+        return response()->json($query->paginate($request->per_page ?? 10));
     }
 
     //Ver detalle
@@ -29,6 +29,8 @@ class ProductoController extends Controller
             'message' => 'Producto no encontrado'
         ], 404);
         }
+
+        return response()->json($producto);
     }
 
     //Crear producto
@@ -42,22 +44,27 @@ class ProductoController extends Controller
             'descripcion' => 'nullable|string',
             'precio_referencial' => 'nullable|numeric|min:0',
             'unidad_medida' => 'nullable|string|max:50',
+            'stock' => 'nullable|integer|min:0',
+            'categoria_id' => 'nullable|exists:categorias,id',
         ]);
 
-        $producto = Producto::create($request->only([
-            'nombre',
-            'marca',
-            'modelo',
-            'codigo',
-            'descripcion',
-            'precio_referencial',
-            'unidad_medida',
-        ]));
+        $producto = Producto::create([
+            'nombre' => $request->nombre,
+            'marca' => $request->marca,
+            'modelo' => $request->modelo,
+            'codigo' => $request->codigo,
+            'descripcion' => $request->descripcion,
+            'precio_referencial' => $request->precio_referencial,
+            'unidad_medida' => $request->unidad_medida,
+            'stock' => $request->stock ?? 0,
+            'categoria_id' => $request->categoria_id,
+            'activo' => true,
+        ]);
 
         return response()->json([
             'message'=> 'Producto creado correctamente',
             'producto' => $producto
-        ]);
+        ],201);
     }
 
     //Actualizar producto
@@ -73,6 +80,9 @@ class ProductoController extends Controller
             'descripcion' => 'nullable|string',
             'precio_referencial' => 'nullable|numeric|min:0',
             'unidad_medida' => 'nullable|string|max:50',
+            'activo' => 'nullable|boolean',
+            'stock' => 'nullable|integer|min:0',
+            'categoria_id' => 'nullable|exists:categorias,id',
         ]);
 
         $producto->update($request->only([
@@ -83,6 +93,9 @@ class ProductoController extends Controller
             'descripcion',
             'precio_referencial',
             'unidad_medida',
+            'activo',
+            'stock',
+            'categoria_id',
         ]));
 
         return response()->json([
@@ -91,29 +104,20 @@ class ProductoController extends Controller
         ]);
     }
 
-    //Desactivar Producto
-    public function desactivar($id){
+    //Eliminar Producto
+    public function destroy(int $id){
         $producto = Producto::findOrFail($id);
 
-        $producto->update([
-            'activo' => false
-        ]);
+        if(!$producto){
+            return response()->json([
+                'message' => 'Producto no encontrado'
+            ], 404);
+        }
+
+        $producto->delete();
 
         return response()->json([
-            'message' => 'Producto desactivado correctamente'
+            'message' => 'Producto eliminado correctamente',
         ]);
     }
-
-    //Activar producto
-    public function activar($id){
-        $producto = Producto::findOrFail($id);
-
-        $producto->update([
-            'activo' => true
-        ]);
-
-        return response()->json([
-            'message' => 'Producto activado correctamente'
-        ]);
-    }
-}
+}       
