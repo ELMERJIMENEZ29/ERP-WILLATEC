@@ -86,7 +86,7 @@ class CotizacionService
             } else {
                 // 🟢 DOLARES / SOLES (sin IGV)
 
-                if ($moneda === 'USD') {
+                if ($moneda === 2) {
                     // convertir a soles
                     $ganancia = $diferencia * $tipoCambioVenta;
                 } else {

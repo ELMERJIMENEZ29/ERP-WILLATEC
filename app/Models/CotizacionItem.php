@@ -23,6 +23,7 @@ class CotizacionItem extends Model
         'orden',
         'cotizacion_id',
         'producto_id',
+        'tipo',
         'estado_cotizacion_item_id',
         'costo_total',
         'ganancia',

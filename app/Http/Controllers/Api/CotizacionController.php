@@ -7,7 +7,11 @@ use Illuminate\Http\Request;
 use App\Models\Cotizacion;
 use App\Models\CotizacionItem;
 use App\Models\Cliente;
+use App\Models\Plantilla;
+use App\Models\Moneda;
 use App\Models\CotizacionCostosAdicional;
+use App\Models\EstadoCotizacion;
+use App\Models\EstadoCotizacionItem;
 use App\Services\CotizacionService;
 use Illuminate\Support\Facades\DB;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -61,7 +65,8 @@ class CotizacionController extends Controller
             'cliente_id' => 'required|exists:clientes,id',
             'plantilla_id' => 'required|exists:plantillas,id',
             'titulo' => 'required|string',
-            'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD'
+            'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD',
+            'moneda_id' => 'required|exists:monedas,id',
         ]);
 
         $numero = $this->service->generarNumero();
@@ -76,7 +81,8 @@ class CotizacionController extends Controller
 
             'cliente_id' => $cliente->id,
             'plantilla_id' => $request->plantilla_id,
-            'usuario_id' => $request->user()->id,
+            'user_id' => $request->user()->id,
+            'moneda_id' => $request->moneda_id,
 
             'modo_distribucion' => $request->modo_distribucion ?? 'POR_ITEM',
 
@@ -143,6 +149,7 @@ class CotizacionController extends Controller
             'garantia_meses' => 'nullable|integer|in:3,6,12,24,36',
             'disponibilidad_tipo' => 'required|in:stock,importacion',
             'disponibilidad_dias' => 'required|integer|min:1|max:50',
+            'producto_id' => 'nullable|exists:productos,id',
         ]);
 
         DB::transaction(function () use ($request, $cotizacionId) {
@@ -165,6 +172,8 @@ class CotizacionController extends Controller
                 'disponibilidad_tipo' => $request->disponibilidad_tipo,
                 'disponibilidad_dias' => $request->disponibilidad_dias,
                 'orden' => $orden,
+                'producto_id' => $request->producto_id ?? null,
+                'tipo' => $request->producto_id ? 'producto' : 'externo',
             ]);
 
             $cotizacion = Cotizacion::findOrFail($cotizacionId);
@@ -178,6 +187,17 @@ class CotizacionController extends Controller
     public function updateItem(Request $request, int $id)
     {
         $item = CotizacionItem::findOrFail($id);
+
+        $request->validate([
+            'descripcion' => 'nullable|string',
+            'cantidad' => 'nullable|numeric|min:1',
+            'costo_base' => 'nullable|numeric|min:0',
+            'margen' => 'nullable|numeric|min:0',
+            'garantia_meses' => 'nullable|integer|in:3,6,12,24,36',
+            'disponibilidad_tipo' => 'nullable|in:stock,importacion',
+            'disponibilidad_dias' => 'nullable|integer|min:1|max:50',
+            'producto_id' => 'nullable|exists:productos,id',
+        ]);
 
         DB::transaction(function () use ($request, $item) {
 
@@ -193,7 +213,11 @@ class CotizacionController extends Controller
                 'garantia_meses',
                 'disponibilidad_tipo',
                 'disponibilidad_dias',
+                'producto_id',
             ]));
+
+            // Asegurar que `tipo` refleje si el item proviene de un producto existente
+            $item->update(['tipo' => $item->producto_id ? 'producto' : 'externo']);
 
             $this->service->recalcular($item->cotizacion);
         });
@@ -233,6 +257,15 @@ class CotizacionController extends Controller
         $item->update(['activo' => true]);
 
         return response()->json(['message' => 'Item activado']);
+    }
+
+    public function indexItems(Request $request)
+    {
+        $query = CotizacionItem::query();
+        if ($request->has('cotizacion_id')) {
+            $query->where('cotizacion_id', $request->cotizacion_id);
+        }
+        return response()->json($query->latest()->paginate(10));
     }
 
     // =========================
@@ -328,5 +361,50 @@ class CotizacionController extends Controller
         return $pdf->stream(
             "Cotizacion-{$cotizacion->numero}.pdf"
         );
+    }
+
+    // =========================
+    // 📄 PLANTILLAS
+    // =========================
+
+    public function indexPlantillas(Request $request)
+    {
+        $query = Plantilla::query();
+
+        if ($request->has('activo')) {
+            $query->where('activo', $request->activo);
+        }
+
+        return response()->json($query->get());
+    }
+
+    // =========================
+    // 📄 ESTADO COTIZACION
+    // =========================
+
+    public function indexEstadoCotizacion(Request $request)
+    {
+        $query = EstadoCotizacion::query();
+        return response()->json($query);
+    }
+
+    // =========================
+    // 📄 ESTADO COTIZACION ITEM
+    // =========================
+
+    public function indexEstadoCotizacionItem(Request $request)
+    {
+        $query = EstadoCotizacionItem::query();
+        return response()->json($query);
+    }
+
+    // =========================
+    // 📄 MONEDA
+    // =========================
+
+    public function indexMonedas(Request $request)
+    {
+        $query = Moneda::query();
+        return response()->json($query);
     }
 }

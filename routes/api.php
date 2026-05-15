@@ -12,16 +12,18 @@ use Spatie\Permission\Models\Role;
 
 Route::post('/login', [AuthController::class, 'login']);
 
-Route::middleware(['auth:sanctum'])->group(function(){
+Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::post('/logout', [AuthController::class, 'logout']);
 
-    Route::get('/user', fn(Request $request)=> $request->user());
+    Route::get('/user', fn(Request $request) => $request->user());
 
-    Route::get('/roles', function () {return Role::select('id','name')->get();});
+    Route::get('/roles', function () {
+        return Role::select('id', 'name')->get();
+    });
 
     //USUARIOS
-    Route::post('/users',[AuthController::class, 'register'])->middleware('role:superadmin|admin');
+    Route::post('/users', [AuthController::class, 'register'])->middleware('role:superadmin|admin');
 
     Route::get('/users', [UserController::class, 'index'])->middleware('role:superadmin|admin');
 
@@ -34,7 +36,7 @@ Route::middleware(['auth:sanctum'])->group(function(){
     Route::patch('/users/{id}/activar', [UserController::class, 'activar'])->middleware('role:superadmin');
 });
 
-Route::prefix('productos')->middleware('auth:sanctum')->group(function(){
+Route::prefix('productos')->middleware('auth:sanctum')->group(function () {
     //PRODUCTOS
     Route::get('/', [ProductoController::class, 'index']);
     Route::get('/{id}', [ProductoController::class, 'show']);
@@ -46,27 +48,55 @@ Route::prefix('productos')->middleware('auth:sanctum')->group(function(){
     Route::delete('/{id}', [ProductoController::class, 'destroy'])->middleware('role:superadmin|ventas');
 });
 
-Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function(){
-    Route::get('/', [CotizacionController::class, 'index'])->middleware('role:superadmin|ventas');
-    Route::get('/{id}', [CotizacionController::class, 'show'])->middleware('role:superadmin|ventas');
+Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
+    // ── RUTAS ESTÁTICAS PRIMERO ──────────────────────────────
+    Route::get('/', [CotizacionController::class, 'index'])
+        ->middleware('role:superadmin|ventas');
 
-    Route::post('/', [CotizacionController::class, 'store'])->middleware('role:superadmin|ventas');
-    Route::put('/{id}', [CotizacionController::class, 'update'])->middleware('role:superadmin|ventas');
+    Route::post('/', [CotizacionController::class, 'store'])
+        ->middleware('role:superadmin|ventas');
 
-    //Recalcular
-    Route::patch('/{id}/recalcular', [CotizacionController::class, 'recalcular'])->middleware('role:superadmin|ventas');
+    Route::get('/items', [CotizacionController::class, 'indexItems'])
+        ->middleware('role:superadmin|ventas');
 
-    //Costos adicionales
-    Route::delete('/costos/{id}', [CotizacionController::class, 'deleteCosto'])->middleware('role:superadmin|ventas');
-    Route::post('/{id}/costos', [CotizacionController::class, 'addCosto'])->middleware('role:superadmin|ventas');
+    Route::get('/plantillas', [CotizacionController::class, 'indexPlantillas'])
+        ->middleware('role:superadmin|ventas');
 
-    //Items
-    Route::post('/{id}/items', [CotizacionController::class, 'addItem'])->middleware('role:superadmin|ventas');
-    Route::put('/items/{id}', [CotizacionController::class, 'updateItem'])->middleware('role:superadmin|ventas');
-    Route::delete('/items/{id}', [CotizacionController::class, 'deleteItem'])->middleware('role:superadmin|ventas');
+    Route::get('/estados', [CotizacionController::class, 'indexEstadoCotizacion'])
+        ->middleware('role:superadmin|ventas');
 
-    //Exportación PDF
-    Route::get('/{cotizacion}/exportar-pdf', [CotizacionController::class, 'exportarPdf'])->middleware('role:superadmin|ventas');
+    Route::get('/monedas', [CotizacionController::class, 'indexMonedas'])
+        ->middleware('role:superadmin|ventas');
+
+    // ── RUTAS DINÁMICAS DESPUÉS ──────────────────────────────
+    Route::get('/{id}', [CotizacionController::class, 'show'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::put('/{id}', [CotizacionController::class, 'update'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::patch('/{id}/recalcular', [CotizacionController::class, 'recalcular'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::get('/{cotizacion}/exportar-pdf', [CotizacionController::class, 'exportarPdf'])
+        ->middleware('role:superadmin|ventas');
+
+    // Items
+    Route::post('/{id}/items', [CotizacionController::class, 'addItem'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::put('/items/{id}', [CotizacionController::class, 'updateItem'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::delete('/items/{id}', [CotizacionController::class, 'deleteItem'])
+        ->middleware('role:superadmin|ventas');
+
+    // Costos
+    Route::post('/{id}/costos', [CotizacionController::class, 'addCosto'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::delete('/costos/{id}', [CotizacionController::class, 'deleteCosto'])
+        ->middleware('role:superadmin|ventas');
 });
 
 Route::prefix('ordencompra')->middleware('auth:sanctum')->group(function () {
@@ -95,4 +125,3 @@ Route::prefix('clientes')->middleware('auth:sanctum')->group(function () {
     Route::put('/{id}', [ClienteController::class, 'update'])->middleware('role:superadmin|ventas');
     Route::delete('/{id}', [ClienteController::class, 'destroy'])->middleware('role:superadmin|ventas');
 });
-
