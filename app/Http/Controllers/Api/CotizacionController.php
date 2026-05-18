@@ -358,7 +358,7 @@ class CotizacionController extends Controller
             ]); // Permitir cargar imágenes remotas
 
         // Vista previa en el navegador
-        return $pdf->stream(
+        return $pdf->download(
             "Cotizacion-{$cotizacion->numero}.pdf"
         );
     }
