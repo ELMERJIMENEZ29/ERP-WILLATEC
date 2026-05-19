@@ -56,6 +56,8 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
     Route::post('/', [CotizacionController::class, 'store'])
         ->middleware('role:superadmin|ventas');
 
+    Route::post('/completa', [CotizacionController::class, 'storeCompleta'])->middleware('role:superadmin|ventas');
+
     Route::get('/items', [CotizacionController::class, 'indexItems'])
         ->middleware('role:superadmin|ventas');
 

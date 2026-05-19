@@ -410,4 +410,117 @@ class CotizacionController extends Controller
         $query = Moneda::query();
         return response()->json($query);
     }
+
+    
+    // =========================
+    // COTIZACION COMPLETA
+    // =========================
+    public function storeCompleta(Request $request)
+    {
+        $request ->validate ([
+            'cliente_id' => 'required|exists:clientes,id',
+            'plantilla_id' => 'required|exists:plantillas,id',
+            'titulo' => 'required|string',
+            'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD',
+            'moneda_id' => 'required|exists:monedas,id',
+
+            'items' => 'required|array|min:1',
+
+            'items.*.descripcion' => 'required|string',
+            'items.*.cantidad' => 'required|numeric|min:1',
+            'items.*.costo_base' => 'required|numeric|min:0',
+            'items.*.margen' => 'required|numeric|min:0',
+
+            'costos' => 'nullable|array',
+
+            'costos.*.tipo' => 'required|string',
+            'costos.*.monto' => 'required|numeric|min:0',
+        ]);
+
+        $cotizacion = null;
+
+        DB::transaction(function() use ($request, &$cotizacion){
+            $numero = $this->service->generarNumero();
+            $cliente = Cliente::findOrFail($request->cliente_id);
+
+            $cotizacion = Cotizacion::create([
+            'numero' => $numero,
+            'fecha' => now(),
+            'titulo' => $request->titulo ?? 'Cotizacion' . $numero,
+            'tipo_cambio' => 1, // luego lo conectamos a API
+            'validez_dias' => 10,
+
+            'cliente_id' => $cliente->id,
+            'plantilla_id' => $request->plantilla_id,
+            'user_id' => $request->user()->id,
+            'moneda_id' => $request->moneda_id,
+
+            'modo_distribucion' => $request->modo_distribucion ?? 'POR_ITEM',
+
+            'subtotal' => 0,
+            'igv' => 0,
+            'total' => 0,
+
+            // SNAPSHOT
+            'cliente_nombre' => $cliente->nombre,
+            'cliente_ruc' => $cliente->ruc,
+            'cliente_contacto' => $cliente->contacto,
+            'cliente_telefono' => $cliente->telefono,
+            'cliente_correo' => $cliente->correo,
+
+            // estado inicial (IMPORTANTE)
+            'estado_cotizacion_id' => 1, // ej: borrador o enviada
+            ]);
+
+            
+
+            //ITEMS
+            foreach ($request->items as $index => $item){
+                CotizacionItem::create([
+                'cotizacion_id' => $cotizacion->id,
+                'descripcion' => $item['descripcion'],
+                'cantidad' => $item['cantidad'],
+                'costo_base' => $item['costo_base'],
+                'margen' => $item['margen'],
+                'orden' => $index + 1,
+                'marca' => $item['marca'],
+                'codigo' =>$item['codigo'],
+                'unidad_medida' => $item['unidad_medida'],
+                'garantia_meses' => $item['garantia_meses'],
+                'disponibilidad_tipo' => $item['disponibilidad_tipo'],
+                'disponibilidad_dias' => $item['disponibilidad_dias'],
+                'proveedor' => $item['proveedor'],
+                'link_proveedor' => $item['link_proveedor'],
+                'producto_id' => $item['producto_id'] ?? null,
+                'tipo' => $item['tipo'] ?? 'personalizado',
+                ]);
+            }
+
+            //COSTOS
+            foreach ($request->costos as $costo){
+                CotizacionCostosAdicional::create([
+                'cotizacion_id' => $cotizacion->id,
+                'tipo' => $costo['tipo'],
+                'monto' => $costo['monto'],
+                ]);
+            }
+
+            //RECALCULAR SOLO UNA VEZ
+            $this->service->recalcular($cotizacion);
+        });
+
+        dd($cotizacion);
+
+        return response()->json([
+            'message'=> ' Cotización creada correctamente',
+            'cotización' => $cotizacion->load([
+                'items',
+                'costosAdicionales',
+                'cliente',
+                'plantilla',
+                'moneda'
+            ]),
+        ]);
+
+    }
 }
