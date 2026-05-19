@@ -30,6 +30,8 @@ class CotizacionItem extends Model
         'garantia_meses',
         'disponibilidad_tipo',
         'disponibilidad_dias',
+        'proveedor',
+        'link_proveedor',
     ];
 
     public function cotizacion(): BelongsTo

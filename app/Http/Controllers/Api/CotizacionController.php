@@ -167,13 +167,14 @@ class CotizacionController extends Controller
                 'marca' => $request->marca,
                 'codigo' => $request->codigo,
                 'unidad_medida' => $request->unidad_medida,
-                'disponibilidad' => $request->disponibilidad,
                 'garantia_meses' => $request->garantia_meses,
                 'disponibilidad_tipo' => $request->disponibilidad_tipo,
                 'disponibilidad_dias' => $request->disponibilidad_dias,
+                'proveedor' => $request->proveedor,
+                'link_proveedor' => $request->link_proveedor,
                 'orden' => $orden,
                 'producto_id' => $request->producto_id ?? null,
-                'tipo' => $request->producto_id ? 'producto' : 'externo',
+                'tipo' => $request->producto_id ? 'catalogo' : 'personalizado',
             ]);
 
             $cotizacion = Cotizacion::findOrFail($cotizacionId);
@@ -214,10 +215,12 @@ class CotizacionController extends Controller
                 'disponibilidad_tipo',
                 'disponibilidad_dias',
                 'producto_id',
+                'proveedor',
+                'link_proveedor',
             ]));
 
             // Asegurar que `tipo` refleje si el item proviene de un producto existente
-            $item->update(['tipo' => $item->producto_id ? 'producto' : 'externo']);
+            $item->update(['tipo' => $item->producto_id ? 'catalogo' : 'personalizado']);
 
             $this->service->recalcular($item->cotizacion);
         });
