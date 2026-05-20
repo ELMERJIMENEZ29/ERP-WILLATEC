@@ -30,6 +30,7 @@ class Cotizacion extends Model
         'plantilla_id',
         'estado_cotizacion_id',
         'user_id',
+        'plataforma_id',
 
         'cliente_nombre',
         'cliente_ruc',
@@ -66,7 +67,7 @@ class Cotizacion extends Model
 
     public function costosAdicionales(): HasMany
     {
-        return $this->hasMany(CotizacionCostosAdicional::class);
+        return $this->hasMany(CotizacionCostosAdicional::class, 'cotizacion_id');
     }
 
     public function user(): BelongsTo

@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CotizacionCostosAdicional extends Model
 {
+    protected $table = 'cotizacion_costos_adicionales';
+
     protected $fillable= [
         'tipo',
         'descripcion',

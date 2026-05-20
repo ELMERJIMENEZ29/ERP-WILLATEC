@@ -34,6 +34,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::patch('/users/{id}/desactivar', [UserController::class, 'desactivar'])->middleware('role:superadmin');
 
     Route::patch('/users/{id}/activar', [UserController::class, 'activar'])->middleware('role:superadmin');
+
+    //PLATAFORMAS Y PLANTILLAS
+    Route::get('/plantillas', [CotizacionController::class, 'indexPlantillas'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::get('/plataformas', [CotizacionController::class, 'indexPlataformas'])
+        ->middleware('role:superadmin|ventas');
 });
 
 Route::prefix('productos')->middleware('auth:sanctum')->group(function () {
@@ -59,9 +66,6 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
     Route::post('/completa', [CotizacionController::class, 'storeCompleta'])->middleware('role:superadmin|ventas');
 
     Route::get('/items', [CotizacionController::class, 'indexItems'])
-        ->middleware('role:superadmin|ventas');
-
-    Route::get('/plantillas', [CotizacionController::class, 'indexPlantillas'])
         ->middleware('role:superadmin|ventas');
 
     Route::get('/estados', [CotizacionController::class, 'indexEstadoCotizacion'])

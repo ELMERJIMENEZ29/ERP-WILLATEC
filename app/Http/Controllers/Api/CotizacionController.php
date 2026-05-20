@@ -8,6 +8,7 @@ use App\Models\Cotizacion;
 use App\Models\CotizacionItem;
 use App\Models\Cliente;
 use App\Models\Plantilla;
+use App\Models\Plataforma;
 use App\Models\Moneda;
 use App\Models\CotizacionCostosAdicional;
 use App\Models\EstadoCotizacion;
@@ -41,7 +42,7 @@ class CotizacionController extends Controller
         return response()->json($query->latest()->paginate(10));
     }
 
-    public function show(int $id)
+    public function show($id)
     {
         $cotizacion = Cotizacion::with([
             'cliente',
@@ -156,25 +157,42 @@ class CotizacionController extends Controller
 
             $ultimoOrden = CotizacionItem::where('cotizacion_id', $cotizacionId)->max('orden') ?? 0;
 
-            $orden = $ultimoOrden + 1;
+            // Calcular valores iniciales para no violar NOT NULL
+            $costoBase   = (float) $request->costo_base;
+            $margen      = (float) $request->margen;
+            $cantidad    = (int)   $request->cantidad;
+
+            $precioVenta = $margen < 100
+                ? round($costoBase / (1 - $margen / 100), 2)
+                : $costoBase;
+
+            $pvt = round($cantidad * $precioVenta, 2);
+            $ptc = round($cantidad * $costoBase, 2);
 
             CotizacionItem::create([
                 'cotizacion_id' => $cotizacionId,
                 'descripcion' => $request->descripcion,
-                'cantidad' => $request->cantidad,
-                'costo_base' => $request->costo_base,
-                'margen' => $request->margen,
+                'cantidad' => $cantidad,
+                'costo_base' => $costoBase,
+                'margen' => $margen,
                 'marca' => $request->marca,
                 'codigo' => $request->codigo,
-                'unidad_medida' => $request->unidad_medida,
+                'unidad_medida' => $request->unidad_medida ?? 'UND',
                 'garantia_meses' => $request->garantia_meses,
                 'disponibilidad_tipo' => $request->disponibilidad_tipo,
                 'disponibilidad_dias' => $request->disponibilidad_dias,
                 'proveedor' => $request->proveedor,
                 'link_proveedor' => $request->link_proveedor,
-                'orden' => $orden,
+                'orden' => $ultimoOrden + 1,
                 'producto_id' => $request->producto_id ?? null,
                 'tipo' => $request->producto_id ? 'catalogo' : 'personalizado',
+
+                // Valores calculados iniciales — recalcular() los refinará
+                'costo_unitario'      => $costoBase,
+                'precio_venta'        => $precioVenta,
+                'subtotal'            => $pvt,
+                'costo_total'         => $ptc,
+                'ganancia'            => round($pvt - $ptc, 2),
             ]);
 
             $cotizacion = Cotizacion::findOrFail($cotizacionId);
@@ -202,28 +220,35 @@ class CotizacionController extends Controller
 
         DB::transaction(function () use ($request, $item) {
 
-            $item->update($request->only([
-                'descripcion',
-                'cantidad',
-                'costo_base',
-                'margen',
-                'marca',
-                'codigo',
-                'unidad_medida',
-                'disponibilidad',
-                'garantia_meses',
-                'disponibilidad_tipo',
-                'disponibilidad_dias',
-                'producto_id',
-                'proveedor',
-                'link_proveedor',
-            ]));
+            $costoBase   = (float) ($request->costo_base   ?? $item->costo_base);
+            $margen      = (float) ($request->margen       ?? $item->margen);
+            $cantidad    = (int)   ($request->cantidad      ?? $item->cantidad);
 
-            // Asegurar que `tipo` refleje si el item proviene de un producto existente
-            $item->update(['tipo' => $item->producto_id ? 'catalogo' : 'personalizado']);
+            $precioVenta = $margen < 100
+                ? round($costoBase / (1 - $margen / 100), 2)
+                : $costoBase;
 
-            $this->service->recalcular($item->cotizacion);
-        });
+            $pvt = round($cantidad * $precioVenta, 2);
+            $ptc = round($cantidad * $costoBase, 2);
+
+
+            $item->update([
+            ...$request->only([
+                'descripcion', 'cantidad', 'costo_base', 'margen',
+                'marca', 'codigo', 'unidad_medida', 'garantia_meses',
+                'disponibilidad_tipo', 'disponibilidad_dias',
+                'proveedor', 'link_proveedor', 'producto_id',
+            ]),
+            'costo_unitario' => $costoBase,
+            'precio_venta'   => $precioVenta,
+            'subtotal'       => $pvt,
+            'costo_total'    => $ptc,
+            'ganancia'       => round($pvt - $ptc, 2),
+            'tipo'           => $item->producto_id ? 'producto' : ($request->tipo ?? $item->tipo),
+        ]);
+
+        $this->service->recalcular($item->cotizacion);
+    });
 
         return response()->json(['message' => 'Item actualizado']);
     }
@@ -362,7 +387,7 @@ class CotizacionController extends Controller
 
         // Vista previa en el navegador
         return $pdf->download(
-            "Cotizacion-{$cotizacion->numero}.pdf"
+            "COT.-{$cotizacion->numero}-{$cotizacion->cliente_nombre}-{$cotizacion->titulo}.pdf"
         );
     }
 
@@ -379,6 +404,20 @@ class CotizacionController extends Controller
         }
 
         return response()->json($query->get());
+    }
+
+    // =========================
+    // 📄 PLANTAFORMAS
+    // =========================
+
+    public function indexPlataformas(Request $request)
+    {
+            return Plataforma::all()->map(function ($plataforma) {
+                    return [
+                        'id' => $plataforma->id,
+                        'nombre' => ucfirst($plataforma->nombre)
+                    ];
+                });
     }
 
     // =========================
@@ -420,6 +459,7 @@ class CotizacionController extends Controller
         $request ->validate ([
             'cliente_id' => 'required|exists:clientes,id',
             'plantilla_id' => 'required|exists:plantillas,id',
+            'plataforma_id' => 'required|exists:plataformas,id',
             'titulo' => 'required|string',
             'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD',
             'moneda_id' => 'required|exists:monedas,id',
