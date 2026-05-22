@@ -13,7 +13,7 @@ class CotizacionService
         
         $cotizacion->load(['items', 'costosAdicionales', 'plantilla']);
 
-        $items = $cotizacion->items->where('activo', true);
+        $items = $cotizacion->items;
 
         if($items->isEmpty()){
             $cotizacion->update([
@@ -27,6 +27,7 @@ class CotizacionService
 }
 
         $modoDistribucion = $cotizacion->modo_distribucion ?? $modoDistribucion;
+
         // Sumar Costos Adicionales
         $totalCostosAdicionales = $cotizacion->costosAdicionales->sum('monto');
 
@@ -34,7 +35,12 @@ class CotizacionService
         $totalItems = $items->count();
         $totalCantidad = $items->sum('cantidad');
 
-        //Divisor segun modo de distribucion
+        // =====================================
+        // DEFINIR DIVISOR SEGUN MODO
+        // =====================================
+
+        // POR_ITEM = distribuir por líneas/items
+        // POR_CANTIDAD = distribuir por unidades totales
         if($modoDistribucion === 'POR_CANTIDAD'){
             $divisor = $totalCantidad > 0 ? $totalCantidad : 1; // Evitar división por cero
         } else {
@@ -54,10 +60,14 @@ class CotizacionService
                 $costoFinal = $costoBase + $costoExtraUnitario; // Si es por item, el costo extra es fijo por item
             }
 
-            $precioVenta = $costoFinal / (1 - ($item->margen / 100));
-            // $subtotal = $item -> cantidad * $precioVenta;
+            $margen = max(0, min($item->margen, 99.99));
+            $factorMargen = 1 - ($margen / 100);
 
-            // $costoTotal = $item->cantidad * $costoFinal;
+            if ($factorMargen <= 0) {
+                $factorMargen = 0.0001;
+            }
+
+            $precioVenta = $costoFinal / $factorMargen;
 
             /// ==========================
             // CALCULO GANANCIA POR ITEM
@@ -109,13 +119,14 @@ class CotizacionService
 
         // Recalcular totales de la cotización
         $cotizacion->refresh()->load('items');
+        $items = $cotizacion->items;
         $subtotal = round($items->sum('subtotal'),2);
         $gananciaTotal = round($items->sum('ganancia'),2);
 
         if($cotizacion->plantilla->incluye_igv){
             //LOS PRECIOS YA INCLUYEN IGV, POR LO TANTO NO SE CALCULA EL IGV SE DEJA EN 0
-            $igv = 0;
-            $total = $subtotal;
+            $total = round($subtotal,2);
+            $igv = round($total - ($total / 1.18),2);
         } else {
             // LOS PRECIOS NO INCLUYEN IGV, POR LO TANTO SE CALCULA EL IGV Y SE SUMA AL TOTAL
             $igv = round($subtotal * 0.18, 2); // IGV al 18%
@@ -125,12 +136,14 @@ class CotizacionService
         $totalGasto = round($items->sum('costo_total'),2);
 
         $cotizacion->update([
-            'subtotal' => $subtotal,
-            'igv' => $igv,
-            'total' => $total,
+            'subtotal' => round($subtotal,2),
+            'igv' => round($igv,2),
+            'total' => round($total,2),
             'ganancia' => round($gananciaTotal, 2),
             'total_gasto' => round($totalGasto, 2),
         ]);
+
+        $cotizacion->refresh()->load('items');
         // Llamar al estado desde recalcular
         $this->actualizarEstado($cotizacion);
     }

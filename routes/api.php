@@ -80,6 +80,9 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
 
     Route::put('/{id}', [CotizacionController::class, 'update'])
         ->middleware('role:superadmin|ventas');
+    
+    Route::put('/{id}/completa', [CotizacionController::class, 'updateCompleta'])
+        ->middleware('role:superadmin|ventas');
 
     Route::patch('/{id}/recalcular', [CotizacionController::class, 'recalcular'])
         ->middleware('role:superadmin|ventas');

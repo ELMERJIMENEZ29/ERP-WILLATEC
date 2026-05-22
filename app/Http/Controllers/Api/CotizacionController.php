@@ -488,10 +488,11 @@ class CotizacionController extends Controller
             'fecha' => now(),
             'titulo' => $request->titulo ?? 'Cotizacion' . $numero,
             'tipo_cambio' => 1, // luego lo conectamos a API
-            'validez_dias' => 10,
+            'validez_dias' => $request->validez_dias,
 
             'cliente_id' => $cliente->id,
             'plantilla_id' => $request->plantilla_id,
+            'plataforma_id' => $request->plataforma_id,
             'user_id' => $request->user()->id,
             'moneda_id' => $request->moneda_id,
 
@@ -508,38 +509,55 @@ class CotizacionController extends Controller
             'cliente_correo' => $cliente->correo,
 
             // estado inicial (IMPORTANTE)
-            'estado_cotizacion_id' => 1, // ej: borrador o enviada
+            'estado_cotizacion_id' => $request->estado_cotizacion_id, // ej: borrador o enviada
             ]);
 
             
 
             //ITEMS
             foreach ($request->items as $index => $item){
+                $costoBase   = (float) ($itemData['costo_base'] ?? 0);
+                $margen      = min((float) ($itemData['margen'] ?? 0), 99.99);
+                $cantidad    = (int) ($itemData['cantidad'] ?? 1);
+
+                $factorMargen = $margen < 100 ? 1 - ($margen / 100) : 0.0001;
+                $precioVenta  = round($costoBase / $factorMargen, 2);
+                $pvt          = round($cantidad * $precioVenta, 2);
+                $ptc          = round($cantidad * $costoBase, 2);
+
                 CotizacionItem::create([
-                'cotizacion_id' => $cotizacion->id,
-                'descripcion' => $item['descripcion'],
-                'cantidad' => $item['cantidad'],
-                'costo_base' => $item['costo_base'],
-                'margen' => $item['margen'],
-                'orden' => $index + 1,
-                'marca' => $item['marca'],
-                'codigo' =>$item['codigo'],
-                'unidad_medida' => $item['unidad_medida'],
-                'garantia_meses' => $item['garantia_meses'],
-                'disponibilidad_tipo' => $item['disponibilidad_tipo'],
-                'disponibilidad_dias' => $item['disponibilidad_dias'],
-                'proveedor' => $item['proveedor'],
-                'link_proveedor' => $item['link_proveedor'],
-                'producto_id' => $item['producto_id'] ?? null,
-                'tipo' => $item['tipo'] ?? 'personalizado',
-                ]);
+                    'cotizacion_id' => $cotizacion->id,
+                    'descripcion' => $item['descripcion'],
+                    'cantidad' => $item['cantidad'],
+                    'costo_base' => $item['costo_base'],
+                    'margen' => $item['margen'],
+                    'orden' => $index + 1,
+                    'marca' => $item['marca'] ?? null,
+                    'codigo' =>$item['codigo'],
+                    'unidad_medida' => $item['unidad_medida'],
+                    'garantia_meses' => $item['garantia_meses'],
+                    'disponibilidad_tipo' => $item['disponibilidad_tipo'],
+                    'disponibilidad_dias' => $item['disponibilidad_dias'],
+                    'proveedor' => $item['proveedor'],
+                    'link_proveedor' => $item['link_proveedor'],
+                    'producto_id' => $item['producto_id'] ?? null,
+                    'tipo' => $item['tipo'] ?? 'personalizado',
+
+                    // Valores calculados iniciales — recalcular() los refinará con costos adicionales
+                    'costo_unitario'      => $costoBase,
+                    'precio_venta'        => $precioVenta,
+                    'subtotal'            => $pvt,
+                    'costo_total'         => $ptc,
+                    'ganancia'            => round($pvt - $ptc, 2),
+                    ]);
             }
 
             //COSTOS
-            foreach ($request->costos as $costo){
+            foreach ($request->costos ?? [] as $costo){
                 CotizacionCostosAdicional::create([
                 'cotizacion_id' => $cotizacion->id,
                 'tipo' => $costo['tipo'],
+                'descripcion' => $costo['descripcion'] ?? null,
                 'monto' => $costo['monto'],
                 ]);
             }
@@ -548,11 +566,15 @@ class CotizacionController extends Controller
             $this->service->recalcular($cotizacion);
         });
 
-        dd($cotizacion);
+        if (!$cotizacion) {
+            return response()->json([
+                'message' => 'Error al crear cotización'
+            ], 500);
+        }
 
         return response()->json([
-            'message'=> ' Cotización creada correctamente',
-            'cotización' => $cotizacion->load([
+            'message'=> ' Cotizacion creada correctamente',
+            'cotizacion' => $cotizacion->load([
                 'items',
                 'costosAdicionales',
                 'cliente',
@@ -562,4 +584,120 @@ class CotizacionController extends Controller
         ]);
 
     }
+
+    public function updateCompleta(Request $request, Cotizacion $cotizacion)
+{
+    DB::transaction(function () use ($request, $cotizacion) {
+
+        $request ->validate ([
+            'cliente_id' => 'required|exists:clientes,id',
+            'plantilla_id' => 'required|exists:plantillas,id',
+            'plataforma_id' => 'required|exists:plataformas,id',
+            'titulo' => 'required|string',
+            'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD',
+            'moneda_id' => 'required|exists:monedas,id',
+
+            'items' => 'required|array|min:1',
+
+            'items.*.descripcion' => 'required|string',
+            'items.*.cantidad' => 'required|numeric|min:1',
+            'items.*.costo_base' => 'required|numeric|min:0',
+            'items.*.margen' => 'required|numeric|min:0',
+
+            'costos' => 'nullable|array',
+
+            'costos.*.tipo' => 'required|string',
+            'costos.*.monto' => 'required|numeric|min:0',
+        ]);
+
+        $cliente = Cliente::findOrFail($request->cliente_id);
+        // UPDATE HEADER
+        $cotizacion->update([
+            'cliente_id' => $cliente->id,
+            'cliente_nombre' => $cliente->nombre,
+            'cliente_ruc' => $cliente->ruc,
+            'cliente_telefono' => $cliente->telefono,
+            'cliente_correo' => $cliente->correo,
+            'plantilla_id' => $request->plantilla_id,
+            'plataforma_id' => $request->plataforma_id,
+            'moneda_id' => $request->moneda_id,
+            'modo_distribucion' => $request->modo_distribucion,
+            'titulo' => $request->titulo,
+            'validez_dias' => $request->validez_dias,
+            'subtotal' => 0,
+            'igv' => 0,
+            'total' => 0,
+            'estado_cotizacion_id' => $request->estado_cotizacion_id,
+        ]);
+
+        // ELIMINAR SNAPSHOT VIEJO
+        $cotizacion->items()->delete();
+        $cotizacion->costosAdicionales()->delete();
+
+        // RECREAR ITEMS
+        foreach ($request->items as $index => $item) {
+            $costoBase   = (float) ($itemData['costo_base'] ?? 0);
+            $margen      = min((float) ($itemData['margen'] ?? 0), 99.99);
+            $cantidad    = (int) ($itemData['cantidad'] ?? 1);
+
+            $factorMargen = $margen < 100 ? 1 - ($margen / 100) : 0.0001;
+            $precioVenta  = round($costoBase / $factorMargen, 2);
+            $pvt          = round($cantidad * $precioVenta, 2);
+            $ptc          = round($cantidad * $costoBase, 2);
+
+            CotizacionItem::create([
+                'cotizacion_id' => $cotizacion->id,
+                'descripcion' => $item['descripcion'],
+                'cantidad' => $item['cantidad'],
+                'costo_base' => $item['costo_base'],
+                'margen' => $item['margen'],
+                'orden' => $index + 1,
+                'marca' => $item['marca'] ?? null,
+                'codigo' =>$item['codigo'],
+                'unidad_medida' => $item['unidad_medida'],
+                'garantia_meses' => $item['garantia_meses'],
+                'disponibilidad_tipo' => $item['disponibilidad_tipo'],
+                'disponibilidad_dias' => $item['disponibilidad_dias'],
+                'proveedor' => $item['proveedor'],
+                'link_proveedor' => $item['link_proveedor'],
+                'producto_id' => $item['producto_id'] ?? null,
+                'tipo' => $item['tipo'] ?? 'personalizado',
+
+                // Valores calculados iniciales — recalcular() los refinará con costos adicionales
+                'costo_unitario'      => $costoBase,
+                'precio_venta'        => $precioVenta,
+                'subtotal'            => $pvt,
+                'costo_total'         => $ptc,
+                'ganancia'            => round($pvt - $ptc, 2),
+            ]);
+        }
+
+        // RECREAR COSTOS
+        foreach ($request->costos ?? [] as $costo) {
+
+            CotizacionCostosAdicional::create([
+                'cotizacion_id' => $cotizacion->id,
+                'tipo' => $costo['tipo'],
+                'descripcion' => $costo['descripcion'] ?? null,
+                'monto' => $costo['monto'],
+            ]);
+        }
+
+        // RECALCULAR
+        $this->service->recalcular($cotizacion);
+
+        $cotizacion->refresh();
+    });
+
+    return response()->json([
+        'message' => 'Cotización actualizada',
+        'cotizacion' => $cotizacion->load([
+            'items',
+            'costosAdicionales',
+            'cliente',
+            'plantilla',
+            'moneda'
+        ]),
+    ]);
+}
 }
