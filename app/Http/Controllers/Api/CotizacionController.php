@@ -151,6 +151,8 @@ class CotizacionController extends Controller
             'disponibilidad_tipo' => 'required|in:stock,importacion',
             'disponibilidad_dias' => 'required|integer|min:1|max:50',
             'producto_id' => 'nullable|exists:productos,id',
+            'proveedor' => 'nullable|string',
+            'link_proveedor'=> 'nullable|string',
         ]);
 
         DB::transaction(function () use ($request, $cotizacionId) {
@@ -248,9 +250,7 @@ class CotizacionController extends Controller
         ]);
 
         $this->service->recalcular($item->cotizacion);
-    });
-
-        return response()->json(['message' => 'Item actualizado']);
+    }); return response()->json(['message' => 'Item actualizado']);
     }
 
     public function deleteItem(int $id)
@@ -504,7 +504,6 @@ class CotizacionController extends Controller
             // SNAPSHOT
             'cliente_nombre' => $cliente->nombre,
             'cliente_ruc' => $cliente->ruc,
-            'cliente_contacto' => $cliente->contacto,
             'cliente_telefono' => $cliente->telefono,
             'cliente_correo' => $cliente->correo,
 
