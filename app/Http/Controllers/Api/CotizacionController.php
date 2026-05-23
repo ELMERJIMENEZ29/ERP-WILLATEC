@@ -611,6 +611,8 @@ class CotizacionController extends Controller
         ]);
 
         $cliente = Cliente::findOrFail($request->cliente_id);
+        $cotizacionId = $cotizacion->id;
+        
         // UPDATE HEADER
         $cotizacion->update([
             'cliente_id' => $cliente->id,
@@ -633,20 +635,22 @@ class CotizacionController extends Controller
         // ELIMINAR SNAPSHOT VIEJO
         $cotizacion->items()->delete();
         $cotizacion->costosAdicionales()->delete();
-
+        
+        
         // RECREAR ITEMS
         foreach ($request->items as $index => $item) {
-            $costoBase   = (float) ($itemData['costo_base'] ?? 0);
-            $margen      = min((float) ($itemData['margen'] ?? 0), 99.99);
-            $cantidad    = (int) ($itemData['cantidad'] ?? 1);
+            $costoBase   = (float) ($item['costo_base'] ?? 0);
+            $margen      = min((float) ($item['margen'] ?? 0), 99.99);
+            $cantidad    = (int) ($item['cantidad'] ?? 1);
 
             $factorMargen = $margen < 100 ? 1 - ($margen / 100) : 0.0001;
             $precioVenta  = round($costoBase / $factorMargen, 2);
             $pvt          = round($cantidad * $precioVenta, 2);
             $ptc          = round($cantidad * $costoBase, 2);
+            
 
             CotizacionItem::create([
-                'cotizacion_id' => $cotizacion->id,
+                'cotizacion_id' => $cotizacionId,
                 'descripcion' => $item['descripcion'],
                 'cantidad' => $item['cantidad'],
                 'costo_base' => $item['costo_base'],
