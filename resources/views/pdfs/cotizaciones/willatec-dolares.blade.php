@@ -1,4 +1,4 @@
-@extends('pdf.layouts.pdf-base')
+@extends('pdfs.layouts.pdf-base')
 
 @section('content')
 
@@ -6,808 +6,364 @@
 use Carbon\Carbon;
 $fechaEmision = Carbon::parse($cotizacion->fecha)->format('d/m/Y');
 $fechaValidez = Carbon::parse($cotizacion->fecha)
-->addDays($cotizacion->validez_dias ?? 10)
-->format('d/m/Y');
-$simbolo = $cotizacion->moneda->simbolo ?? 'S/';
+    ->addDays($cotizacion->validez_dias ?? 10)
+    ->format('d/m/Y');
+$simbolo = $cotizacion->moneda->simbolo ?? '$';
 @endphp
 
 <style>
-    /* ══════════════════════════════
-    VARIABLES DE COLOR
-    ══════════════════════════════ */
-    * {
-        box-sizing: border-box;
-    }
-
-    body {
-        font-family: DejaVu Sans, sans-serif;
-        color: #2C2C4A;
-        font-size: 12px;
-        margin: 0;
-        padding: 0;
-        background: #fff;
-    }
-
-    tr {
-        page-break-inside: avoid;
-    }
-
-    /* ── WRAPPER CON FRANJA LATERAL ── */
-    /*
-     * DomPDF no soporta ::before, así que la franja
-     * la hacemos con una celda real de tabla.
-     */
-    .page-wrapper {
-        width: 100%;
-        border-collapse: collapse;
-    }
-
-    .franja-lateral {
-        width: 6px;
-        background: #1565C0;
-        /* DomPDF acepta background en td */
-    }
-
-    .page-content {
-        padding: 0;
-    }
-
-    /* ══════════════════════════════
-    HEADER
-    ══════════════════════════════ */
-    .header-table {
-        width: 100%;
-        border-collapse: collapse;
-        border-bottom: 2px solid #E3F2FD;
-        padding: 0;
-    }
-
-    .header-logo-cell {
-        width: 55%;
-        vertical-align: top;
-        padding: 28px 16px 22px 20px;
-    }
-
-    .header-right-cell {
-        width: 45%;
-        vertical-align: top;
-        text-align: right;
-        padding: 28px 20px 22px 16px;
-    }
-
-    .logo-shape {
-        display: inline-block;
-        width: 38px;
-        height: 38px;
-        background: #1565C0;
-        border-radius: 8px;
-        color: white;
-        font-size: 16px;
-        font-weight: 700;
-        text-align: center;
-        line-height: 38px;
-        vertical-align: middle;
-        margin-right: 8px;
-    }
-
-    .company-name {
-        font-size: 20px;
-        font-weight: 700;
-        color: #1A1A2E;
-        letter-spacing: 1px;
-        text-transform: uppercase;
-        vertical-align: middle;
-    }
-
-    .company-tagline {
-        font-size: 10px;
-        color: #6B7A99;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        margin-top: 4px;
-    }
-
-    .doc-title {
-        font-size: 36px;
-        font-weight: 700;
-        color: #1565C0;
-        letter-spacing: 3px;
-        line-height: 1;
-        margin-bottom: 10px;
-    }
-
-    .meta-table {
-        width: auto;
-        margin-left: auto;
-        border-collapse: collapse;
-        font-size: 11px;
-    }
-
-    .meta-table td {
-        padding: 1px 4px;
-        color: #6B7A99;
-    }
-
-    .meta-table td.meta-val {
-        text-align: right;
-        color: #2C2C4A;
-        font-weight: 600;
-    }
-
-    .validez-badge {
-        display: inline-block;
-        background: #E3F2FD;
-        color: #1565C0;
-        font-size: 10px;
-        font-weight: 600;
-        padding: 3px 10px;
-        border-radius: 12px;
-        margin-top: 7px;
-    }
-
-    /* ══════════════════════════════
-    INFO CLIENTE / EMISOR
-    ══════════════════════════════ */
-    .info-table {
-        width: 100%;
-        border-collapse: collapse;
-        border-bottom: 1px solid #E0E6F0;
-    }
-
-    .info-cell {
-        width: 50%;
-        vertical-align: top;
-        padding: 18px 20px;
-    }
-
-    .info-cell-left {
-        border-right: 1px solid #E0E6F0;
-        padding-left: 20px;
-    }
-
-    .info-cell-right {
-        padding-left: 24px;
-    }
-
-    .info-label-text {
-        font-size: 9px;
-        font-weight: 700;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        color: #1565C0;
-        border-bottom: 1px solid #E3F2FD;
-        padding-bottom: 5px;
-        margin-bottom: 8px;
-    }
-
-    .cliente-nombre {
-        font-size: 15px;
-        font-weight: 700;
-        color: #1A1A2E;
-        margin-bottom: 5px;
-    }
-
-    .info-detail {
-        font-size: 11px;
-        color: #6B7A99;
-        line-height: 1.8;
-    }
-
-    .info-detail-val {
-        color: #2C2C4A;
-        font-weight: 500;
-    }
-
-    /* ══════════════════════════════
-    TABLA DE PRODUCTOS
-    ══════════════════════════════ */
-    .tabla-section {
-        padding: 18px 20px;
-    }
-
-    .items-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 11.5px;
-        page-break-inside: auto;
-    }
-
-    thead {
-        display: table-header-group;
-    }
-
-    .items-table thead tr {
-        background: #1565C0;
-        color: white;
-    }
-
-    .items-table thead th {
-        padding: 9px 12px;
-        font-weight: 600;
-        font-size: 10px;
-        letter-spacing: 0.8px;
-        text-transform: uppercase;
-        text-align: left;
-    }
-
-    .items-table thead th.th-center {
-        text-align: center;
-    }
-
-    .items-table thead th.th-right {
-        text-align: right;
-    }
-
-    .items-table tbody tr {
-        border-bottom: 1px solid #E0E6F0;
-    }
-
-    /* DomPDF soporta nth-child */
-    .items-table tbody tr.row-even {
-        background: #F5F7FA;
-    }
-
-    .items-table tbody td {
-        padding: 9px 12px;
-        vertical-align: middle;
-        color: #2C2C4A;
-    }
-
-    .td-num {
-        text-align: center;
-        color: #6B7A99;
-        font-size: 11px;
-    }
-
-    .td-right {
-        text-align: right;
-    }
-
-    .td-total {
-        text-align: right;
-        font-weight: 700;
-        color: #1A1A2E;
-    }
-
-    .td-strong {
-        font-weight: 600;
-        font-size: 12px;
-        color: #1A1A2E;
-    }
-
-    .td-sub {
-        font-size: 10px;
-        color: #6B7A99;
-    }
-
-    /* Imagen producto */
-    .prod-img {
-        width: 50px;
-        height: 50px;
-        object-fit: contain;
-        display: block;
-        margin: 0 auto;
-    }
-
-    /* ══════════════════════════════
-    BOTTOM: CONDICIONES + TOTALES
-    ══════════════════════════════ */
-    .bottom-table {
-        width: 100%;
-        border-collapse: collapse;
-        padding: 0 20px;
-        page-break-inside: avoid;
-    }
-
-    .bottom-left {
-        vertical-align: top;
-        padding: 16px 20px;
-    }
-
-    .bottom-right {
-        width: 280px;
-        vertical-align: top;
-        padding: 16px 20px 16px 0;
-    }
-
-    .condiciones-title {
-        font-size: 9px;
-        font-weight: 700;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        color: #1565C0;
-        border-bottom: 1px solid #E3F2FD;
-        padding-bottom: 5px;
-        margin-bottom: 8px;
-    }
-
-    .condicion-item {
-        font-size: 11px;
-        color: #6B7A99;
-        line-height: 1.85;
-        margin-bottom: 2px;
-    }
-
-    .condicion-item::before {
-        content: '> ';
-        color: #42A5F5;
-        font-weight: 700;
-    }
-
-    /* DomPDF soporta ::before en algunos contextos,
-       pero para mayor seguridad usamos prefijo inline */
-    .cond-prefix {
-        color: #42A5F5;
-        font-weight: 700;
-        margin-right: 4px;
-    }
-
-    .notas-box {
-        margin-top: 12px;
-        background: #FFF8E1;
-        border-left: 3px solid #F9A825;
-        padding: 8px 11px;
-    }
-
-    .notas-title {
-        font-size: 9px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 1.5px;
-        color: #F57F17;
-        margin-bottom: 3px;
-    }
-
-    .notas-text {
-        font-size: 10.5px;
-        color: #795548;
-        line-height: 1.6;
-    }
-
-    /* Totales */
-    .totales-box {
-        width: 100%;
-        border-collapse: collapse;
-        border: 1px solid #E0E6F0;
-    }
-
-    .totales-box td {
-        padding: 8px 14px;
-        font-size: 12px;
-        border-bottom: 1px solid #E0E6F0;
-        color: #6B7A99;
-    }
-
-    .totales-box td.tot-label {
-        text-align: left;
-    }
-
-    .totales-box td.tot-val {
-        text-align: right;
-        font-weight: 600;
-        color: #2C2C4A;
-    }
-
-    .totales-box td.tot-desc {
-        color: #388E3C;
-        font-weight: 600;
-        text-align: right;
-    }
-
-    .total-final-row td {
-        background: #1565C0;
-        color: white;
-        font-weight: 700;
-        padding: 12px 14px;
-        border-bottom: none;
-    }
-
-    .total-final-row td.tf-label {
-        font-size: 14px;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        text-align: left;
-        color: white;
-    }
-
-    .total-final-row td.tf-amount {
-        font-size: 20px;
-        text-align: right;
-        color: white;
-    }
-
-    .moneda-row td {
-        background: #1565C0;
-        color: rgba(255, 255, 255, 0.7);
-        font-size: 9.5px;
-        text-align: right;
-        padding: 3px 14px 7px;
-        border-bottom: none;
-    }
-
-    /* ══════════════════════════════
-    MÉTODO DE PAGO
-    ══════════════════════════════ */
-    .pago-section {
-        padding: 0 20px 18px;
-        page-break-inside: avoid;
-    }
-
-    .pago-title {
-        font-size: 9px;
-        font-weight: 700;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        color: #1565C0;
-        border-bottom: 1px solid #E3F2FD;
-        padding-bottom: 5px;
-        margin-bottom: 9px;
-    }
-
-    .pago-table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-
-    .pago-table td {
-        padding: 0 8px 0 0;
-        width: 33.33%;
-        vertical-align: top;
-    }
-
-    .pago-item {
-        background: #F5F7FA;
-        border: 1px solid #E0E6F0;
-        border-radius: 5px;
-        padding: 8px 11px;
-    }
-
-    .pago-key {
-        font-size: 9px;
-        font-weight: 700;
-        letter-spacing: 0.8px;
-        text-transform: uppercase;
-        color: #6B7A99;
-        margin-bottom: 2px;
-    }
-
-    .pago-val {
-        font-size: 12px;
-        font-weight: 600;
-        color: #1A1A2E;
-    }
-
-    /* ══════════════════════════════
-    FIRMAS
-    ══════════════════════════════ */
-    .firma-table {
-        width: 100%;
-        border-collapse: collapse;
-        padding: 0 20px 22px;
-        page-break-inside: avoid;
-    }
-
-    .firma-cell {
-        width: 50%;
-        text-align: center;
-        vertical-align: bottom;
-        padding: 0 24px 22px;
-    }
-
-    .firma-espacio {
-        height: 44px;
-    }
-
-    .firma-linea {
-        border-top: 1.5px solid #1A1A2E;
-        margin-bottom: 5px;
-    }
-
-    .firma-nombre {
-        font-size: 12px;
-        font-weight: 600;
-        color: #1A1A2E;
-    }
-
-    .firma-cargo {
-        font-size: 10.5px;
-        color: #6B7A99;
-    }
-
-    .firma-fecha {
-        font-size: 10px;
-        color: #aaa;
-        margin-top: 3px;
-    }
-
-    /* ══════════════════════════════
-    FOOTER
-    ══════════════════════════════ */
-    .footer-bar {
-        background: #1565C0;
-        width: 100%;
-        border-collapse: collapse;
-    }
-
-    .footer-bar td {
-        padding: 11px 20px;
-        font-size: 11px;
-        color: rgba(255, 255, 255, 0.85);
-        vertical-align: middle;
-    }
-
-    .footer-icon-circle {
-        display: inline-block;
-        width: 15px;
-        height: 15px;
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 50%;
-        text-align: center;
-        line-height: 15px;
-        font-size: 8px;
-        color: white;
-        margin-right: 5px;
-        vertical-align: middle;
-    }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: DejaVu Sans, sans-serif;
+    color: #2C2C4A;
+    font-size: 11px;
+    background: #fff;
+}
+
+table { border-collapse: collapse; }
+tr    { page-break-inside: avoid; }
+thead { display: table-header-group; }
+
+/* ── FRANJA + WRAPPER ── */
+.wrap  { width: 100%; border-collapse: collapse; }
+.strip { width: 6px; background: #1565C0; }
+.body  { padding: 0; vertical-align: top; }
+
+/* ── HEADER ── */
+.hd        { width: 100%; border-bottom: 2px solid #E3F2FD; }
+.hd-logo   { width: 55%; vertical-align: top; padding: 24px 16px 18px 18px; }
+.hd-right  { width: 45%; vertical-align: top; text-align: right; padding: 24px 18px 18px 16px; }
+
+.logo-sq {
+    display: inline-block;
+    width: 34px; height: 34px;
+    background: #1565C0;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    text-align: center;
+    line-height: 34px;
+    vertical-align: middle;
+    margin-right: 7px;
+}
+.co-name  { font-size: 18px; font-weight: 700; color: #1A1A2E; letter-spacing: 1px; text-transform: uppercase; vertical-align: middle; }
+.co-tag   { font-size: 9px; color: #6B7A99; letter-spacing: 2px; text-transform: uppercase; margin-top: 3px; }
+.doc-title{ font-size: 32px; font-weight: 700; color: #1565C0; letter-spacing: 3px; line-height: 1; margin-bottom: 9px; }
+
+.meta     { width: auto; margin-left: auto; border-collapse: collapse; font-size: 10.5px; }
+.meta td  { padding: 1px 4px; color: #6B7A99; }
+.meta .v  { text-align: right; color: #2C2C4A; font-weight: 600; }
+
+.badge {
+    display: inline-block;
+    background: #E3F2FD;
+    color: #1565C0;
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 10px;
+    margin-top: 6px;
+}
+
+/* ── INFO CLIENTE/EMISOR ── */
+.info      { width: 100%; border-bottom: 1px solid #E0E6F0; }
+.info-l    { width: 50%; vertical-align: top; padding: 15px 16px 15px 18px; border-right: 1px solid #E0E6F0; }
+.info-r    { width: 50%; vertical-align: top; padding: 15px 18px 15px 16px; }
+.info-lbl  { font-size: 8.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #1565C0; border-bottom: 1px solid #E3F2FD; padding-bottom: 4px; margin-bottom: 7px; }
+.cli-name  { font-size: 14px; font-weight: 700; color: #1A1A2E; margin-bottom: 4px; }
+.detail    { font-size: 10.5px; color: #6B7A99; line-height: 1.75; }
+.detail b  { color: #2C2C4A; font-weight: 600; }
+
+/* ── TABLA ITEMS ── */
+.t-sec     { padding: 14px 18px; }
+.t-items   { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+.t-items thead tr { background: #1565C0; color: #fff; }
+.t-items thead th { padding: 8px 10px; font-weight: 600; font-size: 9px; letter-spacing: 0.7px; text-transform: uppercase; text-align: left; }
+.t-items thead th.tc { text-align: center; }
+.t-items thead th.tr { text-align: right; }
+.t-items tbody tr { border-bottom: 1px solid #E0E6F0; }
+.t-items tbody tr.even { background: #F5F7FA; }
+.t-items tbody td { padding: 8px 10px; vertical-align: middle; color: #2C2C4A; }
+.t-items tbody td.tc { text-align: center; color: #6B7A99; font-size: 10px; }
+.t-items tbody td.tr { text-align: right; }
+.t-items tbody td.tf { text-align: right; font-weight: 700; color: #1A1A2E; }
+.prod-name { font-weight: 600; font-size: 11px; color: #1A1A2E; }
+.prod-sub  { font-size: 9.5px; color: #6B7A99; }
+.prod-img  { width: 44px; height: 44px; display: block; margin: 0 auto; }
+
+.disp-stock {
+    background: #E8F5E9; color: #2E7D32;
+    padding: 5px 6px; border-radius: 3px;
+    font-size: 9px; font-weight: 600; line-height: 1.45;
+    text-align: center;
+}
+.disp-imp {
+    background: #FFF3CD; color: #856404;
+    padding: 5px 6px; border-radius: 3px;
+    font-size: 9px; font-weight: 600; line-height: 1.45;
+    text-align: center;
+}
+
+/* ── CONDICIONES + TOTALES ── */
+.bt        { width: 100%; border-collapse: collapse; }
+.bt-left   { vertical-align: top; padding: 14px 18px; }
+.bt-right  { width: 250px; vertical-align: top; padding: 14px 18px 14px 0; }
+
+.cond-title{ font-size: 8.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #1565C0; border-bottom: 1px solid #E3F2FD; padding-bottom: 4px; margin-bottom: 7px; }
+.cond-item { font-size: 10px; color: #6B7A99; line-height: 1.8; margin-bottom: 1px; }
+.cond-pfx  { color: #42A5F5; font-weight: 700; margin-right: 3px; }
+
+.nota-box  { margin-top: 10px; background: #FFF8E1; border-left: 3px solid #F9A825; padding: 7px 10px; }
+.nota-ttl  { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #F57F17; margin-bottom: 3px; }
+.nota-txt  { font-size: 9.5px; color: #795548; line-height: 1.55; }
+
+.tot-box   { width: 100%; border-collapse: collapse; border: 1px solid #E0E6F0; }
+.tot-box td{ padding: 7px 12px; font-size: 11px; border-bottom: 1px solid #E0E6F0; color: #6B7A99; }
+.tot-lbl   { text-align: left; }
+.tot-val   { text-align: right; font-weight: 600; color: #2C2C4A; }
+.tot-fin td{ background: #1565C0; color: #fff; font-weight: 700; padding: 11px 12px; border-bottom: none; }
+.tot-fin .lbl { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; text-align: left; color: #fff; }
+.tot-fin .amt { font-size: 18px; text-align: right; color: #fff; }
+.tot-mon td{ background: #1565C0; font-size: 9px; text-align: right; padding: 3px 12px 6px; color: rgba(255,255,255,0.7); border-bottom: none; }
+
+/* ── PAGO ── */
+.pago-sec  { padding: 0 18px 16px; page-break-inside: avoid; }
+.pago-ttl  { font-size: 8.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #1565C0; border-bottom: 1px solid #E3F2FD; padding-bottom: 4px; margin-bottom: 8px; }
+.pago-tbl  { width: 100%; border-collapse: collapse; }
+.pago-tbl td { padding: 0 8px 0 0; vertical-align: top; }
+.pago-card { background: #F5F7FA; border: 1px solid #E0E6F0; border-radius: 4px; padding: 7px 10px; }
+.pago-key  { font-size: 8.5px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: #6B7A99; margin-bottom: 2px; }
+.pago-val  { font-size: 11.5px; font-weight: 600; color: #1A1A2E; }
+
+/* ── FIRMA ── */
+.firma-tbl { width: 100%; border-collapse: collapse; padding: 0 18px 20px; page-break-inside: avoid; }
+.firma-cel { width: 50%; text-align: center; vertical-align: bottom; padding: 0 22px 20px; }
+.firma-sp  { height: 40px; }
+.firma-ln  { border-top: 1.5px solid #1A1A2E; margin-bottom: 4px; }
+.firma-nm  { font-size: 11px; font-weight: 600; color: #1A1A2E; }
+.firma-cg  { font-size: 10px; color: #6B7A99; }
+.firma-fh  { font-size: 9.5px; color: #aaa; margin-top: 2px; }
+
+/* ── FOOTER ── */
+.ft        { width: 100%; border-collapse: collapse; background: #1565C0; }
+.ft td     { padding: 10px 16px; font-size: 10.5px; color: rgba(255,255,255,0.85); vertical-align: middle; }
 </style>
 
-{{-- WRAPPER PRINCIPAL (tabla para la franja lateral) --}}
-<table class="page-wrapper" cellpadding="0" cellspacing="0">
-    <tr>
-        {{-- FRANJA LATERAL AZUL (reemplaza el ::before) --}}
-        <td class="franja-lateral" style="width:6px; background:#1565C0;">&nbsp;</td>
+{{-- ═══════════════════════════════════
+     WRAPPER CON FRANJA LATERAL
+═══════════════════════════════════ --}}
+<table class="wrap" cellpadding="0" cellspacing="0">
+<tr>
+    <td class="strip">&nbsp;</td>
+    <td class="body">
 
-        {{-- CONTENIDO PRINCIPAL --}}
-        <td class="page-content">
-
-            {{-- ══ HEADER ══ --}}
-            <table class="header-table" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td class="header-logo-cell">
-                        <span class="logo-shape">W</span>
-                        <span class="company-name">WILLATEC S.A.C</span>
-                        <div class="company-tagline">Soluciones digitales</div>
-                    </td>
-                    <td class="header-right-cell">
-                        <div class="doc-title">COTIZACIÓN</div>
-                        <table class="meta-table" cellpadding="0" cellspacing="0">
-                            <tr>
-                                <td>N° Cotización:</td>
-                                <td class="meta-val">{{ $cotizacion->numero }}</td>
-                            </tr>
-                            <tr>
-                                <td>Fecha de emisión:</td>
-                                <td class="meta-val">{{ $fechaEmision }}</td>
-                            </tr>
-                            <tr>
-                                <td>Válido hasta:</td>
-                                <td class="meta-val">{{ $fechaValidez }}</td>
-                            </tr>
-                            <tr>
-                                <td>Vendedor:</td>
-                                <td class="meta-val">{{ $cotizacion->user->nombres ?? 'N/A' }} {{ $cotizacion->user->apellidos ?? 'N/A' }}</td>
-                            </tr>
-                        </table>
-                        <div style="text-align:right; margin-top:7px;">
-                            <span class="validez-badge">Valido por {{ $cotizacion->validez_dias }} dias calendarios</span>
-                        </div>
-                    </td>
-                </tr>
-            </table>
-
-            {{-- ══ INFO CLIENTE / EMISOR ══ --}}
-            <table class="info-table" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td class="info-cell info-cell-left">
-                        <div class="info-label-text">Datos del cliente</div>
-                        <div class="cliente-nombre">{{ $cotizacion->cliente->nombre ?? 'Cliente Ocasional' }}</div>
-                        <div class="info-detail">
-                            Telefono: <span class="info-detail-val">{{ $cotizacion->cliente->telefono ?? 'N/A' }}</span><br>
-                            Correo: <span class="info-detail-val">{{ $cotizacion->cliente->correo ?? 'N/A' }}</span><br>
-                            RUC/DNI: <span class="info-detail-val">{{ $cotizacion->cliente->ruc ?? 'N/A' }}</span>
-                        </div>
-                    </td>
-                    <td class="info-cell info-cell-right">
-                        <div class="info-label-text">Datos del emisor</div>
-                        <div class="cliente-nombre">WILLATEC S.A.C</div>
-                        <div class="info-detail">
-                            Direccion: <span class="info-detail-val">Jr. Jorge Chavez N° 1747 - Of.1002 - Breña - Lima</span><br>
-                            RUC: <span class="info-detail-val">20602503331</span><br>
-                            Telefono: <span class="info-detail-val">(01) 757-1253</span><br>
-                            WhatsApp: <span class="info-detail-val">{{ $cotizacion->user->profile->telefono ?? '934-577-815' }}</span><br>
-                            Correo: <span class="info-detail-val">ventas@willatec.com</span><br>
-                            Web: <span class="info-detail-val">www.willatec.com</span>
-                        </div>
-                    </td>
-                </tr>
-            </table>
-
-            {{-- ══ TABLA DE PRODUCTOS ══ --}}
-            <div class="tabla-section">
-                <table class="items-table" cellpadding="0" cellspacing="0">
-                    <thead>
-                        <tr>
-                            <th class="th-center" style="width:36px">Item</th>
-                            <th>Producto / Servicio</th>
-                            <th class="th-center" style="width:70px">Imagen</th>
-                            <th class="th-right" style="width:60px">Cant.</th>
-                            <th class="th-right" style="width:90px">P. Unit.</th>
-                            <th class="th-right" style="width:90px">Subtotal</th>
-                            <th class="th-right" style="width:90px">Disponibilidad</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach($cotizacion->items as $item)
-                        <tr class="{{ $loop->even ? 'row-even' : '' }}">
-                            <td class="td-num">{{ $loop->iteration }}</td>
-                            <td>
-                                <span class="td-strong">{{ $item->descripcion }}</span><br>
-                                <span class="td-sub">Marca: {{ $item->marca }}</span><br>
-                                <span class="td-sub">Garantia: {{ $item->garantia_meses }} meses</span>
-                            </td>
-                            <td class="td-right" style="text-align:center">
-                                @if($item->imagen)
-                                <img
-                                    src="{{ public_path('storage/' . $item->imagen) }}"
-                                    class="prod-img"
-                                    alt="{{ $item->descripcion }}">
-                                @else
-                                <span style="font-size:9px;color:#aaa">Sin imagen</span>
-                                @endif
-                            </td>
-                            <td class="td-right">{{ $item->cantidad }}</td>
-                            <td class="td-right">{{ $simbolo }} {{ number_format($item->precio_venta, 2) }}</td>
-                            <td class="td-total">{{ $simbolo }} {{ number_format($item->subtotal, 2) }}</td>
-                            <td style="text-align:center;">
-
-                                @if($item->disponibilidad_tipo == 'importacion')
-
-                                <div style="
-                                    background:#FFF3CD;
-                                    color:#856404;
-                                    padding:6px;
-                                    border-radius:4px;
-                                    font-size:10px;
-                                    font-weight:600;
-                                    line-height:1.4;
-                                ">
-                                    IMPORTACIÓN<br>
-                                    Entrega en {{ $item->disponibilidad_dias }} días calendarios.<br>
-                                    Puesta la Orden de Compra.
-                                </div>
-
-                                @else
-
-                                <div style="
-                                    background:#E8F5E9;
-                                    color:#2E7D32;
-                                    padding:6px;
-                                    border-radius:4px;
-                                    font-size:10px;
-                                    font-weight:600;
-                                    line-height:1.4;
-                                ">
-                                    Stock disponible<br>
-                                    Entrega en {{ $item->disponibilidad_dias }} días calendarios.<br>
-                                    Puesta la Orden de Compra.
-                                </div>
-
-                                @endif
-
-                            </td>
-                        </tr>
-                        @endforeach
-                    </tbody>
+        {{-- HEADER --}}
+        <table class="hd" cellpadding="0" cellspacing="0">
+        <tr>
+            <td class="hd-logo">
+                <span class="logo-sq">W</span>
+                <span class="co-name">WILLATEC S.A.C</span>
+                <div class="co-tag">Soluciones digitales</div>
+            </td>
+            <td class="hd-right">
+                <div class="doc-title">COTIZACIÓN</div>
+                <table class="meta" cellpadding="0" cellspacing="0">
+                    <tr><td>N° Cotización:</td><td class="v">{{ $cotizacion->numero }}</td></tr>
+                    <tr><td>Fecha emisión:</td><td class="v">{{ $fechaEmision }}</td></tr>
+                    <tr><td>Válido hasta:</td><td class="v">{{ $fechaValidez }}</td></tr>
+                    <tr><td>Vendedor:</td><td class="v">{{ $cotizacion->user->nombres ?? '' }} {{ $cotizacion->user->apellidos ?? '' }}</td></tr>
                 </table>
-            </div>
+                <div style="text-align:right;margin-top:6px">
+                    <span class="badge">Válido {{ $cotizacion->validez_dias }} días calendarios</span>
+                </div>
+            </td>
+        </tr>
+        </table>
 
-            {{-- ══ CONDICIONES + TOTALES ══ --}}
-            <table class="bottom-table" cellpadding="0" cellspacing="0">
+        {{-- INFO CLIENTE / EMISOR --}}
+        <table class="info" cellpadding="0" cellspacing="0">
+        <tr>
+            <td class="info-l">
+                <div class="info-lbl">Datos del cliente</div>
+                <div class="cli-name">{{ $cotizacion->cliente_nombre ?? 'Cliente' }}</div>
+                <div class="detail">
+                    Tel: <b>{{ $cotizacion->cliente_telefono ?? 'N/A' }}</b><br>
+                    Correo: <b>{{ $cotizacion->cliente_correo ?? 'N/A' }}</b><br>
+                    RUC/DNI: <b>{{ $cotizacion->cliente_ruc ?? 'N/A' }}</b>
+                </div>
+            </td>
+            <td class="info-r">
+                <div class="info-lbl">Datos del emisor</div>
+                <div class="cli-name">WILLATEC S.A.C</div>
+                <div class="detail">
+                    Dir: <b>Jr. Jorge Chávez N° 1747 - Of.1002 - Breña - Lima</b><br>
+                    RUC: <b>20602503331</b> &nbsp; Tel: <b>(01) 757-1253</b><br>
+                    WA: <b>{{ $cotizacion->user->profile->telefono ?? '934-577-815' }}</b><br>
+                    Correo: <b>ventas@willatec.com</b> &nbsp; Web: <b>www.willatec.com</b>
+                </div>
+            </td>
+        </tr>
+        </table>
+
+        {{-- TABLA DE PRODUCTOS --}}
+        <div class="t-sec">
+        <table class="t-items" cellpadding="0" cellspacing="0">
+            <thead>
                 <tr>
-                    <td class="bottom-left">
-                        <div class="condiciones-title">Condiciones comerciales</div>
-                        <div class="condicion-item"><span class="cond-prefix">&rsaquo;</span>Forma de Pago: Credito a 30 dias calendarios</div>
-                        <div class="condicion-item"><span class="cond-prefix">&rsaquo;</span>Incluye entrega en oficinas del cliente, Lima Metropolitana. Para otras ubicaciones, consultar costo adicional.</div>
-                        <div class="condicion-item"><span class="cond-prefix">&rsaquo;</span>Precios en Dolares Americanos (USD) y NO incluyen IGV.</div>
-                        <div class="condicion-item"><span class="cond-prefix">&rsaquo;</span>Precios sujetos a cambio sin previo aviso.</div>
-                        <div class="condicion-item"><span class="cond-prefix">&rsaquo;</span>WILLATEC S.A.C, incorporado al Regimen de Buenos Contribuyentes - Res. N° 0230050266292 (Sunat).</div>
-
-                        <div class="notas-box">
-                            <div class="notas-title">Notas</div>
-                            <div class="notas-text">
-                                El precio del producto sujeto al stock y nuevo ingreso de importacion de la marca.<br>
-                                Esto aplica despues de los 05 dias calendarios de validez de la cotizacion.<br>
-                                Para productos importados, el tiempo de entrega puede variar entre 20 - 25 dias calendario.
-                            </div>
-                        </div>
-                    </td>
-
-                    <td class="bottom-right">
-                        <table class="totales-box" cellpadding="0" cellspacing="0">
-                            <tr>
-                                <td class="tot-label">Subtotal</td>
-                                <td class="tot-val">{{ $simbolo }} {{ number_format($cotizacion->subtotal, 2) }}</td>
-                            </tr>
-                            <tr>
-                                <td class="tot-label">IGV (18%)</td>
-                                <td class="tot-val">{{ $simbolo }} {{ number_format($cotizacion->igv, 2) }}</td>
-                            </tr>
-                            <tr class="total-final-row">
-                                <td class="tf-label">Total</td>
-                                <td class="tf-amount">{{ $simbolo }} {{ number_format($cotizacion->total, 2) }}</td>
-                            </tr>
-                            <tr class="moneda-row">
-                                <td colspan="2">Moneda: {{$cotizacion->moneda->codigo}} {{$simbolo}}</td>
-                            </tr>
-                        </table>
-                    </td>
+                    <th class="tc" style="width:30px">#</th>
+                    <th style="width:auto">Producto / Servicio</th>
+                    <th class="tc" style="width:58px">Imagen</th>
+                    <th class="tr" style="width:45px">Cant.</th>
+                    <th class="tr" style="width:80px">P. Unit.</th>
+                    <th class="tr" style="width:80px">Subtotal</th>
+                    <th class="tc" style="width:110px">Disponibilidad</th>
                 </tr>
-            </table>
+            </thead>
+            <tbody>
+            @foreach($cotizacion->items as $item)
+            <tr class="{{ $loop->even ? 'even' : '' }}">
+                <td class="tc">{{ $loop->iteration }}</td>
+                <td>
+                    <span class="prod-name">{{ $item->descripcion }}</span><br>
+                    @if($item->marca)
+                    <span class="prod-sub">Marca: {{ $item->marca }}</span><br>
+                    @endif
+                    <span class="prod-sub">Garantía: {{ $item->garantia_meses }} meses</span>
+                </td>
+                <td class="tc">
+                    @if($item->imagen)
+                        <img src="{{ public_path('storage/' . $item->imagen) }}" class="prod-img" alt="{{ $item->descripcion }}">
+                    @else
+                        <span style="font-size:9px;color:#bbb">Sin imagen</span>
+                    @endif
+                </td>
+                <td class="tr">{{ $item->cantidad }}</td>
+                <td class="tr">{{ $simbolo }} {{ number_format($item->precio_venta, 2) }}</td>
+                <td class="tf">{{ $simbolo }} {{ number_format($item->subtotal, 2) }}</td>
+                <td class="tc">
+                    @if($item->disponibilidad_tipo === 'importacion')
+                        <div class="disp-imp">
+                            IMPORTACIÓN<br>
+                            {{ $item->disponibilidad_dias }} días c.<br>
+                            Puesta la OC.
+                        </div>
+                    @else
+                        <div class="disp-stock">
+                            STOCK DISP.<br>
+                            {{ $item->disponibilidad_dias }} días c.<br>
+                            Puesta la OC.
+                        </div>
+                    @endif
+                </td>
+            </tr>
+            @endforeach
+            </tbody>
+        </table>
+        </div>
 
-            {{-- ══ MÉTODO DE PAGO ══ --}}
-            <div class="pago-section">
-                <div class="pago-title">Metodo de pago</div>
-                <table class="pago-table" cellpadding="0" cellspacing="0">
+        {{-- CONDICIONES + TOTALES --}}
+        <table class="bt" cellpadding="0" cellspacing="0">
+        <tr>
+            <td class="bt-left">
+                <div class="cond-title">Condiciones comerciales</div>
+                <div class="cond-item"><span class="cond-pfx">&rsaquo;</span>Forma de Pago: Crédito a 30 días calendarios</div>
+                <div class="cond-item"><span class="cond-pfx">&rsaquo;</span>Incluye entrega en oficinas del cliente, Lima Metropolitana.</div>
+                <div class="cond-item"><span class="cond-pfx">&rsaquo;</span>Precios en Dólares Americanos (USD) y NO incluyen IGV.</div>
+                <div class="cond-item"><span class="cond-pfx">&rsaquo;</span>Precios sujetos a cambio sin previo aviso.</div>
+                <div class="cond-item"><span class="cond-pfx">&rsaquo;</span>WILLATEC S.A.C, Régimen de Buenos Contribuyentes - Res. N° 0230050266292 (SUNAT).</div>
+                <div class="nota-box">
+                    <div class="nota-ttl">Notas</div>
+                    <div class="nota-txt">
+                        El precio del producto está sujeto al stock y nuevo ingreso de importación de la marca.<br>
+                        Esto aplica después de los 05 días calendarios de validez de la cotización.<br>
+                        Para productos importados, el tiempo de entrega puede variar entre 20 y 25 días calendario.
+                    </div>
+                </div>
+            </td>
+            <td class="bt-right">
+                <table class="tot-box" cellpadding="0" cellspacing="0">
                     <tr>
-                        <td style="padding-right:10px">
-                            <div class="pago-item">
-                                <div class="pago-key">Banco</div>
-                                <div class="pago-val">Banco de Credito</div>
-                            </div>
-                        </td>
-                        <td style="padding-right:10px">
-                            <div class="pago-item">
-                                <div class="pago-key">N° Cta. Cte. Dolares</div>
-                                <div class="pago-val">193-2421813-1-66</div>
-                            </div>
-                        </td>
-                        <td>
-                            <div class="pago-item">
-                                <div class="pago-key">CCI</div>
-                                <div class="pago-val">00219300242181316612</div>
-                            </div>
-                        </td>
+                        <td class="tot-lbl">Subtotal</td>
+                        <td class="tot-val">{{ $simbolo }} {{ number_format($cotizacion->subtotal, 2) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="tot-lbl">IGV (18%)</td>
+                        <td class="tot-val">{{ $simbolo }} {{ number_format($cotizacion->igv, 2) }}</td>
+                    </tr>
+                    <tr class="tot-fin">
+                        <td class="lbl">Total</td>
+                        <td class="amt">{{ $simbolo }} {{ number_format($cotizacion->total, 2) }}</td>
+                    </tr>
+                    <tr class="tot-mon">
+                        <td colspan="2">Moneda: {{ $cotizacion->moneda->codigo ?? 'USD' }} {{ $simbolo }}</td>
                     </tr>
                 </table>
-            </div>
+            </td>
+        </tr>
+        </table>
 
-            {{-- ══ FIRMAS ══ --}}
-            <table class="firma-table" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td class="firma-cell">
-                        <div class="firma-espacio"></div>
-                        <img
-                            src="{{ public_path('img/firma/firma_gerente.png') }}"
-                            style="height:48px; width:auto; display:block; margin:0 auto 4px;"
-                            alt="Firma Gerente General">
-                        <div class="firma-linea"></div>
-                        <div class="firma-nombre">Luis Angel Lopez Salazar</div>
-                        <div class="firma-cargo">Gerente General - Willatec S.A.C</div>
-                        <div class="firma-fecha">Fecha: {{ $fechaEmision }}</div>
-                    </td>
-                    <!-- <td class="firma-cell">
-                        {{-- segunda firma deshabilitada, descomenta si la necesitas --}}
-                        {{-- <div class="firma-espacio"></div>
-                        <div class="firma-linea"></div>
-                        <div class="firma-nombre">{{ $cotizacion->cliente->nombre ?? '' }}</div>
-                        <div class="firma-cargo">Nombre y firma del cliente</div>
-                        <div class="firma-fecha">Fecha: {{ $fechaEmision }}</div> --}}
-                    </td> -->
-                </tr>
+        {{-- MÉTODO DE PAGO --}}
+        <div class="pago-sec">
+            <div class="pago-ttl">Método de pago</div>
+            <table class="pago-tbl" cellpadding="0" cellspacing="0">
+            <tr>
+                <td style="width:33%;padding-right:8px">
+                    <div class="pago-card">
+                        <div class="pago-key">Banco</div>
+                        <div class="pago-val">Banco de Crédito</div>
+                    </div>
+                </td>
+                <td style="width:33%;padding-right:8px">
+                    <div class="pago-card">
+                        <div class="pago-key">Cta. Cte. Dólares</div>
+                        <div class="pago-val">193-2421813-1-66</div>
+                    </div>
+                </td>
+                <td style="width:33%">
+                    <div class="pago-card">
+                        <div class="pago-key">CCI</div>
+                        <div class="pago-val">00219300242181316612</div>
+                    </div>
+                </td>
+            </tr>
             </table>
+        </div>
 
-            {{-- ══ FOOTER ══ --}}
-            <table class="footer-bar" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td>(01) 757-1253</td>
-                    <td>ventas@willatec.com</td>
-                    <td>www.willatec.com</td>
-                    <td>Jr. Jorge Chavez N° 1747 - Of.1002 - Breña - Lima</td>
-                </tr>
-            </table>
+        {{-- FIRMA --}}
+        <table class="firma-tbl" cellpadding="0" cellspacing="0">
+        <tr>
+            <td class="firma-cel">
+                <div class="firma-sp"></div>
+                @if(file_exists(public_path('img/firma/firma_gerente.png')))
+                <img src="{{ public_path('img/firma/firma_gerente.png') }}"
+                     style="height:44px;width:auto;display:block;margin:0 auto 4px;"
+                     alt="Firma">
+                @endif
+                <div class="firma-ln"></div>
+                <div class="firma-nm">Luis Ángel López Salazar</div>
+                <div class="firma-cg">Gerente General — Willatec S.A.C</div>
+                <div class="firma-fh">Fecha: {{ $fechaEmision }}</div>
+            </td>
+            <td class="firma-cel">
+                {{-- segunda firma: descomenta si la necesitas --}}
+            </td>
+        </tr>
+        </table>
 
-        </td>{{-- fin .page-content --}}
-    </tr>
+        {{-- FOOTER --}}
+        <table class="ft" cellpadding="0" cellspacing="0">
+        <tr>
+            <td style="width:25%">(01) 757-1253</td>
+            <td style="width:25%">ventas@willatec.com</td>
+            <td style="width:25%">www.willatec.com</td>
+            <td style="width:25%">Jr. Jorge Chávez N° 1747 - Of.1002 - Breña</td>
+        </tr>
+        </table>
+
+    </td>{{-- fin .body --}}
+</tr>
 </table>
 
 @endsection

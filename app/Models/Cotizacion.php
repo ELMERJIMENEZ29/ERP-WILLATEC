@@ -89,4 +89,9 @@ class Cotizacion extends Model
     {
         return $this->belongsTo(Moneda::class);
     }
+
+    public function historial(): HasMany
+    {
+        return $this->hasMany(CotizacionHistorial::class);
+    }
 }

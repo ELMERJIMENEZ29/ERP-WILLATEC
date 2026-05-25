@@ -87,6 +87,15 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
     Route::patch('/{id}/recalcular', [CotizacionController::class, 'recalcular'])
         ->middleware('role:superadmin|ventas');
 
+    Route::get('/{id}/historial', [CotizacionController::class, 'historial'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::patch('/{cotizacion}/aprobar', [CotizacionController::class, 'aprobar'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::patch('/{cotizacion}/rechazar', [CotizacionController::class, 'rechazar'])
+        ->middleware('role:superadmin|ventas');
+
     Route::get('/{cotizacion}/exportar-pdf', [CotizacionController::class, 'exportarPdf'])
         ->middleware('role:superadmin|ventas');
 

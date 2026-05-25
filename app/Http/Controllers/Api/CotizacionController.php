@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Cotizacion;
 use App\Models\CotizacionItem;
+use App\Models\CotizacionHistorial;
 use App\Models\Cliente;
 use App\Models\Plantilla;
 use App\Models\Plataforma;
@@ -33,7 +34,7 @@ class CotizacionController extends Controller
 
     public function index(Request $request)
     {
-        $query = Cotizacion::with(['cliente', 'estadoCotizacion']);
+        $query = Cotizacion::with(['cliente', 'estadoCotizacion'])->withCount('items');
 
         if ($request->has('cliente_id')) {
             $query->where('cliente_id', $request->cliente_id);
@@ -49,6 +50,9 @@ class CotizacionController extends Controller
             'items',
             'costosAdicionales',
             'estadoCotizacion',
+            'historial.estadoAnterior',
+            'historial.estadoNuevo',
+            'historial.usuario',
         ])->find($id);
 
         if (!$cotizacion) {
@@ -354,6 +358,22 @@ class CotizacionController extends Controller
         ]);
     }
 
+    public function historial(Request $request, int $id)
+    {
+        $cotizacion = Cotizacion::findOrFail($id);
+
+        $historial = CotizacionHistorial::where('cotizacion_id', $id)
+            ->with([
+                'estadoAnterior',
+                'estadoNuevo',
+                'usuario:id,nombres,apellidos,email',
+            ])
+            ->latest()
+            ->paginate($request->per_page ?? 15);
+
+        return response()->json($historial);
+    }
+
     // =========================
     // 🔥 EXPORTACION PDF
     // =========================
@@ -372,11 +392,13 @@ class CotizacionController extends Controller
             abort(404, 'Plantilla no disponible');
         }
 
-        //Obtención formato PDF desde la plantilla
-        $formatoPdf = $cotizacion->plantilla->formato_pdf;
+        $formatoPdf = trim($cotizacion->plantilla->formato_pdf);
 
-        //Construir vista dinámica según formato
-        $vista = 'pdf.cotizaciones.' . $formatoPdf;
+        $vista = 'pdfs.cotizaciones.' . $formatoPdf;
+
+        // if (!view()->exists($vista)) {
+        //     abort(404, "La vista PDF [$vista] no existe");
+        // }
 
         //Generar PDF usando la vista dinámica
         $pdf = Pdf::loadView($vista, compact('cotizacion'))
@@ -516,9 +538,9 @@ class CotizacionController extends Controller
 
             //ITEMS
             foreach ($request->items as $index => $item){
-                $costoBase   = (float) ($itemData['costo_base'] ?? 0);
-                $margen      = min((float) ($itemData['margen'] ?? 0), 99.99);
-                $cantidad    = (int) ($itemData['cantidad'] ?? 1);
+                $costoBase   = (float) ($item['costo_base'] ?? 0);
+                $margen      = min((float) ($item['margen'] ?? 0), 99.99);
+                $cantidad    = (int) ($item['cantidad'] ?? 1);
 
                 $factorMargen = $margen < 100 ? 1 - ($margen / 100) : 0.0001;
                 $precioVenta  = round($costoBase / $factorMargen, 2);
@@ -585,11 +607,11 @@ class CotizacionController extends Controller
 
     }
 
-    public function updateCompleta(Request $request, Cotizacion $cotizacion)
-{
-    DB::transaction(function () use ($request, $cotizacion) {
+    public function updateCompleta(Request $request, int $id)
+    {
+        $cotizacion = Cotizacion::findOrFail($id);
 
-        $request ->validate ([
+        $request->validate([
             'cliente_id' => 'required|exists:clientes,id',
             'plantilla_id' => 'required|exists:plantillas,id',
             'plataforma_id' => 'required|exists:plataformas,id',
@@ -611,97 +633,187 @@ class CotizacionController extends Controller
         ]);
 
         $cliente = Cliente::findOrFail($request->cliente_id);
-        $cotizacionId = $cotizacion->id;
-        
-        // UPDATE HEADER
-        $cotizacion->update([
-            'cliente_id' => $cliente->id,
-            'cliente_nombre' => $cliente->nombre,
-            'cliente_ruc' => $cliente->ruc,
-            'cliente_telefono' => $cliente->telefono,
-            'cliente_correo' => $cliente->correo,
-            'plantilla_id' => $request->plantilla_id,
-            'plataforma_id' => $request->plataforma_id,
-            'moneda_id' => $request->moneda_id,
-            'modo_distribucion' => $request->modo_distribucion,
-            'titulo' => $request->titulo,
-            'validez_dias' => $request->validez_dias,
-            'subtotal' => 0,
-            'igv' => 0,
-            'total' => 0,
-            'estado_cotizacion_id' => $request->estado_cotizacion_id,
+
+        DB::transaction(function () use ($request, $cotizacion, $cliente) {
+            // UPDATE HEADER
+            $cotizacion->update([
+                'cliente_id' => $cliente->id,
+                'cliente_nombre' => $cliente->nombre,
+                'cliente_ruc' => $cliente->ruc,
+                'cliente_telefono' => $cliente->telefono,
+                'cliente_correo' => $cliente->correo,
+                'plantilla_id' => $request->plantilla_id,
+                'plataforma_id' => $request->plataforma_id,
+                'moneda_id' => $request->moneda_id,
+                'modo_distribucion' => $request->modo_distribucion,
+                'titulo' => $request->titulo,
+                'validez_dias' => $request->validez_dias,
+                'subtotal' => 0,
+                'igv' => 0,
+                'total' => 0,
+                'estado_cotizacion_id' => $request->estado_cotizacion_id,
+            ]);
+
+            // ELIMINAR SNAPSHOT VIEJO
+            $cotizacion->items()->delete();
+            $cotizacion->costosAdicionales()->delete();
+
+            // RECREAR ITEMS
+            foreach ($request->items as $index => $item) {
+                $costoBase   = (float) ($item['costo_base'] ?? 0);
+                $margen      = min((float) ($item['margen'] ?? 0), 99.99);
+                $cantidad    = (int) ($item['cantidad'] ?? 1);
+
+                $factorMargen = $margen < 100 ? 1 - ($margen / 100) : 0.0001;
+                $precioVenta  = round($costoBase / $factorMargen, 2);
+                $pvt          = round($cantidad * $precioVenta, 2);
+                $ptc          = round($cantidad * $costoBase, 2);
+
+                CotizacionItem::create([
+                    'cotizacion_id' => $cotizacion->id,
+                    'descripcion' => $item['descripcion'],
+                    'cantidad' => $item['cantidad'],
+                    'costo_base' => $item['costo_base'],
+                    'margen' => $item['margen'],
+                    'orden' => $index + 1,
+                    'marca' => $item['marca'] ?? null,
+                    'codigo' => $item['codigo'],
+                    'unidad_medida' => $item['unidad_medida'],
+                    'garantia_meses' => $item['garantia_meses'],
+                    'disponibilidad_tipo' => $item['disponibilidad_tipo'],
+                    'disponibilidad_dias' => $item['disponibilidad_dias'],
+                    'proveedor' => $item['proveedor'],
+                    'link_proveedor' => $item['link_proveedor'],
+                    'producto_id' => $item['producto_id'] ?? null,
+                    'tipo' => $item['tipo'] ?? 'personalizado',
+
+                    // Valores calculados iniciales — recalcular() los refinará con costos adicionales
+                    'costo_unitario'      => $costoBase,
+                    'precio_venta'        => $precioVenta,
+                    'subtotal'            => $pvt,
+                    'costo_total'         => $ptc,
+                    'ganancia'            => round($pvt - $ptc, 2),
+                ]);
+            }
+
+            // RECREAR COSTOS
+            foreach ($request->costos ?? [] as $costo) {
+                CotizacionCostosAdicional::create([
+                    'cotizacion_id' => $cotizacion->id,
+                    'tipo' => $costo['tipo'],
+                    'descripcion' => $costo['descripcion'] ?? null,
+                    'monto' => $costo['monto'],
+                ]);
+            }
+
+            // RECALCULAR
+            $this->service->recalcular($cotizacion);
+
+            $cotizacion->refresh();
+        });
+
+        return response()->json([
+            'message' => 'Cotización actualizada',
+            'cotizacion' => $cotizacion->load([
+                'items',
+                'costosAdicionales',
+                'cliente',
+                'plantilla',
+                'moneda'
+            ]),
+        ]);
+    }
+
+    // =========================
+    // ✅ APROBAR COTIZACIÓN
+    // =========================
+    public function aprobar(Request $request, Cotizacion $cotizacion)
+    {
+        // Buscar estado "aprobada" (generalmente es id 2 o 3)
+        $estadoAprobada = EstadoCotizacion::where('nombre', 'aprobada')
+            ->orWhere('nombre', 'Aprobada')
+            ->first();
+
+        if (!$estadoAprobada) {
+            return response()->json([
+                'message' => 'Estado "Aprobada" no encontrado en la base de datos'
+            ], 404);
+        }
+
+        $estadoAnterior = $cotizacion->estado_cotizacion_id;
+
+        DB::transaction(function () use ($request, $cotizacion, $estadoAprobada, $estadoAnterior) {
+            $cotizacion->update([
+                'estado_cotizacion_id' => $estadoAprobada->id,
+            ]);
+
+            // Registrar en historial
+            CotizacionHistorial::create([
+                'cotizacion_id' => $cotizacion->id,
+                'estado_anterior_id' => $estadoAnterior,
+                'estado_nuevo_id' => $estadoAprobada->id,
+                'comentario' => null,
+                'user_id' => $request->user()->id,
+            ]);
+        });
+
+        return response()->json([
+            'message' => 'Cotización aprobada correctamente',
+            'cotizacion' => $cotizacion->load([
+                'items',
+                'costosAdicionales',
+                'cliente',
+                'estadoCotizacion'
+            ]),
+        ], 200);
+    }
+
+    // =========================
+    // ❌ RECHAZAR COTIZACIÓN
+    // =========================
+    public function rechazar(Request $request, Cotizacion $cotizacion)
+    {
+        $request->validate([
+            'comentario_rechazo' => 'required|string|max:500'
         ]);
 
-        // ELIMINAR SNAPSHOT VIEJO
-        $cotizacion->items()->delete();
-        $cotizacion->costosAdicionales()->delete();
-        
-        
-        // RECREAR ITEMS
-        foreach ($request->items as $index => $item) {
-            $costoBase   = (float) ($item['costo_base'] ?? 0);
-            $margen      = min((float) ($item['margen'] ?? 0), 99.99);
-            $cantidad    = (int) ($item['cantidad'] ?? 1);
+        // Buscar estado "rechazada"
+        $estadoRechazada = EstadoCotizacion::where('nombre', 'rechazada')
+            ->orWhere('nombre', 'Rechazada')
+            ->first();
 
-            $factorMargen = $margen < 100 ? 1 - ($margen / 100) : 0.0001;
-            $precioVenta  = round($costoBase / $factorMargen, 2);
-            $pvt          = round($cantidad * $precioVenta, 2);
-            $ptc          = round($cantidad * $costoBase, 2);
-            
-
-            CotizacionItem::create([
-                'cotizacion_id' => $cotizacionId,
-                'descripcion' => $item['descripcion'],
-                'cantidad' => $item['cantidad'],
-                'costo_base' => $item['costo_base'],
-                'margen' => $item['margen'],
-                'orden' => $index + 1,
-                'marca' => $item['marca'] ?? null,
-                'codigo' =>$item['codigo'],
-                'unidad_medida' => $item['unidad_medida'],
-                'garantia_meses' => $item['garantia_meses'],
-                'disponibilidad_tipo' => $item['disponibilidad_tipo'],
-                'disponibilidad_dias' => $item['disponibilidad_dias'],
-                'proveedor' => $item['proveedor'],
-                'link_proveedor' => $item['link_proveedor'],
-                'producto_id' => $item['producto_id'] ?? null,
-                'tipo' => $item['tipo'] ?? 'personalizado',
-
-                // Valores calculados iniciales — recalcular() los refinará con costos adicionales
-                'costo_unitario'      => $costoBase,
-                'precio_venta'        => $precioVenta,
-                'subtotal'            => $pvt,
-                'costo_total'         => $ptc,
-                'ganancia'            => round($pvt - $ptc, 2),
-            ]);
+        if (!$estadoRechazada) {
+            return response()->json([
+                'message' => 'Estado "Rechazada" no encontrado en la base de datos'
+            ], 404);
         }
 
-        // RECREAR COSTOS
-        foreach ($request->costos ?? [] as $costo) {
+        $estadoAnterior = $cotizacion->estado_cotizacion_id;
 
-            CotizacionCostosAdicional::create([
+        DB::transaction(function () use ($request, $cotizacion, $estadoRechazada, $estadoAnterior) {
+            $cotizacion->update([
+                'estado_cotizacion_id' => $estadoRechazada->id,
+            ]);
+
+            // Registrar en historial
+            CotizacionHistorial::create([
                 'cotizacion_id' => $cotizacion->id,
-                'tipo' => $costo['tipo'],
-                'descripcion' => $costo['descripcion'] ?? null,
-                'monto' => $costo['monto'],
+                'estado_anterior_id' => $estadoAnterior,
+                'estado_nuevo_id' => $estadoRechazada->id,
+                'comentario' => $request->comentario_rechazo,
+                'user_id' => $request->user()->id,
             ]);
-        }
+        });
 
-        // RECALCULAR
-        $this->service->recalcular($cotizacion);
-
-        $cotizacion->refresh();
-    });
-
-    return response()->json([
-        'message' => 'Cotización actualizada',
-        'cotizacion' => $cotizacion->load([
-            'items',
-            'costosAdicionales',
-            'cliente',
-            'plantilla',
-            'moneda'
-        ]),
-    ]);
-}
+        return response()->json([
+            'message' => 'Cotización rechazada correctamente',
+            'cotizacion' => $cotizacion->load([
+                'items',
+                'costosAdicionales',
+                'cliente',
+                'estadoCotizacion',
+                'historial'
+            ]),
+        ], 200);
+    }
 }
