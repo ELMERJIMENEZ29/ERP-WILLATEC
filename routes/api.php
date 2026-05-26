@@ -48,11 +48,11 @@ Route::prefix('productos')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [ProductoController::class, 'index']);
     Route::get('/{id}', [ProductoController::class, 'show']);
 
-    Route::post('/', [ProductoController::class, 'store'])->middleware('role:superadmin|ventas');
+    Route::post('/', [ProductoController::class, 'store'])->middleware('role:superadmin|ventas|admin');
 
-    Route::put('/{id}', [ProductoController::class, 'update'])->middleware('role:superadmin|ventas');
+    Route::put('/{id}', [ProductoController::class, 'update'])->middleware('role:superadmin|ventas|admin');
 
-    Route::delete('/{id}', [ProductoController::class, 'destroy'])->middleware('role:superadmin|ventas');
+    Route::delete('/{id}', [ProductoController::class, 'destroy'])->middleware('role:superadmin|ventas|admin');
 });
 
 Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
