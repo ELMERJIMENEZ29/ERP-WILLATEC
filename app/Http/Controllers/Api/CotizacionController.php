@@ -34,7 +34,7 @@ class CotizacionController extends Controller
 
     public function index(Request $request)
     {
-        $query = Cotizacion::with(['cliente', 'estadoCotizacion'])->withCount('items');
+        $query = Cotizacion::with(['cliente', 'estadoCotizacion', 'user'])->withCount('items');
 
         if ($request->has('cliente_id')) {
             $query->where('cliente_id', $request->cliente_id);
@@ -53,6 +53,7 @@ class CotizacionController extends Controller
             'historial.estadoAnterior',
             'historial.estadoNuevo',
             'historial.usuario',
+            'user',
         ])->find($id);
 
         if (!$cotizacion) {
