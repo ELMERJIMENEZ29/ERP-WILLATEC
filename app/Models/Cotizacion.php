@@ -36,7 +36,8 @@ class Cotizacion extends Model
         'cliente_ruc',
         'cliente_contacto',
         'cliente_telefono',
-        'cliente_correo'
+        'cliente_correo',
+        'delegado_id',
     ];
 
     // Relaciones
@@ -75,6 +76,11 @@ class Cotizacion extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function delegado(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'delegado_id');
+    }
+
     public function ordenCompra(): HasOne
     {
         return $this->hasOne(OrdenCompra::class);
@@ -85,7 +91,7 @@ class Cotizacion extends Model
         return $this->hasOne(Profile::class);
     }
 
-    public function moneda() : BelongsTo
+    public function moneda(): BelongsTo
     {
         return $this->belongsTo(Moneda::class);
     }

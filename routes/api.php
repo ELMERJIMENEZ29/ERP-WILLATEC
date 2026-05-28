@@ -16,8 +16,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::post('/logout', [AuthController::class, 'logout']);
 
-    Route::get('/user', fn(Request $request) => $request->user());
-
     Route::get('/roles', function () {
         return Role::select('id', 'name')->get();
     });
@@ -25,7 +23,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     //USUARIOS
     Route::post('/users', [AuthController::class, 'register'])->middleware('role:superadmin|admin');
 
-    Route::get('/users', [UserController::class, 'index'])->middleware('role:superadmin|admin');
+    Route::get('/users', [UserController::class, 'index']);
 
     Route::get('/users/{id}', [UserController::class, 'show'])->middleware('role:superadmin|admin');
 
