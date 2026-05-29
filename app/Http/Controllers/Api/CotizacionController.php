@@ -222,6 +222,7 @@ class CotizacionController extends Controller
                 'subtotal' => $pvt,
                 'costo_total' => $ptc,
                 'ganancia' => round($pvt - $ptc, 2),
+                'stock' => $request->stock ?? 0,
             ]);
 
             $cotizacion = Cotizacion::findOrFail($cotizacionId);
@@ -241,6 +242,7 @@ class CotizacionController extends Controller
             'cantidad' => 'nullable|numeric|min:1',
             'costo_base' => 'nullable|numeric|min:0',
             'margen' => 'nullable|numeric|min:0',
+            'stock' => 'nullable|integer|min:0',
             'garantia_meses' => 'nullable|integer|in:3,6,12,24,36',
             'disponibilidad_tipo' => 'nullable|in:stock,importacion',
             'disponibilidad_dias' => 'nullable|integer|min:1|max:50',
@@ -265,7 +267,7 @@ class CotizacionController extends Controller
                     'descripcion', 'cantidad', 'costo_base', 'margen',
                     'marca', 'codigo', 'unidad_medida', 'garantia_meses',
                     'disponibilidad_tipo', 'disponibilidad_dias',
-                    'proveedor', 'link_proveedor', 'producto_id',
+                    'proveedor', 'link_proveedor', 'producto_id', 'stock',
                 ]),
                 'costo_unitario' => $costoBase,
                 'precio_venta' => $precioVenta,
@@ -323,6 +325,11 @@ class CotizacionController extends Controller
         }
 
         return response()->json($query->latest()->paginate(10));
+    }
+
+    public function allItems()
+    {
+        return response()->json(CotizacionItem::latest()->paginate(10));
     }
 
     // =========================
@@ -596,6 +603,7 @@ class CotizacionController extends Controller
                     'subtotal' => $pvt,
                     'costo_total' => $ptc,
                     'ganancia' => round($pvt - $ptc, 2),
+                    'stock' => 0,
                     'delegado_id' => $cotizacion->delegado_id,
                 ]);
             }
@@ -732,6 +740,7 @@ class CotizacionController extends Controller
                     'subtotal' => $pvt,
                     'costo_total' => $ptc,
                     'ganancia' => round($pvt - $ptc, 2),
+                    'stock' => 0,
                 ]);
             }
 

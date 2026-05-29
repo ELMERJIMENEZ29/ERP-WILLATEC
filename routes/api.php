@@ -66,6 +66,9 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
     Route::get('/items', [CotizacionController::class, 'indexItems'])
         ->middleware('role:superadmin|ventas');
 
+    Route::get('/items/all', [CotizacionController::class, 'allItems'])
+        ->middleware('role:superadmin|ventas');
+
     Route::get('/estados', [CotizacionController::class, 'indexEstadoCotizacion'])
         ->middleware('role:superadmin|ventas');
 

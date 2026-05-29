@@ -32,6 +32,7 @@ class CotizacionItem extends Model
         'disponibilidad_dias',
         'proveedor',
         'link_proveedor',
+        'stock',
     ];
 
     public function cotizacion(): BelongsTo
