@@ -92,7 +92,7 @@ class ProductoController extends Controller
             'descripcion' => 'nullable|string',
             'precio_referencial' => 'nullable|numeric|min:0',
             'unidad_medida' => 'nullable|string|max:50',
-            'activo' => 'nullable|boolean',
+            'activo' => 'nullable|in:true,false,0,1',
             'stock' => 'nullable|integer|min:0',
             'categoria_id' => 'nullable|exists:categorias,id',
             'imagen' => 'sometimes|nullable|image|max:2048',
@@ -106,7 +106,7 @@ class ProductoController extends Controller
             'descripcion',
             'precio_referencial',
             'unidad_medida',
-            'activo',
+            'activo'=> filter_var($request->activo, FILTER_VALIDATE_BOOLEAN),
             'stock',
             'categoria_id',
         ]);

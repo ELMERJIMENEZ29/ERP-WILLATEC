@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Cotizacion extends Model
 {
+    use Auditable, LogsActivity;
+
     protected $table = 'cotizaciones';
 
     protected $fillable = [
@@ -99,5 +103,10 @@ class Cotizacion extends Model
     public function historial(): HasMany
     {
         return $this->hasMany(CotizacionHistorial::class);
+    }
+
+    protected function auditModelName(): string
+    {
+        return 'Cotizacion';
     }
 }

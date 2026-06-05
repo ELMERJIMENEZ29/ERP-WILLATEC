@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AuditoriaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\CotizacionController;
@@ -10,10 +11,12 @@ use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
 
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 
 Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/password/change', [AuthController::class, 'changePassword']);
 
     Route::get('/roles', function () {
         return Role::select('id', 'name')->get();
@@ -21,6 +24,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // USUARIOS
     Route::post('/users', [AuthController::class, 'register'])->middleware('role:superadmin|admin|ventas');
+    Route::patch('/users/{id}/reset-password', [AuthController::class, 'resetPassword'])->middleware('role:superadmin');
+
+    Route::get('/notifications', [AuthController::class, 'notifications']);
+    Route::patch('/notifications/{id}/read', [AuthController::class, 'markNotificationAsRead']);
 
     Route::get('/users', [UserController::class, 'index']);
 
@@ -38,6 +45,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::get('/plataformas', [CotizacionController::class, 'indexPlataformas'])
         ->middleware('role:superadmin|ventas');
+
+    Route::get('/auditoria', [AuditoriaController::class, 'index'])
+        ->middleware('role:superadmin|admin');
 });
 
 Route::prefix('productos')->middleware('auth:sanctum')->group(function () {

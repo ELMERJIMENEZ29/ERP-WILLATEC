@@ -15,7 +15,7 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable, HasRoles;
+    use HasApiTokens, HasFactory, HasRoles, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -28,6 +28,7 @@ class User extends Authenticatable
         'email',
         'activo',
         'password',
+        'requires_password_change',
     ];
 
     /**
@@ -50,14 +51,17 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'requires_password_change' => 'boolean',
         ];
     }
 
-    public function profile():HasOne{
+    public function profile(): HasOne
+    {
         return $this->hasOne(Profile::class);
     }
 
-    public function cotizacion() : HasMany{
+    public function cotizacion(): HasMany
+    {
         return $this->hasMany(Cotizacion::class);
     }
 }
