@@ -19,6 +19,7 @@ use App\Services\CotizacionService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class CotizacionController extends Controller
 {
@@ -180,6 +181,7 @@ class CotizacionController extends Controller
             'producto_id' => 'nullable|exists:productos,id',
             'proveedor' => 'nullable|string',
             'link_proveedor' => 'nullable|string',
+            'imagen' => 'sometimes|nullable|image|max:2048',
         ]);
 
         DB::transaction(function () use ($request, $cotizacionId) {
@@ -198,7 +200,7 @@ class CotizacionController extends Controller
             $pvt = round($cantidad * $precioVenta, 2);
             $ptc = round($cantidad * $costoBase, 2);
 
-            CotizacionItem::create([
+            $itemData = [
                 'cotizacion_id' => $cotizacionId,
                 'descripcion' => $request->descripcion,
                 'cantidad' => $cantidad,
@@ -223,7 +225,13 @@ class CotizacionController extends Controller
                 'costo_total' => $ptc,
                 'ganancia' => round($pvt - $ptc, 2),
                 'stock' => $request->stock ?? 0,
-            ]);
+            ];
+
+            if ($request->hasFile('imagen')) {
+                $itemData['imagen'] = $request->file('imagen')->store('cotizacion-items', 'public');
+            }
+
+            CotizacionItem::create($itemData);
 
             $cotizacion = Cotizacion::findOrFail($cotizacionId);
 
@@ -247,6 +255,7 @@ class CotizacionController extends Controller
             'disponibilidad_tipo' => 'nullable|in:stock,importacion',
             'disponibilidad_dias' => 'nullable|integer|min:1|max:50',
             'producto_id' => 'nullable|exists:productos,id',
+            'imagen' => 'sometimes|nullable|image|max:2048',
         ]);
 
         DB::transaction(function () use ($request, $item) {
@@ -262,7 +271,7 @@ class CotizacionController extends Controller
             $pvt = round($cantidad * $precioVenta, 2);
             $ptc = round($cantidad * $costoBase, 2);
 
-            $item->update([
+            $itemData = [
                 ...$request->only([
                     'descripcion', 'cantidad', 'costo_base', 'margen',
                     'marca', 'codigo', 'unidad_medida', 'garantia_meses',
@@ -275,7 +284,17 @@ class CotizacionController extends Controller
                 'costo_total' => $ptc,
                 'ganancia' => round($pvt - $ptc, 2),
                 'tipo' => $item->producto_id ? 'producto' : ($request->tipo ?? $item->tipo),
-            ]);
+            ];
+
+            if ($request->hasFile('imagen')) {
+                if ($item->imagen) {
+                    Storage::disk('public')->delete($item->imagen);
+                }
+
+                $itemData['imagen'] = $request->file('imagen')->store('cotizacion-items', 'public');
+            }
+
+            $item->update($itemData);
 
             $this->service->recalcular($item->cotizacion);
         });

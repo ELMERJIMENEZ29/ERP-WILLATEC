@@ -31,8 +31,9 @@ class DatabaseSeeder extends Seeder
             EstadoCotizacionItemSeeder::class,
             PlataformaSeeder::class,
             MonedaSeeder::class,
+            CategoriaSeeder::class,
+            PlantillaSeeder::class,
+            TipoClienteSeeder::class,
         ]);
     }
-
 }
-

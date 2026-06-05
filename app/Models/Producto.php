@@ -6,8 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-use App\Models\Categoria;
-
 class Producto extends Model
 {
     protected $fillable = [
@@ -18,16 +16,19 @@ class Producto extends Model
         'descripcion',
         'precio_referencial',
         'unidad_medida',
+        'imagen',
         'activo',
         'stock',
         'categoria_id',
     ];
 
-    public function cotizacionItems() : HasMany{
+    public function cotizacionItems(): HasMany
+    {
         return $this->hasMany(CotizacionItem::class);
     }
 
-    public function categoria(): BelongsTo{
+    public function categoria(): BelongsTo
+    {
         return $this->belongsTo(Categoria::class);
     }
 }

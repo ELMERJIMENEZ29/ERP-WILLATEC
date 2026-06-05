@@ -1,12 +1,11 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\UserController;
-use App\Http\Controllers\Api\ProductoController;
+use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\CotizacionController;
 use App\Http\Controllers\Api\OrdenCompraController;
-use App\Http\Controllers\Api\ClienteController;
-use Illuminate\Http\Request;
+use App\Http\Controllers\Api\ProductoController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
 
@@ -20,8 +19,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         return Role::select('id', 'name')->get();
     });
 
-    //USUARIOS
-    Route::post('/users', [AuthController::class, 'register'])->middleware('role:superadmin|admin');
+    // USUARIOS
+    Route::post('/users', [AuthController::class, 'register'])->middleware('role:superadmin|admin|ventas');
 
     Route::get('/users', [UserController::class, 'index']);
 
@@ -33,7 +32,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::patch('/users/{id}/activar', [UserController::class, 'activar'])->middleware('role:superadmin');
 
-    //PLATAFORMAS Y PLANTILLAS
+    // PLATAFORMAS Y PLANTILLAS
     Route::get('/plantillas', [CotizacionController::class, 'indexPlantillas'])
         ->middleware('role:superadmin|ventas');
 
@@ -42,7 +41,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 });
 
 Route::prefix('productos')->middleware('auth:sanctum')->group(function () {
-    //PRODUCTOS
+    // PRODUCTOS
     Route::get('/', [ProductoController::class, 'index']);
     Route::get('/{id}', [ProductoController::class, 'show']);
 
@@ -81,7 +80,7 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
 
     Route::put('/{id}', [CotizacionController::class, 'update'])
         ->middleware('role:superadmin|ventas');
-    
+
     Route::put('/{id}/completa', [CotizacionController::class, 'updateCompleta'])
         ->middleware('role:superadmin|ventas');
 

@@ -3,41 +3,45 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\Producto;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class ProductoController extends Controller
 {
-    //Listar Productos
-    public function index(Request $request){
+    // Listar Productos
+    public function index(Request $request)
+    {
 
         $query = Producto::query();
 
-        if($request->has('activo')){
+        if ($request->has('activo')) {
             $query->where('activo', $request->activo);
         }
 
         return response()->json($query->paginate($request->per_page ?? 10));
     }
 
-    //Ver detalle
-    public function show( int $id){
+    // Ver detalle
+    public function show(int $id)
+    {
         $producto = Producto::findOrFail($id);
 
-        if(!$producto){
-        return response()->json([
-            'message' => 'Producto no encontrado'
-        ], 404);
+        if (! $producto) {
+            return response()->json([
+                'message' => 'Producto no encontrado',
+            ], 404);
         }
 
         return response()->json($producto);
     }
 
-    //Crear producto
-    public function store(Request $request){
+    // Crear producto
+    public function store(Request $request)
+    {
 
         $request->validate([
-            'nombre'=> 'required|string|max:255',
+            'nombre' => 'required|string|max:255',
             'marca' => 'nullable|string|max:255',
             'modelo' => 'nullable|string|max:255',
             'codigo' => 'nullable|string|max:100',
@@ -46,9 +50,10 @@ class ProductoController extends Controller
             'unidad_medida' => 'nullable|string|max:50',
             'stock' => 'nullable|integer|min:0',
             'categoria_id' => 'nullable|exists:categorias,id',
+            'imagen' => 'sometimes|nullable|image|max:2048',
         ]);
 
-        $producto = Producto::create([
+        $data = [
             'nombre' => $request->nombre,
             'marca' => $request->marca,
             'modelo' => $request->modelo,
@@ -59,21 +64,28 @@ class ProductoController extends Controller
             'stock' => $request->stock ?? 0,
             'categoria_id' => $request->categoria_id,
             'activo' => true,
-        ]);
+        ];
+
+        if ($request->hasFile('imagen')) {
+            $data['imagen'] = $request->file('imagen')->store('productos', 'public');
+        }
+
+        $producto = Producto::create($data);
 
         return response()->json([
-            'message'=> 'Producto creado correctamente',
-            'producto' => $producto
-        ],201);
+            'message' => 'Producto creado correctamente',
+            'producto' => $producto,
+        ], 201);
     }
 
-    //Actualizar producto
-    public function update(Request $request,int $id){
+    // Actualizar producto
+    public function update(Request $request, int $id)
+    {
 
         $producto = Producto::findOrFail($id);
 
         $request->validate([
-            'nombre'=> 'required|string|max:255',
+            'nombre' => 'required|string|max:255',
             'marca' => 'nullable|string|max:255',
             'modelo' => 'nullable|string|max:255',
             'codigo' => 'nullable|string|max:100',
@@ -83,9 +95,10 @@ class ProductoController extends Controller
             'activo' => 'nullable|boolean',
             'stock' => 'nullable|integer|min:0',
             'categoria_id' => 'nullable|exists:categorias,id',
+            'imagen' => 'sometimes|nullable|image|max:2048',
         ]);
 
-        $producto->update($request->only([
+        $data = $request->only([
             'nombre',
             'marca',
             'modelo',
@@ -96,21 +109,32 @@ class ProductoController extends Controller
             'activo',
             'stock',
             'categoria_id',
-        ]));
+        ]);
+
+        if ($request->hasFile('imagen')) {
+            if ($producto->imagen) {
+                Storage::disk('public')->delete($producto->imagen);
+            }
+
+            $data['imagen'] = $request->file('imagen')->store('productos', 'public');
+        }
+
+        $producto->update($data);
 
         return response()->json([
-            'message'=> 'Producto actualizado correctamente',
+            'message' => 'Producto actualizado correctamente',
             'producto' => $producto,
         ]);
     }
 
-    //Eliminar Producto
-    public function destroy(int $id){
+    // Eliminar Producto
+    public function destroy(int $id)
+    {
         $producto = Producto::findOrFail($id);
 
-        if(!$producto){
+        if (! $producto) {
             return response()->json([
-                'message' => 'Producto no encontrado'
+                'message' => 'Producto no encontrado',
             ], 404);
         }
 
@@ -120,4 +144,4 @@ class ProductoController extends Controller
             'message' => 'Producto eliminado correctamente',
         ]);
     }
-}       
+}
