@@ -901,7 +901,7 @@ class CotizacionController extends Controller
         $cliente = $this->sanitizePdfFilenamePart($cotizacion->cliente_nombre ?? 'Cliente');
         $titulo = $this->sanitizePdfFilenamePart($cotizacion->titulo ?? 'Cotizacion');
 
-        return "{$fecha} COT. N°{$cotizacion->numero} - {$cliente} - {$titulo}.pdf";
+        return "{$fecha} COT. N-{$cotizacion->numero} - {$cliente} - {$titulo}.pdf";
     }
 
     private function sanitizePdfFilenamePart(string $value): string
