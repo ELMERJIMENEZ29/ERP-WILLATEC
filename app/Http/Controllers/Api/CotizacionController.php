@@ -13,16 +13,25 @@ use App\Models\EstadoCotizacionItem;
 use App\Models\Moneda;
 use App\Models\Plantilla;
 use App\Models\Plataforma;
+use App\Models\Producto;
+use App\Models\User;
 use App\Notifications\CotizacionAprobadaNotification;
 use App\Notifications\CotizacionRechazadaNotification;
 use App\Services\CotizacionService;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class CotizacionController extends Controller
 {
+    private const FORMAS_PAGO = [
+        'AL CONTADO',
+        'CRÉDITO 15 DÍAS',
+        'CRÉDITO 30 DÍAS',
+    ];
+
     protected CotizacionService $service;
 
     public function __construct(CotizacionService $service)
@@ -36,7 +45,7 @@ class CotizacionController extends Controller
 
     public function index(Request $request)
     {
-        $query = Cotizacion::with(['cliente', 'estadoCotizacion', 'user', 'delegado'])->withCount('items');
+        $query = Cotizacion::with(['cliente', 'estadoCotizacion', 'user', 'delegado', 'delegadoCotizacion'])->withCount('items');
 
         if ($request->has('cliente_id')) {
             $query->where('cliente_id', $request->cliente_id);
@@ -57,6 +66,7 @@ class CotizacionController extends Controller
             'historial.usuario',
             'user',
             'delegado',
+            'delegadoCotizacion',
         ])->find($id);
 
         if (! $cotizacion) {
@@ -77,11 +87,15 @@ class CotizacionController extends Controller
             'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD',
             'moneda_id' => 'required|exists:monedas,id',
             'delegado_id' => 'nullable|exists:users,id',
+            'delegado_cotizacion_id' => 'nullable|exists:users,id',
+            'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
         ]);
 
         if ($request->filled('delegado_id') && ! $request->user()->hasRole('superadmin')) {
             abort(403, 'Solo superadmin puede delegar la aprobación.');
         }
+
+        $this->ensureSalesUser($request->integer('delegado_cotizacion_id') ?: null);
 
         $numero = $this->service->generarNumero();
         $cliente = Cliente::findOrFail($request->cliente_id);
@@ -92,12 +106,14 @@ class CotizacionController extends Controller
             'titulo' => $request->titulo ?? 'Cotizacion'.$numero,
             'tipo_cambio' => 1, // luego lo conectamos a API
             'validez_dias' => 10,
+            'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
 
             'cliente_id' => $cliente->id,
             'plantilla_id' => $request->plantilla_id,
             'user_id' => $request->user()->id,
             'moneda_id' => $request->moneda_id,
             'delegado_id' => $request->delegado_id,
+            'delegado_cotizacion_id' => $request->delegado_cotizacion_id,
 
             'modo_distribucion' => $request->modo_distribucion ?? 'POR_ITEM',
 
@@ -132,27 +148,49 @@ class CotizacionController extends Controller
             'moneda_id' => 'required|exists:monedas,id',
             'modo_distribucion' => 'required|string',
             'delegado_id' => 'nullable|exists:users,id',
+            'delegado_cotizacion_id' => 'nullable|exists:users,id',
+            'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
         ]);
 
         $hasDelegadoKey = array_key_exists('delegado_id', $request->all());
+        $hasDelegadoCotizacionKey = array_key_exists('delegado_cotizacion_id', $request->all());
+        $requestedDelegadoId = $hasDelegadoKey
+            ? ($request->filled('delegado_id') ? $request->integer('delegado_id') : null)
+            : $cotizacion->delegado_id;
+        $isChangingDelegado = $requestedDelegadoId !== ($cotizacion->delegado_id ? (int) $cotizacion->delegado_id : null);
 
-        if ($hasDelegadoKey && ! $request->user()->hasRole('superadmin')) {
+        if ($isChangingDelegado && ! $request->user()->hasRole('superadmin')) {
             abort(403, 'Solo superadmin puede delegar la aprobación.');
         }
 
-        if ($cotizacion->delegado_id && $hasDelegadoKey && $request->delegado_id !== $cotizacion->delegado_id) {
+        if ($cotizacion->delegado_id && $isChangingDelegado) {
             abort(403, 'El delegado ya fue asignado para esta cotización y no puede cambiarse.');
         }
 
-        $delegadoId = $hasDelegadoKey ? $request->delegado_id : $cotizacion->delegado_id;
+        $delegadoId = $requestedDelegadoId;
+        $delegadoCotizacionId = $hasDelegadoCotizacionKey
+            ? $request->delegado_cotizacion_id
+            : $cotizacion->delegado_cotizacion_id;
 
-        DB::transaction(function () use ($request, $cotizacion, $delegadoId) {
+        $this->ensureCanEditCotizacion($request, $cotizacion);
+        $this->ensureSalesUser($delegadoCotizacionId);
+
+        DB::transaction(function () use ($request, $cotizacion, $delegadoId, $delegadoCotizacionId) {
+            $cliente = Cliente::findOrFail($request->cliente_id);
+
             $cotizacion->update([
-                'cliente_id' => $request->cliente_id,
+                'cliente_id' => $cliente->id,
+                'cliente_nombre' => $cliente->nombre,
+                'cliente_ruc' => $cliente->ruc,
+                'cliente_contacto' => $cliente->contacto,
+                'cliente_telefono' => $cliente->telefono,
+                'cliente_correo' => $cliente->correo,
                 'plantilla_id' => $request->plantilla_id,
                 'moneda_id' => $request->moneda_id,
                 'modo_distribucion' => $request->modo_distribucion,
                 'delegado_id' => $delegadoId,
+                'delegado_cotizacion_id' => $delegadoCotizacionId,
+                'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
             ]);
 
             $this->service->recalcular($cotizacion);
@@ -161,6 +199,28 @@ class CotizacionController extends Controller
         return response()->json([
             'message' => 'Cotización actualizada correctamente',
             'cotizacion' => $cotizacion->load('items'),
+        ]);
+    }
+
+    public function delegar(Request $request, Cotizacion $cotizacion)
+    {
+        $this->ensureCanDelegateCotizacion($request, $cotizacion);
+
+        $request->validate([
+            'delegado_cotizacion_id' => 'required|exists:users,id',
+        ]);
+
+        $delegadoCotizacionId = $request->integer('delegado_cotizacion_id');
+
+        $this->ensureSalesUser($delegadoCotizacionId);
+
+        $cotizacion->update([
+            'delegado_cotizacion_id' => $delegadoCotizacionId,
+        ]);
+
+        return response()->json([
+            'message' => 'Cotización delegada correctamente',
+            'cotizacion' => $cotizacion->refresh()->load(['cliente', 'estadoCotizacion', 'user', 'delegado', 'delegadoCotizacion']),
         ]);
     }
 
@@ -447,9 +507,11 @@ class CotizacionController extends Controller
 
         $vista = 'pdfs.cotizaciones.'.$formatoPdf;
 
-        // if (!view()->exists($vista)) {
-        //     abort(404, "La vista PDF [$vista] no existe");
-        // }
+        $viewPath = resource_path('views/'.str_replace('.', '/', $vista).'.blade.php');
+
+        if (! view()->exists($vista) || ! file_exists($viewPath) || trim(file_get_contents($viewPath)) === '') {
+            $vista = 'pdfs.cotizaciones.willatec-dolares';
+        }
 
         // Generar PDF usando la vista dinámica
         $pdf = Pdf::loadView($vista, compact('cotizacion'))
@@ -459,9 +521,10 @@ class CotizacionController extends Controller
             ]); // Permitir cargar imágenes remotas
 
         // Vista previa en el navegador
-        return $pdf->download(
-            "COT.-{$cotizacion->numero}-{$cotizacion->cliente_nombre}-{$cotizacion->titulo}.pdf"
-        );
+        $filename = $this->buildCotizacionPdfFilename($cotizacion);
+
+        return $pdf->download($filename)
+            ->header('X-Suggested-Filename', $filename);
     }
 
     // =========================
@@ -538,6 +601,8 @@ class CotizacionController extends Controller
             'titulo' => 'required|string',
             'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD',
             'moneda_id' => 'required|exists:monedas,id',
+            'delegado_cotizacion_id' => 'nullable|exists:users,id',
+            'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
 
             'items' => 'required|array|min:1',
 
@@ -545,12 +610,15 @@ class CotizacionController extends Controller
             'items.*.cantidad' => 'required|numeric|min:1',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
+            'items.*.imagen' => 'sometimes|nullable',
 
             'costos' => 'nullable|array',
 
             'costos.*.tipo' => 'required|string',
             'costos.*.monto' => 'required|numeric|min:0',
         ]);
+
+        $this->ensureSalesUser($request->integer('delegado_cotizacion_id') ?: null);
 
         $cotizacion = null;
 
@@ -564,12 +632,14 @@ class CotizacionController extends Controller
                 'titulo' => $request->titulo ?? 'Cotizacion'.$numero,
                 'tipo_cambio' => 1, // luego lo conectamos a API
                 'validez_dias' => $request->validez_dias,
+                'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
 
                 'cliente_id' => $cliente->id,
                 'plantilla_id' => $request->plantilla_id,
                 'plataforma_id' => $request->plataforma_id,
                 'user_id' => $request->user()->id,
                 'moneda_id' => $request->moneda_id,
+                'delegado_cotizacion_id' => $request->delegado_cotizacion_id,
 
                 'modo_distribucion' => $request->modo_distribucion ?? 'POR_ITEM',
 
@@ -580,6 +650,7 @@ class CotizacionController extends Controller
                 // SNAPSHOT
                 'cliente_nombre' => $cliente->nombre,
                 'cliente_ruc' => $cliente->ruc,
+                'cliente_contacto' => $cliente->contacto,
                 'cliente_telefono' => $cliente->telefono,
                 'cliente_correo' => $cliente->correo,
 
@@ -615,6 +686,7 @@ class CotizacionController extends Controller
                     'link_proveedor' => $item['link_proveedor'],
                     'producto_id' => $item['producto_id'] ?? null,
                     'tipo' => $item['tipo'] ?? 'personalizado',
+                    'imagen' => $this->resolveCotizacionItemImagen($request, $index, $item),
 
                     // Valores calculados iniciales — recalcular() los refinará con costos adicionales
                     'costo_unitario' => $costoBase,
@@ -655,6 +727,7 @@ class CotizacionController extends Controller
                 'cliente',
                 'plantilla',
                 'moneda',
+                'delegadoCotizacion',
             ]),
         ]);
 
@@ -672,6 +745,8 @@ class CotizacionController extends Controller
             'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD',
             'moneda_id' => 'required|exists:monedas,id',
             'delegado_id' => 'nullable|exists:users,id',
+            'delegado_cotizacion_id' => 'nullable|exists:users,id',
+            'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
 
             'items' => 'required|array|min:1',
 
@@ -679,6 +754,7 @@ class CotizacionController extends Controller
             'items.*.cantidad' => 'required|numeric|min:1',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
+            'items.*.imagen' => 'sometimes|nullable',
 
             'costos' => 'nullable|array',
 
@@ -688,23 +764,35 @@ class CotizacionController extends Controller
 
         $cliente = Cliente::findOrFail($request->cliente_id);
         $hasDelegadoKey = array_key_exists('delegado_id', $request->all());
+        $hasDelegadoCotizacionKey = array_key_exists('delegado_cotizacion_id', $request->all());
+        $requestedDelegadoId = $hasDelegadoKey
+            ? ($request->filled('delegado_id') ? $request->integer('delegado_id') : null)
+            : $cotizacion->delegado_id;
+        $isChangingDelegado = $requestedDelegadoId !== ($cotizacion->delegado_id ? (int) $cotizacion->delegado_id : null);
 
-        if ($hasDelegadoKey && ! $request->user()->hasRole('superadmin')) {
+        if ($isChangingDelegado && ! $request->user()->hasRole('superadmin')) {
             abort(403, 'Solo superadmin puede delegar la aprobación.');
         }
 
-        if ($cotizacion->delegado_id && $hasDelegadoKey && $request->delegado_id !== $cotizacion->delegado_id) {
+        if ($cotizacion->delegado_id && $isChangingDelegado) {
             abort(403, 'El delegado ya fue asignado para esta cotización y no puede cambiarse.');
         }
 
-        $delegadoId = $hasDelegadoKey ? $request->delegado_id : $cotizacion->delegado_id;
+        $delegadoId = $requestedDelegadoId;
+        $delegadoCotizacionId = $hasDelegadoCotizacionKey
+            ? $request->delegado_cotizacion_id
+            : $cotizacion->delegado_cotizacion_id;
 
-        DB::transaction(function () use ($request, $cotizacion, $cliente, $delegadoId) {
+        $this->ensureCanEditCotizacion($request, $cotizacion);
+        $this->ensureSalesUser($delegadoCotizacionId);
+
+        DB::transaction(function () use ($request, $cotizacion, $cliente, $delegadoId, $delegadoCotizacionId) {
             // UPDATE HEADER
             $cotizacion->update([
                 'cliente_id' => $cliente->id,
                 'cliente_nombre' => $cliente->nombre,
                 'cliente_ruc' => $cliente->ruc,
+                'cliente_contacto' => $cliente->contacto,
                 'cliente_telefono' => $cliente->telefono,
                 'cliente_correo' => $cliente->correo,
                 'plantilla_id' => $request->plantilla_id,
@@ -718,6 +806,8 @@ class CotizacionController extends Controller
                 'total' => 0,
                 'estado_cotizacion_id' => $request->estado_cotizacion_id,
                 'delegado_id' => $delegadoId,
+                'delegado_cotizacion_id' => $delegadoCotizacionId,
+                'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
             ]);
 
             // ELIMINAR SNAPSHOT VIEJO
@@ -752,6 +842,7 @@ class CotizacionController extends Controller
                     'link_proveedor' => $item['link_proveedor'],
                     'producto_id' => $item['producto_id'] ?? null,
                     'tipo' => $item['tipo'] ?? 'personalizado',
+                    'imagen' => $this->resolveCotizacionItemImagen($request, $index, $item),
 
                     // Valores calculados iniciales — recalcular() los refinará con costos adicionales
                     'costo_unitario' => $costoBase,
@@ -787,8 +878,104 @@ class CotizacionController extends Controller
                 'cliente',
                 'plantilla',
                 'moneda',
+                'delegadoCotizacion',
             ]),
         ]);
+    }
+
+    private function ensureSalesUser(?int $userId): void
+    {
+        if (! $userId) {
+            return;
+        }
+
+        if (! User::role('ventas')->whereKey($userId)->exists()) {
+            abort(422, 'El delegado de cotización debe tener rol de ventas.');
+        }
+    }
+
+    private function buildCotizacionPdfFilename(Cotizacion $cotizacion): string
+    {
+        $fecha = Carbon::parse($cotizacion->fecha ?? $cotizacion->created_at)->format('Y-m-d');
+
+        $cliente = $this->sanitizePdfFilenamePart($cotizacion->cliente_nombre ?? 'Cliente');
+        $titulo = $this->sanitizePdfFilenamePart($cotizacion->titulo ?? 'Cotizacion');
+
+        return "{$fecha} COT. N°{$cotizacion->numero} - {$cliente} - {$titulo}.pdf";
+    }
+
+    private function sanitizePdfFilenamePart(string $value): string
+    {
+        $value = preg_replace('/[\\\\\/:*?"<>|]+/', ' ', $value) ?? $value;
+        $value = preg_replace('/\s+/', ' ', $value) ?? $value;
+
+        return trim($value);
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function resolveCotizacionItemImagen(Request $request, int $index, array $item): ?string
+    {
+        $field = "items.$index.imagen";
+
+        if ($request->hasFile($field)) {
+            $request->validate([
+                $field => 'image|max:2048',
+            ]);
+
+            return $request->file($field)->store('cotizacion-items', 'public');
+        }
+
+        foreach (['imagen', 'imagen_path'] as $key) {
+            if (! empty($item[$key]) && is_string($item[$key])) {
+                return $this->normalizePublicStoragePath($item[$key]);
+            }
+        }
+
+        if (! empty($item['producto_id'])) {
+            return Producto::whereKey($item['producto_id'])->value('imagen');
+        }
+
+        return null;
+    }
+
+    private function normalizePublicStoragePath(string $path): string
+    {
+        $path = parse_url($path, PHP_URL_PATH) ?: $path;
+        $path = ltrim(str_replace('\\', '/', $path), '/');
+
+        if (str_starts_with($path, 'storage/')) {
+            return substr($path, strlen('storage/'));
+        }
+
+        return $path;
+    }
+
+    private function ensureCanDelegateCotizacion(Request $request, Cotizacion $cotizacion): void
+    {
+        if ($request->user()->hasRole('superadmin')) {
+            return;
+        }
+
+        if ($cotizacion->user_id === $request->user()->id || $cotizacion->delegado_cotizacion_id === $request->user()->id) {
+            return;
+        }
+
+        abort(403, 'No autorizado para delegar esta cotización.');
+    }
+
+    private function ensureCanEditCotizacion(Request $request, Cotizacion $cotizacion): void
+    {
+        if ($request->user()->hasRole('superadmin')) {
+            return;
+        }
+
+        if ($cotizacion->user_id === $request->user()->id || $cotizacion->delegado_cotizacion_id === $request->user()->id) {
+            return;
+        }
+
+        abort(403, 'No autorizado para editar esta cotización.');
     }
 
     // =========================

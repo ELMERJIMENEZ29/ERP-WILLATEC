@@ -3,13 +3,19 @@
 namespace App\Models;
 
 use App\Models\Concerns\Auditable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class CotizacionItem extends Model
 {
     use Auditable, LogsActivity;
+
+    protected $appends = [
+        'imagen_url',
+    ];
 
     protected $fillable = [
         'descripcion',
@@ -52,6 +58,13 @@ class CotizacionItem extends Model
     public function estadoCotizacionItem(): BelongsTo
     {
         return $this->belongsTo(EstadoCotizacionItem::class, 'estado_cotizacion_item_id');
+    }
+
+    protected function imagenUrl(): Attribute
+    {
+        return Attribute::get(
+            fn (): ?string => $this->imagen ? Storage::disk('public')->url($this->imagen) : null
+        );
     }
 
     protected function auditModelName(): string

@@ -19,6 +19,7 @@ class Cotizacion extends Model
         'numero',
         'fecha',
         'validez_dias',
+        'forma_pago',
         'tipo_cambio',
         'titulo',
         'modo_distribucion',
@@ -42,6 +43,7 @@ class Cotizacion extends Model
         'cliente_telefono',
         'cliente_correo',
         'delegado_id',
+        'delegado_cotizacion_id',
     ];
 
     // Relaciones
@@ -83,6 +85,11 @@ class Cotizacion extends Model
     public function delegado(): BelongsTo
     {
         return $this->belongsTo(User::class, 'delegado_id');
+    }
+
+    public function delegadoCotizacion(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'delegado_cotizacion_id');
     }
 
     public function ordenCompra(): HasOne
