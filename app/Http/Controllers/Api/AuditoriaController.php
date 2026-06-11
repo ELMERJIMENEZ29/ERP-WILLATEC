@@ -7,6 +7,7 @@ use App\Models\Cliente;
 use App\Models\Cotizacion;
 use App\Models\CotizacionCostosAdicional;
 use App\Models\CotizacionItem;
+use App\Models\CotizacionItemProveedor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Spatie\Activitylog\Models\Activity;
@@ -21,7 +22,7 @@ class AuditoriaController extends Controller
         $request->validate([
             'per_page' => 'nullable|integer|min:1|max:100',
             'event' => 'nullable|in:created,updated,deleted',
-            'tipo' => 'nullable|in:cliente,cotizacion,cotizacion_item,cotizacion_costo',
+            'tipo' => 'nullable|in:cliente,cotizacion,cotizacion_item,cotizacion_costo,cotizacion_item_proveedor',
             'subject_id' => 'nullable|integer|min:1',
             'causer_id' => 'nullable|integer|min:1',
             'search' => 'nullable|string|max:100',
@@ -90,6 +91,7 @@ class AuditoriaController extends Controller
             'cotizacion' => Cotizacion::class,
             'cotizacion_item' => CotizacionItem::class,
             'cotizacion_costo' => CotizacionCostosAdicional::class,
+            'cotizacion_item_proveedor' => CotizacionItemProveedor::class,
         ];
     }
 
@@ -128,6 +130,7 @@ class AuditoriaController extends Controller
             Cotizacion::class => 'cotizacion',
             CotizacionItem::class => 'cotizacion_item',
             CotizacionCostosAdicional::class => 'cotizacion_costo',
+            CotizacionItemProveedor::class => 'cotizacion_item_proveedor',
             default => class_basename($subjectType ?? 'sistema'),
         };
     }
@@ -144,6 +147,7 @@ class AuditoriaController extends Controller
             Cotizacion::class => $subject?->numero ?? $values['numero'] ?? null,
             CotizacionItem::class => $subject?->descripcion ?? $values['descripcion'] ?? null,
             CotizacionCostosAdicional::class => $subject?->tipo ?? $values['tipo'] ?? null,
+            CotizacionItemProveedor::class => $subject?->nombre ?? $values['nombre'] ?? null,
             default => null,
         };
     }

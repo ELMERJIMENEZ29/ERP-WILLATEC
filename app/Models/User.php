@@ -29,6 +29,7 @@ class User extends Authenticatable
         'activo',
         'password',
         'requires_password_change',
+        'last_login_at',
     ];
 
     /**
@@ -52,6 +53,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'requires_password_change' => 'boolean',
+            'last_login_at' => 'datetime',
         ];
     }
 

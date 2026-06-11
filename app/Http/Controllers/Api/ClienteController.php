@@ -22,6 +22,7 @@ class ClienteController extends Controller
 
     //Crear cliente
     public function store(Request $request){
+        $this->normalizeOptionalContactFields($request);
 
         $request->validate([
             'nombre' => 'required|string|max:255',
@@ -73,6 +74,8 @@ class ClienteController extends Controller
             ], 404);
         }
 
+        $this->normalizeOptionalContactFields($request);
+
         $request->validate([
             'nombre' => 'required|string|max:255',
             'ruc' => 'nullable|string|max:11',
@@ -116,5 +119,24 @@ class ClienteController extends Controller
         return response()->json([
             'message' => 'Cliente eliminado correctamente'
         ]);
+    }
+
+    private function normalizeOptionalContactFields(Request $request): void
+    {
+        foreach (['correo', 'telefono'] as $field) {
+            if (! $request->has($field)) {
+                continue;
+            }
+
+            $value = $request->input($field);
+
+            if (is_string($value)) {
+                $value = trim($value);
+            }
+
+            $request->merge([
+                $field => $value === '' ? null : $value,
+            ]);
+        }
     }
 }

@@ -24,18 +24,21 @@ class CotizacionRechazadaNotification extends Notification
 
     public function toArray(object $notifiable): array
     {
+        $rejectedAt = now('America/Lima');
+        $approverName = trim($this->approver->nombres.' '.$this->approver->apellidos);
+
         return [
             'cotizacion_id' => $this->cotizacion->id,
             'cotizacion_numero' => $this->cotizacion->numero,
             'action' => 'rechazada',
             'message' => sprintf(
                 'Cotización rechazada por %s a las %s.',
-                trim($this->approver->nombres.' '.$this->approver->apellidos),
-                now()->format('H:i')
+                $approverName,
+                $rejectedAt->format('H:i')
             ),
             'rejected_by_id' => $this->approver->id,
-            'rejected_by_name' => trim($this->approver->nombres.' '.$this->approver->apellidos),
-            'rejected_at' => now()->toDateTimeString(),
+            'rejected_by_name' => $approverName,
+            'rejected_at' => $rejectedAt->toDateTimeString(),
             'reason' => $this->reason,
         ];
     }

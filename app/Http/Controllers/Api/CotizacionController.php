@@ -8,6 +8,7 @@ use App\Models\Cotizacion;
 use App\Models\CotizacionCostosAdicional;
 use App\Models\CotizacionHistorial;
 use App\Models\CotizacionItem;
+use App\Models\CotizacionItemProveedor;
 use App\Models\EstadoCotizacion;
 use App\Models\EstadoCotizacionItem;
 use App\Models\Moneda;
@@ -26,6 +27,8 @@ use Illuminate\Support\Facades\Storage;
 
 class CotizacionController extends Controller
 {
+    private const BUSINESS_TIMEZONE = 'America/Lima';
+
     private const FORMAS_PAGO = [
         'AL CONTADO',
         'CRÉDITO 15 DÍAS',
@@ -58,7 +61,8 @@ class CotizacionController extends Controller
     {
         $cotizacion = Cotizacion::with([
             'cliente',
-            'items',
+            'items.producto',
+            'items.proveedores',
             'costosAdicionales',
             'estadoCotizacion',
             'historial.estadoAnterior',
@@ -88,13 +92,16 @@ class CotizacionController extends Controller
             'moneda_id' => 'required|exists:monedas,id',
             'delegado_id' => 'nullable|exists:users,id',
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
+            'validez_dias' => 'nullable|integer|min:1|max:365',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'cliente_contacto' => 'nullable|string|max:255',
         ]);
 
         if ($request->filled('delegado_id') && ! $request->user()->hasRole('superadmin')) {
             abort(403, 'Solo superadmin puede delegar la aprobación.');
         }
 
+        $this->ensureSalesUser($request->integer('delegado_id') ?: null);
         $this->ensureSalesUser($request->integer('delegado_cotizacion_id') ?: null);
 
         $numero = $this->service->generarNumero();
@@ -102,10 +109,10 @@ class CotizacionController extends Controller
 
         $cotizacion = Cotizacion::create([
             'numero' => $numero,
-            'fecha' => now(),
+            'fecha' => $this->todayBusinessDate(),
             'titulo' => $request->titulo ?? 'Cotizacion'.$numero,
             'tipo_cambio' => 1, // luego lo conectamos a API
-            'validez_dias' => 10,
+            'validez_dias' => $request->integer('validez_dias') ?: 10,
             'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
 
             'cliente_id' => $cliente->id,
@@ -124,12 +131,12 @@ class CotizacionController extends Controller
             // SNAPSHOT
             'cliente_nombre' => $cliente->nombre,
             'cliente_ruc' => $cliente->ruc,
-            'cliente_contacto' => $cliente->contacto,
+            'cliente_contacto' => $request->cliente_contacto,
             'cliente_telefono' => $cliente->telefono,
             'cliente_correo' => $cliente->correo,
 
             // estado inicial (IMPORTANTE)
-            'estado_cotizacion_id' => 1, // ej: borrador o enviada
+            'estado_cotizacion_id' => $this->estadoCotizacionId('borrador'),
         ]);
 
         return response()->json([
@@ -150,6 +157,7 @@ class CotizacionController extends Controller
             'delegado_id' => 'nullable|exists:users,id',
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'cliente_contacto' => 'nullable|string|max:255',
         ]);
 
         $hasDelegadoKey = array_key_exists('delegado_id', $request->all());
@@ -173,16 +181,21 @@ class CotizacionController extends Controller
             : $cotizacion->delegado_cotizacion_id;
 
         $this->ensureCanEditCotizacion($request, $cotizacion);
+        $this->ensureSalesUser($delegadoId);
         $this->ensureSalesUser($delegadoCotizacionId);
 
-        DB::transaction(function () use ($request, $cotizacion, $delegadoId, $delegadoCotizacionId) {
+        $estadoAnterior = (int) $cotizacion->estado_cotizacion_id;
+
+        DB::transaction(function () use ($request, $cotizacion, $delegadoId, $delegadoCotizacionId, $estadoAnterior) {
             $cliente = Cliente::findOrFail($request->cliente_id);
 
             $cotizacion->update([
                 'cliente_id' => $cliente->id,
                 'cliente_nombre' => $cliente->nombre,
                 'cliente_ruc' => $cliente->ruc,
-                'cliente_contacto' => $cliente->contacto,
+                'cliente_contacto' => $request->has('cliente_contacto')
+                    ? $request->cliente_contacto
+                    : $cotizacion->cliente_contacto,
                 'cliente_telefono' => $cliente->telefono,
                 'cliente_correo' => $cliente->correo,
                 'plantilla_id' => $request->plantilla_id,
@@ -194,33 +207,88 @@ class CotizacionController extends Controller
             ]);
 
             $this->service->recalcular($cotizacion);
+            $this->reenviarSiEstabaRechazada($request, $cotizacion, $estadoAnterior);
         });
 
         return response()->json([
             'message' => 'Cotización actualizada correctamente',
-            'cotizacion' => $cotizacion->load('items'),
+            'cotizacion' => $cotizacion->load('items.proveedores'),
         ]);
     }
 
     public function delegar(Request $request, Cotizacion $cotizacion)
     {
-        $this->ensureCanDelegateCotizacion($request, $cotizacion);
+        $this->ensureCanDelegateApproval($request);
 
         $request->validate([
-            'delegado_cotizacion_id' => 'required|exists:users,id',
+            'delegado_id' => 'required_without:delegado_cotizacion_id|nullable|exists:users,id',
+            'delegado_cotizacion_id' => 'required_without:delegado_id|nullable|exists:users,id',
         ]);
 
-        $delegadoCotizacionId = $request->integer('delegado_cotizacion_id');
+        $delegadoId = $request->integer('delegado_id') ?: $request->integer('delegado_cotizacion_id');
 
-        $this->ensureSalesUser($delegadoCotizacionId);
+        $this->ensureSalesUser($delegadoId);
 
         $cotizacion->update([
-            'delegado_cotizacion_id' => $delegadoCotizacionId,
+            'delegado_id' => $delegadoId,
         ]);
 
         return response()->json([
-            'message' => 'Cotización delegada correctamente',
+            'message' => 'Aprobación de cotización delegada correctamente',
             'cotizacion' => $cotizacion->refresh()->load(['cliente', 'estadoCotizacion', 'user', 'delegado', 'delegadoCotizacion']),
+        ]);
+    }
+
+    public function enviarRevision(Request $request, Cotizacion $cotizacion)
+    {
+        $this->ensureCanEditCotizacion($request, $cotizacion);
+
+        $estadoAnterior = $cotizacion->estado_cotizacion_id;
+        $estadoEnviadaId = $this->estadoCotizacionId('enviada');
+
+        DB::transaction(function () use ($request, $cotizacion, $estadoAnterior, $estadoEnviadaId) {
+            $cotizacion->update([
+                'estado_cotizacion_id' => $estadoEnviadaId,
+            ]);
+
+            if ((int) $estadoAnterior !== (int) $estadoEnviadaId) {
+                CotizacionHistorial::create([
+                    'cotizacion_id' => $cotizacion->id,
+                    'estado_anterior_id' => $estadoAnterior,
+                    'estado_nuevo_id' => $estadoEnviadaId,
+                    'comentario' => $request->input('comentario'),
+                    'user_id' => $request->user()->id,
+                ]);
+            }
+        });
+
+        return response()->json([
+            'message' => 'Cotización enviada a revisión correctamente',
+            'cotizacion' => $cotizacion->refresh()->load(['cliente', 'estadoCotizacion', 'user', 'delegado', 'delegadoCotizacion']),
+        ]);
+    }
+
+    public function destroy(Request $request, Cotizacion $cotizacion)
+    {
+        $this->ensureCanEditCotizacion($request, $cotizacion);
+
+        $cotizacion->load('items.proveedores');
+
+        $imagePaths = $cotizacion->items
+            ->pluck('imagen')
+            ->filter()
+            ->map(fn (string $path): ?string => $this->normalizePublicStoragePath($path))
+            ->filter()
+            ->values();
+
+        DB::transaction(function () use ($cotizacion) {
+            $cotizacion->delete();
+        });
+
+        $imagePaths->each(fn (string $path) => Storage::disk('public')->delete($path));
+
+        return response()->json([
+            'message' => 'Cotización eliminada correctamente',
         ]);
     }
 
@@ -241,7 +309,14 @@ class CotizacionController extends Controller
             'producto_id' => 'nullable|exists:productos,id',
             'proveedor' => 'nullable|string',
             'link_proveedor' => 'nullable|string',
+            'tipo' => 'nullable|string|in:catalogo,personalizado,externo',
+            'proveedores' => 'nullable|array',
+            'proveedores.*.nombre' => 'required|string|max:255',
+            'proveedores.*.link' => 'nullable|string',
+            'proveedores.*.precio' => 'nullable|numeric|min:0',
+            'proveedores.*.notas' => 'nullable|string',
             'imagen' => 'sometimes|nullable|image|max:2048',
+            'imagen_path' => 'sometimes|nullable|string|max:2048',
         ]);
 
         DB::transaction(function () use ($request, $cotizacionId) {
@@ -272,11 +347,11 @@ class CotizacionController extends Controller
                 'garantia_meses' => $request->garantia_meses,
                 'disponibilidad_tipo' => $request->disponibilidad_tipo,
                 'disponibilidad_dias' => $request->disponibilidad_dias,
-                'proveedor' => $request->proveedor,
-                'link_proveedor' => $request->link_proveedor,
+                'proveedor' => $this->primerProveedorNombre($request->input('proveedores'), $request->proveedor),
+                'link_proveedor' => $this->primerProveedorLink($request->input('proveedores'), $request->link_proveedor),
                 'orden' => $ultimoOrden + 1,
                 'producto_id' => $request->producto_id ?? null,
-                'tipo' => $request->producto_id ? 'catalogo' : 'personalizado',
+                'tipo' => $request->tipo ?? ($request->producto_id ? 'catalogo' : 'personalizado'),
 
                 // Valores calculados iniciales — recalcular() los refinará
                 'costo_unitario' => $costoBase,
@@ -289,9 +364,14 @@ class CotizacionController extends Controller
 
             if ($request->hasFile('imagen')) {
                 $itemData['imagen'] = $request->file('imagen')->store('cotizacion-items', 'public');
+            } elseif ($request->filled('imagen_path')) {
+                $itemData['imagen'] = $this->normalizePublicStoragePath($request->string('imagen_path')->toString());
+            } elseif ($request->filled('producto_id')) {
+                $itemData['imagen'] = Producto::whereKey($request->integer('producto_id'))->value('imagen');
             }
 
-            CotizacionItem::create($itemData);
+            $item = CotizacionItem::create($itemData);
+            $this->syncItemProveedores($item, $request->input('proveedores'));
 
             $cotizacion = Cotizacion::findOrFail($cotizacionId);
 
@@ -315,6 +395,14 @@ class CotizacionController extends Controller
             'disponibilidad_tipo' => 'nullable|in:stock,importacion',
             'disponibilidad_dias' => 'nullable|integer|min:1|max:50',
             'producto_id' => 'nullable|exists:productos,id',
+            'proveedor' => 'nullable|string',
+            'link_proveedor' => 'nullable|string',
+            'tipo' => 'nullable|string|in:catalogo,personalizado,externo',
+            'proveedores' => 'nullable|array',
+            'proveedores.*.nombre' => 'required|string|max:255',
+            'proveedores.*.link' => 'nullable|string',
+            'proveedores.*.precio' => 'nullable|numeric|min:0',
+            'proveedores.*.notas' => 'nullable|string',
             'imagen' => 'sometimes|nullable|image|max:2048',
         ]);
 
@@ -336,14 +424,14 @@ class CotizacionController extends Controller
                     'descripcion', 'cantidad', 'costo_base', 'margen',
                     'marca', 'codigo', 'unidad_medida', 'garantia_meses',
                     'disponibilidad_tipo', 'disponibilidad_dias',
-                    'proveedor', 'link_proveedor', 'producto_id', 'stock',
+                    'proveedor', 'link_proveedor', 'producto_id', 'stock', 'tipo',
                 ]),
                 'costo_unitario' => $costoBase,
                 'precio_venta' => $precioVenta,
                 'subtotal' => $pvt,
                 'costo_total' => $ptc,
                 'ganancia' => round($pvt - $ptc, 2),
-                'tipo' => $item->producto_id ? 'producto' : ($request->tipo ?? $item->tipo),
+                'tipo' => $request->tipo ?? $item->tipo,
             ];
 
             if ($request->hasFile('imagen')) {
@@ -352,9 +440,17 @@ class CotizacionController extends Controller
                 }
 
                 $itemData['imagen'] = $request->file('imagen')->store('cotizacion-items', 'public');
+            } elseif ($request->filled('imagen_path')) {
+                $itemData['imagen'] = $this->normalizePublicStoragePath($request->string('imagen_path')->toString());
+            }
+
+            if ($request->has('proveedores')) {
+                $itemData['proveedor'] = $this->primerProveedorNombre($request->input('proveedores'), $itemData['proveedor'] ?? null);
+                $itemData['link_proveedor'] = $this->primerProveedorLink($request->input('proveedores'), $itemData['link_proveedor'] ?? null);
             }
 
             $item->update($itemData);
+            $this->syncItemProveedores($item, $request->input('proveedores'));
 
             $this->service->recalcular($item->cotizacion);
         });
@@ -398,7 +494,7 @@ class CotizacionController extends Controller
 
     public function indexItems(Request $request)
     {
-        $query = CotizacionItem::query();
+        $query = CotizacionItem::with('proveedores');
         if ($request->has('cotizacion_id')) {
             $query->where('cotizacion_id', $request->cotizacion_id);
         }
@@ -406,9 +502,31 @@ class CotizacionController extends Controller
         return response()->json($query->latest()->paginate(10));
     }
 
-    public function allItems()
+    public function allItems(Request $request)
     {
-        return response()->json(CotizacionItem::latest()->paginate(10));
+        $request->validate([
+            'search' => 'nullable|string|max:100',
+            'per_page' => 'nullable|integer|min:1|max:100',
+        ]);
+
+        $query = CotizacionItem::with('proveedores');
+
+        if ($request->filled('search')) {
+            $search = $request->string('search')->toString();
+
+            $query->where(function ($query) use ($search): void {
+                $query->where('descripcion', 'like', "%{$search}%")
+                    ->orWhere('marca', 'like', "%{$search}%")
+                    ->orWhere('codigo', 'like', "%{$search}%")
+                    ->orWhere('proveedor', 'like', "%{$search}%")
+                    ->orWhereHas('proveedores', function ($query) use ($search): void {
+                        $query->where('nombre', 'like', "%{$search}%")
+                            ->orWhere('link', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        return response()->json($query->latest()->paginate($request->integer('per_page', 10)));
     }
 
     // =========================
@@ -492,7 +610,8 @@ class CotizacionController extends Controller
     {
         $cotizacion = Cotizacion::with([
             'cliente',
-            'items',
+            'items.producto',
+            'items.proveedores',
             'user.profile',
             'plantilla',
             'moneda',
@@ -503,21 +622,16 @@ class CotizacionController extends Controller
             abort(404, 'Plantilla no disponible');
         }
 
-        $formatoPdf = trim($cotizacion->plantilla->formato_pdf);
-
-        $vista = 'pdfs.cotizaciones.'.$formatoPdf;
-
-        $viewPath = resource_path('views/'.str_replace('.', '/', $vista).'.blade.php');
-
-        if (! view()->exists($vista) || ! file_exists($viewPath) || trim(file_get_contents($viewPath)) === '') {
-            $vista = 'pdfs.cotizaciones.willatec-dolares';
-        }
+        $vista = $this->resolveCotizacionPdfView((string) $cotizacion->plantilla->formato_pdf);
 
         // Generar PDF usando la vista dinámica
         $pdf = Pdf::loadView($vista, compact('cotizacion'))
             ->setPaper('A4', 'portrait')
             ->setOptions([
-                'isRemoteEnabled' => true,
+                'isRemoteEnabled' => false,
+                'isLocalEnabled' => true,  // ← agrega esto
+                'chroot' => public_path(), // ← restringe acceso a public/
+
             ]); // Permitir cargar imágenes remotas
 
         // Vista previa en el navegador
@@ -601,8 +715,12 @@ class CotizacionController extends Controller
             'titulo' => 'required|string',
             'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD',
             'moneda_id' => 'required|exists:monedas,id',
+            'delegado_id' => 'nullable|exists:users,id',
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
+            'validez_dias' => 'nullable|integer|min:1|max:365',
+            'estado_cotizacion_id' => 'nullable|exists:estado_cotizaciones,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'cliente_contacto' => 'nullable|string|max:255',
 
             'items' => 'required|array|min:1',
 
@@ -610,7 +728,13 @@ class CotizacionController extends Controller
             'items.*.cantidad' => 'required|numeric|min:1',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
+            'items.*.tipo' => 'nullable|string|in:catalogo,personalizado,externo',
             'items.*.imagen' => 'sometimes|nullable',
+            'items.*.proveedores' => 'nullable|array',
+            'items.*.proveedores.*.nombre' => 'required|string|max:255',
+            'items.*.proveedores.*.link' => 'nullable|string',
+            'items.*.proveedores.*.precio' => 'nullable|numeric|min:0',
+            'items.*.proveedores.*.notas' => 'nullable|string',
 
             'costos' => 'nullable|array',
 
@@ -618,6 +742,11 @@ class CotizacionController extends Controller
             'costos.*.monto' => 'required|numeric|min:0',
         ]);
 
+        if ($request->filled('delegado_id') && ! $request->user()->hasRole('superadmin')) {
+            abort(403, 'Solo superadmin puede delegar la aprobación.');
+        }
+
+        $this->ensureSalesUser($request->integer('delegado_id') ?: null);
         $this->ensureSalesUser($request->integer('delegado_cotizacion_id') ?: null);
 
         $cotizacion = null;
@@ -628,10 +757,10 @@ class CotizacionController extends Controller
 
             $cotizacion = Cotizacion::create([
                 'numero' => $numero,
-                'fecha' => now(),
+                'fecha' => $this->todayBusinessDate(),
                 'titulo' => $request->titulo ?? 'Cotizacion'.$numero,
                 'tipo_cambio' => 1, // luego lo conectamos a API
-                'validez_dias' => $request->validez_dias,
+                'validez_dias' => $request->integer('validez_dias') ?: 10,
                 'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
 
                 'cliente_id' => $cliente->id,
@@ -639,6 +768,7 @@ class CotizacionController extends Controller
                 'plataforma_id' => $request->plataforma_id,
                 'user_id' => $request->user()->id,
                 'moneda_id' => $request->moneda_id,
+                'delegado_id' => $request->delegado_id,
                 'delegado_cotizacion_id' => $request->delegado_cotizacion_id,
 
                 'modo_distribucion' => $request->modo_distribucion ?? 'POR_ITEM',
@@ -650,12 +780,12 @@ class CotizacionController extends Controller
                 // SNAPSHOT
                 'cliente_nombre' => $cliente->nombre,
                 'cliente_ruc' => $cliente->ruc,
-                'cliente_contacto' => $cliente->contacto,
+                'cliente_contacto' => $request->cliente_contacto,
                 'cliente_telefono' => $cliente->telefono,
                 'cliente_correo' => $cliente->correo,
 
                 // estado inicial (IMPORTANTE)
-                'estado_cotizacion_id' => $request->estado_cotizacion_id, // ej: borrador o enviada
+                'estado_cotizacion_id' => $this->estadoCotizacionId('borrador'),
             ]);
 
             // ITEMS
@@ -669,7 +799,7 @@ class CotizacionController extends Controller
                 $pvt = round($cantidad * $precioVenta, 2);
                 $ptc = round($cantidad * $costoBase, 2);
 
-                CotizacionItem::create([
+                $cotizacionItem = CotizacionItem::create([
                     'cotizacion_id' => $cotizacion->id,
                     'descripcion' => $item['descripcion'],
                     'cantidad' => $item['cantidad'],
@@ -682,8 +812,8 @@ class CotizacionController extends Controller
                     'garantia_meses' => $item['garantia_meses'],
                     'disponibilidad_tipo' => $item['disponibilidad_tipo'],
                     'disponibilidad_dias' => $item['disponibilidad_dias'],
-                    'proveedor' => $item['proveedor'],
-                    'link_proveedor' => $item['link_proveedor'],
+                    'proveedor' => $this->primerProveedorNombre($item['proveedores'] ?? null, $item['proveedor'] ?? null),
+                    'link_proveedor' => $this->primerProveedorLink($item['proveedores'] ?? null, $item['link_proveedor'] ?? null),
                     'producto_id' => $item['producto_id'] ?? null,
                     'tipo' => $item['tipo'] ?? 'personalizado',
                     'imagen' => $this->resolveCotizacionItemImagen($request, $index, $item),
@@ -697,6 +827,8 @@ class CotizacionController extends Controller
                     'stock' => 0,
                     'delegado_id' => $cotizacion->delegado_id,
                 ]);
+
+                $this->syncItemProveedores($cotizacionItem, $item['proveedores'] ?? null);
             }
 
             // COSTOS
@@ -722,7 +854,7 @@ class CotizacionController extends Controller
         return response()->json([
             'message' => ' Cotizacion creada correctamente',
             'cotizacion' => $cotizacion->load([
-                'items',
+                'items.proveedores',
                 'costosAdicionales',
                 'cliente',
                 'plantilla',
@@ -746,7 +878,10 @@ class CotizacionController extends Controller
             'moneda_id' => 'required|exists:monedas,id',
             'delegado_id' => 'nullable|exists:users,id',
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
+            'validez_dias' => 'nullable|integer|min:1|max:365',
+            'estado_cotizacion_id' => 'nullable|exists:estado_cotizaciones,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'cliente_contacto' => 'nullable|string|max:255',
 
             'items' => 'required|array|min:1',
 
@@ -754,7 +889,13 @@ class CotizacionController extends Controller
             'items.*.cantidad' => 'required|numeric|min:1',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
+            'items.*.tipo' => 'nullable|string|in:catalogo,personalizado,externo',
             'items.*.imagen' => 'sometimes|nullable',
+            'items.*.proveedores' => 'nullable|array',
+            'items.*.proveedores.*.nombre' => 'required|string|max:255',
+            'items.*.proveedores.*.link' => 'nullable|string',
+            'items.*.proveedores.*.precio' => 'nullable|numeric|min:0',
+            'items.*.proveedores.*.notas' => 'nullable|string',
 
             'costos' => 'nullable|array',
 
@@ -784,15 +925,20 @@ class CotizacionController extends Controller
             : $cotizacion->delegado_cotizacion_id;
 
         $this->ensureCanEditCotizacion($request, $cotizacion);
+        $this->ensureSalesUser($delegadoId);
         $this->ensureSalesUser($delegadoCotizacionId);
 
-        DB::transaction(function () use ($request, $cotizacion, $cliente, $delegadoId, $delegadoCotizacionId) {
+        $estadoAnterior = (int) $cotizacion->estado_cotizacion_id;
+
+        DB::transaction(function () use ($request, $cotizacion, $cliente, $delegadoId, $delegadoCotizacionId, $estadoAnterior) {
             // UPDATE HEADER
             $cotizacion->update([
                 'cliente_id' => $cliente->id,
                 'cliente_nombre' => $cliente->nombre,
                 'cliente_ruc' => $cliente->ruc,
-                'cliente_contacto' => $cliente->contacto,
+                'cliente_contacto' => $request->has('cliente_contacto')
+                    ? $request->cliente_contacto
+                    : $cotizacion->cliente_contacto,
                 'cliente_telefono' => $cliente->telefono,
                 'cliente_correo' => $cliente->correo,
                 'plantilla_id' => $request->plantilla_id,
@@ -800,11 +946,11 @@ class CotizacionController extends Controller
                 'moneda_id' => $request->moneda_id,
                 'modo_distribucion' => $request->modo_distribucion,
                 'titulo' => $request->titulo,
-                'validez_dias' => $request->validez_dias,
+                'validez_dias' => $request->integer('validez_dias') ?: $cotizacion->validez_dias,
                 'subtotal' => 0,
                 'igv' => 0,
                 'total' => 0,
-                'estado_cotizacion_id' => $request->estado_cotizacion_id,
+                'estado_cotizacion_id' => $cotizacion->estado_cotizacion_id,
                 'delegado_id' => $delegadoId,
                 'delegado_cotizacion_id' => $delegadoCotizacionId,
                 'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
@@ -825,7 +971,7 @@ class CotizacionController extends Controller
                 $pvt = round($cantidad * $precioVenta, 2);
                 $ptc = round($cantidad * $costoBase, 2);
 
-                CotizacionItem::create([
+                $cotizacionItem = CotizacionItem::create([
                     'cotizacion_id' => $cotizacion->id,
                     'descripcion' => $item['descripcion'],
                     'cantidad' => $item['cantidad'],
@@ -838,8 +984,8 @@ class CotizacionController extends Controller
                     'garantia_meses' => $item['garantia_meses'],
                     'disponibilidad_tipo' => $item['disponibilidad_tipo'],
                     'disponibilidad_dias' => $item['disponibilidad_dias'],
-                    'proveedor' => $item['proveedor'],
-                    'link_proveedor' => $item['link_proveedor'],
+                    'proveedor' => $this->primerProveedorNombre($item['proveedores'] ?? null, $item['proveedor'] ?? null),
+                    'link_proveedor' => $this->primerProveedorLink($item['proveedores'] ?? null, $item['link_proveedor'] ?? null),
                     'producto_id' => $item['producto_id'] ?? null,
                     'tipo' => $item['tipo'] ?? 'personalizado',
                     'imagen' => $this->resolveCotizacionItemImagen($request, $index, $item),
@@ -852,6 +998,8 @@ class CotizacionController extends Controller
                     'ganancia' => round($pvt - $ptc, 2),
                     'stock' => 0,
                 ]);
+
+                $this->syncItemProveedores($cotizacionItem, $item['proveedores'] ?? null);
             }
 
             // RECREAR COSTOS
@@ -866,6 +1014,7 @@ class CotizacionController extends Controller
 
             // RECALCULAR
             $this->service->recalcular($cotizacion);
+            $this->reenviarSiEstabaRechazada($request, $cotizacion, $estadoAnterior);
 
             $cotizacion->refresh();
         });
@@ -873,7 +1022,7 @@ class CotizacionController extends Controller
         return response()->json([
             'message' => 'Cotización actualizada',
             'cotizacion' => $cotizacion->load([
-                'items',
+                'items.proveedores',
                 'costosAdicionales',
                 'cliente',
                 'plantilla',
@@ -912,6 +1061,110 @@ class CotizacionController extends Controller
         return trim($value);
     }
 
+    private function resolveCotizacionPdfView(string $formatoPdf): string
+    {
+        $fallback = 'pdfs.cotizaciones.willatec-dolares';
+        $formatoPdf = trim($formatoPdf);
+
+        if (! preg_match('/^[A-Za-z0-9_-]+$/', $formatoPdf)) {
+            return $fallback;
+        }
+
+        $vista = 'pdfs.cotizaciones.'.$formatoPdf;
+        $basePath = realpath(resource_path('views/pdfs/cotizaciones'));
+        $viewPath = realpath(resource_path("views/pdfs/cotizaciones/{$formatoPdf}.blade.php"));
+
+        if (
+            ! $basePath ||
+            ! $viewPath ||
+            ! str_starts_with($viewPath, $basePath.DIRECTORY_SEPARATOR) ||
+            ! view()->exists($vista) ||
+            trim((string) file_get_contents($viewPath)) === ''
+        ) {
+            return $fallback;
+        }
+
+        return $vista;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>|null  $proveedores
+     */
+    private function syncItemProveedores(CotizacionItem $item, ?array $proveedores): void
+    {
+        if ($proveedores === null) {
+            if ($item->proveedor) {
+                $proveedores = [[
+                    'nombre' => $item->proveedor,
+                    'link' => $item->link_proveedor,
+                ]];
+            } else {
+                return;
+            }
+        }
+
+        $proveedores = $this->normalizeProveedores($proveedores);
+
+        $item->proveedores()->delete();
+
+        foreach ($proveedores as $index => $proveedor) {
+            CotizacionItemProveedor::create([
+                'cotizacion_item_id' => $item->id,
+                'nombre' => $proveedor['nombre'],
+                'link' => $proveedor['link'],
+                'precio' => $proveedor['precio'],
+                'notas' => $proveedor['notas'],
+                'orden' => $index + 1,
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>|null  $proveedores
+     */
+    private function primerProveedorNombre(?array $proveedores, ?string $fallback): ?string
+    {
+        return $this->normalizeProveedores($proveedores)[0]['nombre'] ?? $fallback;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>|null  $proveedores
+     */
+    private function primerProveedorLink(?array $proveedores, ?string $fallback): ?string
+    {
+        return $this->normalizeProveedores($proveedores)[0]['link'] ?? $fallback;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>|null  $proveedores
+     * @return array<int, array{nombre: string, link: ?string, precio: ?float, notas: ?string}>
+     */
+    private function normalizeProveedores(?array $proveedores): array
+    {
+        if (! $proveedores) {
+            return [];
+        }
+
+        return collect($proveedores)
+            ->map(function (array $proveedor): ?array {
+                $nombre = trim((string) ($proveedor['nombre'] ?? ''));
+
+                if ($nombre === '') {
+                    return null;
+                }
+
+                return [
+                    'nombre' => $nombre,
+                    'link' => isset($proveedor['link']) ? trim((string) $proveedor['link']) ?: null : null,
+                    'precio' => isset($proveedor['precio']) ? (float) $proveedor['precio'] : null,
+                    'notas' => isset($proveedor['notas']) ? trim((string) $proveedor['notas']) ?: null : null,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
     /**
      * @param  array<string, mixed>  $item
      */
@@ -940,16 +1193,72 @@ class CotizacionController extends Controller
         return null;
     }
 
-    private function normalizePublicStoragePath(string $path): string
+    private function normalizePublicStoragePath(string $path): ?string
     {
         $path = parse_url($path, PHP_URL_PATH) ?: $path;
         $path = ltrim(str_replace('\\', '/', $path), '/');
 
-        if (str_starts_with($path, 'storage/')) {
-            return substr($path, strlen('storage/'));
+        if (str_starts_with($path, 'storage/app/public/')) {
+            $path = substr($path, strlen('storage/app/public/'));
+        } elseif (str_starts_with($path, 'public/storage/')) {
+            $path = substr($path, strlen('public/storage/'));
+        } elseif (str_starts_with($path, 'storage/')) {
+            $path = substr($path, strlen('storage/'));
+        }
+
+        if ($path === '' || str_contains($path, '../') || str_contains($path, '..\\')) {
+            return null;
+        }
+
+        if (! preg_match('#^(productos|cotizacion-items)/[A-Za-z0-9._/-]+$#', $path)) {
+            return null;
         }
 
         return $path;
+    }
+
+    private function todayBusinessDate(): string
+    {
+        return Carbon::today(self::BUSINESS_TIMEZONE)->toDateString();
+    }
+
+    private function ensureCanDelegateApproval(Request $request): void
+    {
+        if ($request->user()->hasRole('superadmin')) {
+            return;
+        }
+
+        abort(403, 'Solo superadmin puede delegar la aprobación.');
+    }
+
+    private function estadoCotizacionId(string $nombre): int
+    {
+        return (int) EstadoCotizacion::where('nombre', $nombre)->firstOrFail()->id;
+    }
+
+    private function reenviarSiEstabaRechazada(Request $request, Cotizacion $cotizacion, int $estadoAnteriorId): void
+    {
+        if ($estadoAnteriorId !== $this->estadoCotizacionId('rechazada')) {
+            return;
+        }
+
+        $estadoEnviadaId = $this->estadoCotizacionId('enviada');
+
+        $cotizacion->update([
+            'estado_cotizacion_id' => $estadoEnviadaId,
+        ]);
+
+        if ($estadoAnteriorId === $estadoEnviadaId) {
+            return;
+        }
+
+        CotizacionHistorial::create([
+            'cotizacion_id' => $cotizacion->id,
+            'estado_anterior_id' => $estadoAnteriorId,
+            'estado_nuevo_id' => $estadoEnviadaId,
+            'comentario' => 'Cotización editada luego de rechazo; enviada nuevamente a revisión.',
+            'user_id' => $request->user()->id,
+        ]);
     }
 
     private function ensureCanDelegateCotizacion(Request $request, Cotizacion $cotizacion): void
@@ -958,7 +1267,7 @@ class CotizacionController extends Controller
             return;
         }
 
-        if ($cotizacion->user_id === $request->user()->id || $cotizacion->delegado_cotizacion_id === $request->user()->id) {
+        if ($this->isCotizacionOwnerOrEditDelegate($request, $cotizacion)) {
             return;
         }
 
@@ -971,11 +1280,19 @@ class CotizacionController extends Controller
             return;
         }
 
-        if ($cotizacion->user_id === $request->user()->id || $cotizacion->delegado_cotizacion_id === $request->user()->id) {
+        if ($this->isCotizacionOwnerOrEditDelegate($request, $cotizacion)) {
             return;
         }
 
         abort(403, 'No autorizado para editar esta cotización.');
+    }
+
+    private function isCotizacionOwnerOrEditDelegate(Request $request, Cotizacion $cotizacion): bool
+    {
+        $userId = (int) $request->user()->id;
+
+        return (int) $cotizacion->user_id === $userId
+            || ($cotizacion->delegado_cotizacion_id && (int) $cotizacion->delegado_cotizacion_id === $userId);
     }
 
     // =========================
@@ -1028,7 +1345,7 @@ class CotizacionController extends Controller
             ]);
         });
 
-        $cotizacion->refresh()->load(['items', 'costosAdicionales', 'cliente', 'estadoCotizacion', 'user', 'delegado']);
+        $cotizacion->refresh()->load(['items.proveedores', 'costosAdicionales', 'cliente', 'estadoCotizacion', 'user', 'delegado']);
 
         if ($cotizacion->user) {
             $cotizacion->user->notify(new CotizacionAprobadaNotification($cotizacion, $request->user()));
@@ -1079,7 +1396,7 @@ class CotizacionController extends Controller
             ]);
         });
 
-        $cotizacion->refresh()->load(['items', 'costosAdicionales', 'cliente', 'estadoCotizacion', 'user', 'delegado', 'historial']);
+        $cotizacion->refresh()->load(['items.proveedores', 'costosAdicionales', 'cliente', 'estadoCotizacion', 'user', 'delegado', 'historial']);
 
         if ($cotizacion->user) {
             $cotizacion->user->notify(new CotizacionRechazadaNotification($cotizacion, $request->user(), $request->comentario_rechazo));

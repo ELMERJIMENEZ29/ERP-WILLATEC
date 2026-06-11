@@ -10,11 +10,14 @@ use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
 
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:3,1');
+
 
 Route::middleware(['auth:sanctum'])->group(function () {
 
+    Route::get('/erp/refresh', [AuthController::class, 'refresh'])->middleware('throttle:30,1');
+    Route::get('/user', [AuthController::class, 'user']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/password/change', [AuthController::class, 'changePassword']);
 
@@ -88,6 +91,9 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
     Route::get('/{id}', [CotizacionController::class, 'show'])
         ->middleware('role:superadmin|ventas');
 
+    Route::delete('/{cotizacion}', [CotizacionController::class, 'destroy'])
+        ->middleware('role:superadmin|ventas');
+
     Route::put('/{id}', [CotizacionController::class, 'update'])
         ->middleware('role:superadmin|ventas');
 
@@ -98,6 +104,9 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
         ->middleware('role:superadmin|ventas');
 
     Route::patch('/{cotizacion}/delegar', [CotizacionController::class, 'delegar'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::patch('/{cotizacion}/enviar-revision', [CotizacionController::class, 'enviarRevision'])
         ->middleware('role:superadmin|ventas');
 
     Route::get('/{id}/historial', [CotizacionController::class, 'historial'])
@@ -117,6 +126,9 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
         ->middleware('role:superadmin|ventas');
 
     Route::put('/items/{id}', [CotizacionController::class, 'updateItem'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::post('/items/{id}', [CotizacionController::class, 'updateItem'])
         ->middleware('role:superadmin|ventas');
 
     Route::delete('/items/{id}', [CotizacionController::class, 'deleteItem'])

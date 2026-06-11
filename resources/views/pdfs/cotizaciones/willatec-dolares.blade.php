@@ -6,9 +6,10 @@ use Carbon\Carbon;
 
 $primerNombre = explode(' ', trim($cotizacion->user->nombres ?? ''))[0] ?? '';
 $primerApellido = explode(' ', trim($cotizacion->user->apellidos ?? ''))[0] ?? '';
+$validezDias = (int) ($cotizacion->validez_dias ?? 10);
 $fechaEmision = Carbon::parse($cotizacion->fecha)->format('d/m/Y');
 $fechaValidez = Carbon::parse($cotizacion->fecha)
-->addDays($cotizacion->validez_dias ?? 10)
+->addDays($validezDias)
 ->format('d/m/Y');
 $simbolo = $cotizacion->moneda->simbolo ?? '$';
 $codigoMoneda = $cotizacion->moneda->codigo ?? 'USD';
@@ -265,13 +266,14 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .items thead tr {
-        background: #1565C0;
+        background: #0D47A1;
         color: #fff;
     }
 
     .items th {
-        font-size: 7.6px;
-        padding: 5px 5px;
+        font-size: 8.8px;
+        font-weight: 700;
+        padding: 7px 5px;
     }
 
     .items td {
@@ -387,7 +389,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .total-final td {
-        background: #1565C0;
+        background: #0D47A1;
         color: #fff;
         border-bottom: 0;
         padding: 6px 10px;
@@ -407,7 +409,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .currency td {
-        background: #1565C0;
+        background: #0D47A1;
         color: rgba(255, 255, 255, 0.75);
         border-bottom: 0;
         font-size: 8px;
@@ -582,7 +584,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         left: -24px;
         width: 110%;
         height: 40px;
-        background: #1565C0;
+        background: #0D47A1;
         color: #ffffff;
     }
 
@@ -599,7 +601,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         left: 335px;
         width: 120px;
         height: 18px;
-        background: #1565C0;
+        background: #0D47A1;
         text-align: center;
     }
 
@@ -608,7 +610,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         position: absolute;
         left: -12px;
         top: 0;
-        border-right: 12px solid #1565C0;
+        border-right: 12px solid #0D47A1;
         border-top: 18px solid transparent;
     }
 
@@ -617,7 +619,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         position: absolute;
         right: -12px;
         top: 0;
-        border-left: 12px solid #1565C0;
+        border-left: 12px solid #0D47A1;
         border-top: 18px solid transparent;
     }
 
@@ -825,7 +827,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                             </tr>
                         </table>
 
-                        <span class="badge">Válido {{ $cotizacion->validez_dias ?? 10 }} días calendarios</span>
+                        <span class="badge">Válido {{ $validezDias }} días calendarios</span>
                     </td>
                 </tr>
             </table>
@@ -913,15 +915,20 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                         @php
                         $itemImage = null;
                         if ($item->imagen) {
-                        $imagen = ltrim($item->imagen, '/');
-
-                        if (str_starts_with($imagen, 'storage/')) {
-                        $itemImage = public_path($imagen);
-                        } else {
-                        $itemImage = public_path('storage/' . $imagen);
+                        $imagen = ltrim(str_replace('\\', '/', $item->imagen), '/');
+                        // Limpiar si viene con prefijos de URL
+                        foreach (['storage/app/public/', 'public/storage/', 'storage/'] as $prefix) {
+                        if (str_starts_with($imagen, $prefix)) {
+                        $imagen = substr($imagen, strlen($prefix));
+                        break;
                         }
                         }
-                        $itemImageSrc = $pdfImage($itemImage);
+                        $rutaLocal = public_path('storage/' . $imagen);
+                        if (file_exists($rutaLocal)) {
+                        $itemImage = $rutaLocal;
+                        }
+                        }
+                        $itemImageSrc = $itemImage ? $pdfImage($itemImage) : null;
                         @endphp
                         <tr class="{{ $loop->even ? 'even' : '' }}">
                             <td class="center">{{ $loop->iteration }}</td>
@@ -929,6 +936,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                                 <span class="strong">{{ $item->descripcion }}</span><br>
                                 @if($item->marca)
                                 <span class="muted">Marca: {{ $item->marca }}</span><br>
+                                <span class="muted">Modelo / Código: {{ $item->codigo }}</span><br>
                                 @endif
                                 <span class="muted">Garantia: {{ $item->garantia_meses ?? '-' }} meses</span>
                             </td>
@@ -963,7 +971,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                 <tr>
                     <td class="conditions">
                         <div class="section-title">Condiciones comerciales</div>
-                        <div class="condition"><span>&rsaquo;</span> Forma de Pago: {{ $formaPago }}</div>
+                        <div class="condition"><span>&rsaquo;</span> Forma de Pago: {{ $formaPago }} calendario</div>
                         <div class="condition"><span>&rsaquo;</span> Incluye entrega en oficinas del cliente, Lima Metropolitana.</div>
                         <div class="condition"><span>&rsaquo;</span> Precios en {{ $nombreMoneda }} y NO incluyen IGV.</div>
                         <div class="condition"><span>&rsaquo;</span> Precios sujetos a cambio sin previo aviso.</div>

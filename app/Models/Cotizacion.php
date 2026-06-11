@@ -112,6 +112,23 @@ class Cotizacion extends Model
         return $this->hasMany(CotizacionHistorial::class);
     }
 
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'fecha' => 'date:Y-m-d',
+            'validez_dias' => 'integer',
+            'tipo_cambio' => 'decimal:4',
+            'subtotal' => 'decimal:2',
+            'igv' => 'decimal:2',
+            'total' => 'decimal:2',
+            'ganancia' => 'decimal:2',
+            'total_gasto' => 'decimal:2',
+        ];
+    }
+
     protected function auditModelName(): string
     {
         return 'Cotizacion';

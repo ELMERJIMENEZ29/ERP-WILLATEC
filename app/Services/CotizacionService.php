@@ -46,28 +46,19 @@ class CotizacionService
         } else {
             $divisor = $totalItems > 0 ? $totalItems : 1; // Evitar división por cero
         } 
-        // Calcular costo extra por item
-        $costoExtraUnitario= round($totalCostosAdicionales / $divisor,4);
+        // Calcular costo extra unitario, igual que el helper del frontend.
+        $costoExtraUnitario = $totalCostosAdicionales / $divisor;
         
         // Recalcular cada item
         foreach ($items as $item) {
             $costoBase = $item->costo_base; // Costo base del item
 
-            // Si es por cantidad el costo extra se multiplica por la cantidad del item
-            if($modoDistribucion === 'POR_CANTIDAD'){
-                $costoFinal = $costoBase + ($costoExtraUnitario * $item->cantidad); // Si es por cantidad, el costo extra se multiplica por la cantidad del item
-            } else {
-                $costoFinal = $costoBase + $costoExtraUnitario; // Si es por item, el costo extra es fijo por item
-            }
+            $costoFinal = $costoBase + $costoExtraUnitario;
 
-            $margen = max(0, min($item->margen, 99.99));
-            $factorMargen = 1 - ($margen / 100);
-
-            if ($factorMargen <= 0) {
-                $factorMargen = 0.0001;
-            }
-
-            $precioVenta = $costoFinal / $factorMargen;
+            $margen = (float) ($item->margen ?? 0);
+            $precioVenta = $margen < 100
+                ? $costoFinal / (1 - ($margen / 100))
+                : $costoFinal;
 
             /// ==========================
             // CALCULO GANANCIA POR ITEM
@@ -84,10 +75,6 @@ class CotizacionService
 
             // Detectar plantilla
             $incluyeIgv = $cotizacion->plantilla->incluye_igv;
-            $moneda = $cotizacion->moneda_id;
-
-            // Tipo de cambio fijo (según tu negocio)
-            $tipoCambioVenta = 3.5; // USD → PEN
 
             if ($incluyeIgv) {
                 // 🟣 SOLES-ESTADO (con IGV)
@@ -95,14 +82,7 @@ class CotizacionService
 
             } else {
                 // 🟢 DOLARES / SOLES (sin IGV)
-
-                if ($moneda === 2) {
-                    // convertir a soles
-                    $ganancia = $diferencia * $tipoCambioVenta;
-                } else {
-                    // ya está en soles
-                    $ganancia = $diferencia;
-                }
+                $ganancia = $diferencia;
             }
 
             // Redondeo final
@@ -120,15 +100,17 @@ class CotizacionService
         // Recalcular totales de la cotización
         $cotizacion->refresh()->load('items');
         $items = $cotizacion->items;
-        $subtotal = round($items->sum('subtotal'),2);
+        $sumSubtotales = round($items->sum('subtotal'),2);
         $gananciaTotal = round($items->sum('ganancia'),2);
 
         if($cotizacion->plantilla->incluye_igv){
-            //LOS PRECIOS YA INCLUYEN IGV, POR LO TANTO NO SE CALCULA EL IGV SE DEJA EN 0
-            $total = round($subtotal,2);
+            // Los subtotales de los items ya incluyen IGV.
+            $total = round($sumSubtotales,2);
             $igv = round($total - ($total / 1.18),2);
+            $subtotal = round($total / 1.18,2);
         } else {
             // LOS PRECIOS NO INCLUYEN IGV, POR LO TANTO SE CALCULA EL IGV Y SE SUMA AL TOTAL
+            $subtotal = round($sumSubtotales,2);
             $igv = round($subtotal * 0.18, 2); // IGV al 18%
             $total = round($subtotal + $igv, 2);
         }
@@ -163,8 +145,8 @@ class CotizacionService
         } elseif ($aprobados > 0 || $rechazados > 0) {
             $estado = 'parcialmente_aprobada';
         } else {
-            $estado = 'enviada';
-        } 
+            return;
+        }
 
         $estadoModel = EstadoCotizacion::where('nombre', $estado)->first();
 

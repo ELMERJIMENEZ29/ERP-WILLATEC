@@ -38,6 +38,10 @@ class AuthController extends Controller
         $user = Auth::user();
         abort_if(! $user, 401);
 
+        $user->forceFill([
+            'last_login_at' => now('America/Lima'),
+        ])->save();
+
         $user->tokens()->delete();
 
         $token = $user->createToken('api-token')->plainTextToken;
@@ -106,6 +110,16 @@ class AuthController extends Controller
         ]);
     }
 
+    public function refresh(Request $request)
+    {
+        return response()
+            ->json([
+                'message' => 'ERP refresh disponible',
+                'refreshed_at' => now('America/Lima')->toISOString(),
+            ])
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    }
+
     public function changePassword(Request $request)
     {
         $request->validate([
@@ -158,6 +172,13 @@ class AuthController extends Controller
         ]);
     }
 
+    public function user(Request $request)
+    {
+        return response()->json([
+            'user' => $request->user()->load('profile', 'roles'),
+        ]);
+    }
+
     public function markNotificationAsRead(Request $request, $id)
     {
         $notification = $request->user()->notifications()->where('id', $id)->firstOrFail();
@@ -178,6 +199,12 @@ class AuthController extends Controller
             'role' => 'required|exists:roles,id',
         ]);
 
+        $role = Role::findOrFail($request->role);
+
+        if (! $request->user()->hasRole('superadmin') && in_array($role->name, ['superadmin', 'admin'], true)) {
+            abort(403, 'Solo superadmin puede crear usuarios administradores.');
+        }
+
         $user = User::create([
             'nombres' => $request->nombres,
             'apellidos' => $request->apellidos,
@@ -185,7 +212,6 @@ class AuthController extends Controller
             'password' => Hash::make($request->password),
         ]);
 
-        $role = Role::findOrFail($request->role);
         $user->assignRole($role);
 
         Profile::create([
@@ -203,10 +229,13 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
+        $lastLoginAt = $request->user()->last_login_at;
+
         $request->user()->currentAccessToken()->delete();
 
         return response()->json([
             'message' => 'Sesión Cerrada Correctamente',
+            'last_login_at' => $lastLoginAt,
         ]);
     }
 }

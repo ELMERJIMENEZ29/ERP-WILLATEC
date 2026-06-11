@@ -6,6 +6,7 @@ use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -58,6 +59,11 @@ class CotizacionItem extends Model
     public function estadoCotizacionItem(): BelongsTo
     {
         return $this->belongsTo(EstadoCotizacionItem::class, 'estado_cotizacion_item_id');
+    }
+
+    public function proveedores(): HasMany
+    {
+        return $this->hasMany(CotizacionItemProveedor::class)->orderBy('orden');
     }
 
     protected function imagenUrl(): Attribute
