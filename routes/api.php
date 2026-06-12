@@ -65,6 +65,9 @@ Route::prefix('productos')->middleware('auth:sanctum')->group(function () {
     Route::delete('/{id}', [ProductoController::class, 'destroy'])->middleware('role:superadmin|ventas|admin');
 });
 
+Route::post('/upload-imagen', [CotizacionController::class, 'uploadImagen'])
+    ->middleware(['auth:sanctum']);
+
 Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
     // ── RUTAS ESTÁTICAS PRIMERO ──────────────────────────────
     Route::get('/', [CotizacionController::class, 'index'])

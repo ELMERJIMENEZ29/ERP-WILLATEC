@@ -1407,4 +1407,19 @@ class CotizacionController extends Controller
             'cotizacion' => $cotizacion,
         ], 200);
     }
+
+    //SUBIR IMAGEN
+    public function uploadImagen(Request $request)
+{
+    $request->validate([
+        'imagen' => 'required|image|max:2048',
+    ]);
+
+    $path = $request->file('imagen')->store('cotizacion-items', 'public');
+
+    return response()->json([
+        'path' => $path,
+        'url' => asset('storage/' . $path),
+    ]);
+}
 }
