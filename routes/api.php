@@ -9,12 +9,20 @@ use App\Http\Controllers\Api\ProductoController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
+use App\Http\Controllers\Api\TwoFactorController;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:3,1');
 
+Route::post('/two-factor/challenge', [AuthController::class, 'twoFactorChallenge'])
+    ->middleware('throttle:5,1');
 
 Route::middleware(['auth:sanctum'])->group(function () {
+
+    Route::post('/two-factor/enable', [TwoFactorController::class, 'enable']);
+    Route::get('/two-factor/qr', [TwoFactorController::class, 'qr']);
+    Route::post('/two-factor/confirm', [TwoFactorController::class, 'confirm']);
+    Route::delete('/two-factor/disable', [TwoFactorController::class, 'disable']);
 
     Route::get('/erp/refresh', [AuthController::class, 'refresh'])->middleware('throttle:30,1');
     Route::get('/user', [AuthController::class, 'user']);

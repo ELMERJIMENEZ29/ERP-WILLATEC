@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use Illuminate\Support\Facades\Crypt;
+use PragmaRX\Google2FA\Google2FA;
 
 class AuthController extends Controller
 {
@@ -41,6 +43,22 @@ class AuthController extends Controller
         $user->forceFill([
             'last_login_at' => now('America/Lima'),
         ])->save();
+
+        if ($user->two_factor_secret && $user->two_factor_confirmed_at) {
+            $loginToken = Str::random(60);
+
+            cache()->put(
+                '2fa_login_' . $loginToken,
+                $user->id,
+                now()->addMinutes(5)
+            );
+
+            return response()->json([
+                'requires_2fa' => true,
+                'login_token' => $loginToken,
+                'message' => 'Se requiere código 2FA',
+            ]);
+        }
 
         $user->tokens()->delete();
 
@@ -159,7 +177,7 @@ class AuthController extends Controller
             ->notifications()
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(fn ($notification) => [
+            ->map(fn($notification) => [
                 'id' => $notification->id,
                 'type' => class_basename($notification->type),
                 'data' => $notification->data,
@@ -236,6 +254,67 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Sesión Cerrada Correctamente',
             'last_login_at' => $lastLoginAt,
+        ]);
+    }
+    public function twoFactorChallenge(Request $request)
+    {
+        $request->validate([
+            'login_token' => 'required|string',
+            'code' => 'nullable|string',
+            'recovery_code' => 'nullable|string',
+        ]);
+
+        $userId = cache()->get('2fa_login_' . $request->login_token);
+
+        if (! $userId) {
+            return response()->json(['message' => 'Token temporal expirado'], 422);
+        }
+
+        $user = User::with('profile', 'roles')->findOrFail($userId);
+
+        $valid = false;
+
+        if ($request->filled('code')) {
+            $google2fa = new Google2FA();
+            $secret = Crypt::decryptString($user->two_factor_secret);
+            $valid = $google2fa->verifyKey($secret, $request->code);
+        }
+
+        if (! $valid && $request->filled('recovery_code')) {
+            $codes = json_decode($user->two_factor_recovery_codes, true) ?? [];
+
+            if (in_array($request->recovery_code, $codes, true)) {
+                $valid = true;
+
+                $codes = array_values(array_filter(
+                    $codes,
+                    fn($code) => $code !== $request->recovery_code
+                ));
+
+                $user->forceFill([
+                    'two_factor_recovery_codes' => json_encode($codes),
+                ])->save();
+            }
+        }
+
+        if (! $valid) {
+            return response()->json(['message' => 'Código inválido'], 422);
+        }
+
+        cache()->forget('2fa_login_' . $request->login_token);
+
+        $user->forceFill([
+            'last_login_at' => now('America/Lima'),
+        ])->save();
+
+        $user->tokens()->delete();
+
+        $token = $user->createToken('api-token')->plainTextToken;
+
+        return response()->json([
+            'user' => $user,
+            'token' => $token,
+            'requires_password_change' => $user->requires_password_change,
         ]);
     }
 }
