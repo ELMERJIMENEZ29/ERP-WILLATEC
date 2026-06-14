@@ -68,6 +68,7 @@ class AuthController extends Controller
             'user' => $user->load('profile', 'roles'),
             'token' => $token,
             'requires_password_change' => $user->requires_password_change,
+            'two_factor_enabled' => !is_null($user->two_factor_confirmed_at),
         ]);
     }
 

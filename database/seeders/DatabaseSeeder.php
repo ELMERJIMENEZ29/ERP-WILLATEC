@@ -34,6 +34,7 @@ class DatabaseSeeder extends Seeder
             CategoriaSeeder::class,
             PlantillaSeeder::class,
             TipoClienteSeeder::class,
+            SuperAdminSeeder::class,
         ]);
     }
 }
