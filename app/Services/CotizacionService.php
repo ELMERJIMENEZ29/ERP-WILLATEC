@@ -10,21 +10,21 @@ class CotizacionService
 {
     public function recalcular(Cotizacion $cotizacion, string $modoDistribucion = 'POR_ITEM'): void
     {
-        
+
         $cotizacion->load(['items', 'costosAdicionales', 'plantilla']);
 
         $items = $cotizacion->items;
 
-        if($items->isEmpty()){
+        if ($items->isEmpty()) {
             $cotizacion->update([
                 'subtotal' => 0,
                 'igv' => 0,
                 'total' => 0,
                 'ganancia' => 0,
                 'total_gasto' => 0,
-        ]);
-        return;
-}
+            ]);
+            return;
+        }
 
         $modoDistribucion = $cotizacion->modo_distribucion ?? $modoDistribucion;
 
@@ -41,14 +41,14 @@ class CotizacionService
 
         // POR_ITEM = distribuir por líneas/items
         // POR_CANTIDAD = distribuir por unidades totales
-        if($modoDistribucion === 'POR_CANTIDAD'){
+        if ($modoDistribucion === 'POR_CANTIDAD') {
             $divisor = $totalCantidad > 0 ? $totalCantidad : 1; // Evitar división por cero
         } else {
             $divisor = $totalItems > 0 ? $totalItems : 1; // Evitar división por cero
-        } 
+        }
         // Calcular costo extra unitario, igual que el helper del frontend.
         $costoExtraUnitario = $totalCostosAdicionales / $divisor;
-        
+
         // Recalcular cada item
         foreach ($items as $item) {
             $costoBase = $item->costo_base; // Costo base del item
@@ -60,15 +60,18 @@ class CotizacionService
                 ? $costoFinal / (1 - ($margen / 100))
                 : $costoFinal;
 
+            // Redondear precio unitario antes de multiplicar
+            $precioVentaRedondeado = round($precioVenta, 2);
+            $costoFinalRedondeado = round($costoFinal, 2);
             /// ==========================
             // CALCULO GANANCIA POR ITEM
             // ==========================
 
             // PVT (precio venta total del item)
-            $pvt = $item->cantidad * $precioVenta;
+            $pvt = round($item->cantidad * $precioVentaRedondeado, 2);
 
             // PTC (precio total compra del item)
-            $ptc = $item->cantidad * $costoFinal;
+            $ptc = round($item->cantidad * $costoFinalRedondeado, 2);
 
             // Diferencia base
             $diferencia = $pvt - $ptc;
@@ -79,7 +82,6 @@ class CotizacionService
             if ($incluyeIgv) {
                 // 🟣 SOLES-ESTADO (con IGV)
                 $ganancia = $diferencia / 1.18;
-
             } else {
                 // 🟢 DOLARES / SOLES (sin IGV)
                 $ganancia = $diferencia;
@@ -89,38 +91,38 @@ class CotizacionService
             $ganancia = round($ganancia, 2);
 
             $item->update([
-                'costo_unitario' => round($costoFinal,2), // Costo final del item
-                'precio_venta' => round($precioVenta,2),
-                'subtotal' => round($pvt,2),
-                'costo_total' => round($ptc,2),
-                'ganancia' => round($ganancia,2),
+                'costo_unitario' => $costoFinalRedondeado, // Costo final del item
+                'precio_venta' => $precioVentaRedondeado, // Precio de venta del item
+                'subtotal' => $pvt,
+                'costo_total' => $ptc,
+                'ganancia' => round($ganancia, 2),
             ]);
         }
 
         // Recalcular totales de la cotización
         $cotizacion->refresh()->load('items');
         $items = $cotizacion->items;
-        $sumSubtotales = round($items->sum('subtotal'),2);
-        $gananciaTotal = round($items->sum('ganancia'),2);
+        $sumSubtotales = round($items->sum('subtotal'), 2);
+        $gananciaTotal = round($items->sum('ganancia'), 2);
 
-        if($cotizacion->plantilla->incluye_igv){
+        if ($cotizacion->plantilla->incluye_igv) {
             // Los subtotales de los items ya incluyen IGV.
-            $total = round($sumSubtotales,2);
-            $igv = round($total - ($total / 1.18),2);
-            $subtotal = round($total / 1.18,2);
+            $total = round($sumSubtotales, 2);
+            $igv = round($total - ($total / 1.18), 2);
+            $subtotal = round($total / 1.18, 2);
         } else {
             // LOS PRECIOS NO INCLUYEN IGV, POR LO TANTO SE CALCULA EL IGV Y SE SUMA AL TOTAL
-            $subtotal = round($sumSubtotales,2);
+            $subtotal = round($sumSubtotales, 2);
             $igv = round($subtotal * 0.18, 2); // IGV al 18%
             $total = round($subtotal + $igv, 2);
         }
 
-        $totalGasto = round($items->sum('costo_total'),2);
+        $totalGasto = round($items->sum('costo_total'), 2);
 
         $cotizacion->update([
-            'subtotal' => round($subtotal,2),
-            'igv' => round($igv,2),
-            'total' => round($total,2),
+            'subtotal' => round($subtotal, 2),
+            'igv' => round($igv, 2),
+            'total' => round($total, 2),
             'ganancia' => round($gananciaTotal, 2),
             'total_gasto' => round($totalGasto, 2),
         ]);
@@ -157,39 +159,40 @@ class CotizacionService
         }
     }
 
-    public function generarNumero(){
+    public function generarNumero()
+    {
         return DB::transaction(function () {
 
-        $anio = now()->year;
+            $anio = now()->year;
 
-        $correlativo = DB::table('correlativos')
-            ->where('tipo', 'cotizacion')
-            ->where('anio', $anio)
-            ->lockForUpdate()
-            ->first();
+            $correlativo = DB::table('correlativos')
+                ->where('tipo', 'cotizacion')
+                ->where('anio', $anio)
+                ->lockForUpdate()
+                ->first();
 
-        if (!$correlativo) {
-            DB::table('correlativos')->insert([
-                'tipo' => 'cotizacion',
-                'numero_actual' => 1,
-                'anio' => $anio,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-
-            $numero = 1;
-        } else {
-            $numero = $correlativo->numero_actual + 1;
-
-            DB::table('correlativos')
-                ->where('id', $correlativo->id)
-                ->update([
-                    'numero_actual' => $numero,
+            if (!$correlativo) {
+                DB::table('correlativos')->insert([
+                    'tipo' => 'cotizacion',
+                    'numero_actual' => 1,
+                    'anio' => $anio,
+                    'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-        }
 
-        return str_pad($numero, 5, '0', STR_PAD_LEFT) . '-' . $anio;
-    });
+                $numero = 1;
+            } else {
+                $numero = $correlativo->numero_actual + 1;
+
+                DB::table('correlativos')
+                    ->where('id', $correlativo->id)
+                    ->update([
+                        'numero_actual' => $numero,
+                        'updated_at' => now(),
+                    ]);
+            }
+
+            return str_pad($numero, 5, '0', STR_PAD_LEFT) . '-' . $anio;
+        });
     }
 }

@@ -9,19 +9,35 @@ use App\Models\Cliente;
 class ClienteController extends Controller
 {
     //Listar Clientes
-    public function index(Request $request){
-
+    public function index(Request $request)
+    {
         $query = Cliente::query();
 
-        if($request->has('activo')){
-            $query->where('activo', $request->activo);
+        if ($request->filled('estado')) {
+            $query->where('estado', $request->estado);
         }
 
-        return response()->json($query->paginate($request->per_page ?? 10));
+        if ($request->filled('search')) {
+            $search = $request->search;
+
+            $query->where(function ($q) use ($search) {
+                $q->where('nombre', 'like', "%{$search}%")
+                    ->orWhere('ruc', 'like', "%{$search}%")
+                    ->orWhere('correo', 'like', "%{$search}%")
+                    ->orWhere('telefono', 'like', "%{$search}%");
+            });
+        }
+
+        return response()->json(
+            $query
+                ->orderBy('nombre', 'asc')
+                ->paginate($request->per_page ?? 10)
+        );
     }
 
     //Crear cliente
-    public function store(Request $request){
+    public function store(Request $request)
+    {
         $this->normalizeOptionalContactFields($request);
 
         $request->validate([
@@ -48,27 +64,29 @@ class ClienteController extends Controller
         return response()->json([
             'message' => 'Cliente creado correctamente',
             'cliente' => $cliente
-        ],201);
+        ], 201);
     }
 
     //Ver detalle
-    public function show(int $id){
+    public function show(int $id)
+    {
         $cliente = Cliente::findOrFail($id);
 
-        if(!$cliente){
-        return response()->json([
-            'message' => 'Cliente no encontrado'
-        ], 404);
+        if (!$cliente) {
+            return response()->json([
+                'message' => 'Cliente no encontrado'
+            ], 404);
         }
 
         return response()->json($cliente);
     }
 
     //Actualizar cliente
-    public function update(Request $request, int $id){
+    public function update(Request $request, int $id)
+    {
         $cliente = Cliente::findOrFail($id);
 
-        if(!$cliente){
+        if (!$cliente) {
             return response()->json([
                 'message' => 'Cliente no encontrado'
             ], 404);
@@ -85,7 +103,7 @@ class ClienteController extends Controller
             'tipo_cliente_id' => 'nullable|exists:tipo_clientes,id',
             'moneda_id' => 'nullable|exists:monedas,id',
 
-            'estado'=>'nullable|in:activo,inactivo',
+            'estado' => 'nullable|in:activo,inactivo',
         ]);
 
         $cliente->update($request->only([
@@ -105,10 +123,11 @@ class ClienteController extends Controller
     }
 
     //Eliminar cliente
-    public function destroy(int $id){
+    public function destroy(int $id)
+    {
         $cliente = Cliente::findOrFail($id);
 
-        if(!$cliente){
+        if (!$cliente) {
             return response()->json([
                 'message' => 'Cliente no encontrado'
             ], 404);
