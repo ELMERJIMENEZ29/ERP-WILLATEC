@@ -23,6 +23,7 @@ class CotizacionService
                 'ganancia' => 0,
                 'total_gasto' => 0,
             ]);
+
             return;
         }
 
@@ -32,8 +33,8 @@ class CotizacionService
         $totalCostosAdicionales = $cotizacion->costosAdicionales->sum('monto');
 
         // CALCULAR BASE DE DISTRIBUCION
-        $totalItems = $items->count();
         $totalCantidad = $items->sum('cantidad');
+        $itemsConCostosAdicionales = $items;
 
         // =====================================
         // DEFINIR DIVISOR SEGUN MODO
@@ -44,16 +45,28 @@ class CotizacionService
         if ($modoDistribucion === 'POR_CANTIDAD') {
             $divisor = $totalCantidad > 0 ? $totalCantidad : 1; // Evitar división por cero
         } else {
-            $divisor = $totalItems > 0 ? $totalItems : 1; // Evitar división por cero
+            $itemsConCostosAdicionales = $items->where('aplica_costos_adicionales', true);
+
+            if ($itemsConCostosAdicionales->isEmpty()) {
+                $itemsConCostosAdicionales = $items;
+            }
+
+            $totalCantidadSeleccionada = $itemsConCostosAdicionales->sum('cantidad');
+            $divisor = $totalCantidadSeleccionada > 0 ? $totalCantidadSeleccionada : 1; // Evitar división por cero
         }
         // Calcular costo extra unitario, igual que el helper del frontend.
         $costoExtraUnitario = $totalCostosAdicionales / $divisor;
+        $itemIdsConCostosAdicionales = $itemsConCostosAdicionales->pluck('id')->all();
 
         // Recalcular cada item
         foreach ($items as $item) {
             $costoBase = $item->costo_base; // Costo base del item
 
-            $costoFinal = $costoBase + $costoExtraUnitario;
+            $costoExtraItem = in_array($item->id, $itemIdsConCostosAdicionales, true)
+                ? $costoExtraUnitario
+                : 0;
+
+            $costoFinal = $costoBase + $costoExtraItem;
 
             $margen = (float) ($item->margen ?? 0);
             $precioVenta = $margen < 100
@@ -63,7 +76,7 @@ class CotizacionService
             // Redondear precio unitario antes de multiplicar
             $precioVentaRedondeado = round($precioVenta, 2);
             $costoFinalRedondeado = round($costoFinal, 2);
-            /// ==========================
+            // / ==========================
             // CALCULO GANANCIA POR ITEM
             // ==========================
 
@@ -171,7 +184,7 @@ class CotizacionService
                 ->lockForUpdate()
                 ->first();
 
-            if (!$correlativo) {
+            if (! $correlativo) {
                 DB::table('correlativos')->insert([
                     'tipo' => 'cotizacion',
                     'numero_actual' => 1,
@@ -192,7 +205,7 @@ class CotizacionService
                     ]);
             }
 
-            return str_pad($numero, 5, '0', STR_PAD_LEFT) . '-' . $anio;
+            return str_pad($numero, 5, '0', STR_PAD_LEFT).'-'.$anio;
         });
     }
 }

@@ -21,6 +21,7 @@ class CotizacionItem extends Model
     protected $fillable = [
         'descripcion',
         'cantidad',
+        'aplica_costos_adicionales',
         'marca',
         'codigo',
         'unidad_medida',
@@ -71,6 +72,17 @@ class CotizacionItem extends Model
         return Attribute::get(
             fn (): ?string => $this->imagen ? Storage::disk('public')->url($this->imagen) : null
         );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'cantidad' => 'integer',
+            'aplica_costos_adicionales' => 'boolean',
+        ];
     }
 
     protected function auditModelName(): string

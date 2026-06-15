@@ -48,13 +48,40 @@ class CotizacionController extends Controller
 
     public function index(Request $request)
     {
-        $query = Cotizacion::with(['cliente', 'estadoCotizacion', 'user', 'delegado', 'delegadoCotizacion'])->withCount('items');
+        $query = Cotizacion::with([
+            'cliente',
+            'estadoCotizacion',
+            'user',
+            'delegado',
+            'delegadoCotizacion',
+        ])->withCount('items');
 
-        if ($request->has('cliente_id')) {
+        if ($request->filled('cliente_id')) {
             $query->where('cliente_id', $request->cliente_id);
         }
 
-        return response()->json($query->latest()->paginate(10));
+        if ($request->filled('search')) {
+            $search = $request->search;
+
+            $query->where(function ($q) use ($search) {
+                $q->where('numero', 'like', "%{$search}%")
+                    ->orWhere('titulo', 'like', "%{$search}%")
+                    ->orWhereHas('cliente', function ($clienteQuery) use ($search) {
+                        $clienteQuery->where('nombre', 'like', "%{$search}%")
+                            ->orWhere('ruc', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($request->filled('estado_cotizacion_id')) {
+            $query->where('estado_cotizacion_id', $request->estado_cotizacion_id);
+        }
+
+        return response()->json(
+            $query
+                ->latest()
+                ->paginate($request->per_page ?? 10)
+        );
     }
 
     public function show($id)
@@ -301,6 +328,7 @@ class CotizacionController extends Controller
         $request->validate([
             'descripcion' => 'required|string',
             'cantidad' => 'required|numeric|min:1',
+            'aplica_costos_adicionales' => 'sometimes|boolean',
             'costo_base' => 'required|numeric|min:0',
             'margen' => 'required|numeric|min:0',
             'garantia_meses' => 'nullable|integer|in:3,6,12,24,36',
@@ -339,6 +367,7 @@ class CotizacionController extends Controller
                 'cotizacion_id' => $cotizacionId,
                 'descripcion' => $request->descripcion,
                 'cantidad' => $cantidad,
+                'aplica_costos_adicionales' => $request->boolean('aplica_costos_adicionales', true),
                 'costo_base' => $costoBase,
                 'margen' => $margen,
                 'marca' => $request->marca,
@@ -388,6 +417,7 @@ class CotizacionController extends Controller
         $request->validate([
             'descripcion' => 'nullable|string',
             'cantidad' => 'nullable|numeric|min:1',
+            'aplica_costos_adicionales' => 'sometimes|boolean',
             'costo_base' => 'nullable|numeric|min:0',
             'margen' => 'nullable|numeric|min:0',
             'stock' => 'nullable|integer|min:0',
@@ -421,10 +451,22 @@ class CotizacionController extends Controller
 
             $itemData = [
                 ...$request->only([
-                    'descripcion', 'cantidad', 'costo_base', 'margen',
-                    'marca', 'codigo', 'unidad_medida', 'garantia_meses',
-                    'disponibilidad_tipo', 'disponibilidad_dias',
-                    'proveedor', 'link_proveedor', 'producto_id', 'stock', 'tipo',
+                    'descripcion',
+                    'cantidad',
+                    'aplica_costos_adicionales',
+                    'costo_base',
+                    'margen',
+                    'marca',
+                    'codigo',
+                    'unidad_medida',
+                    'garantia_meses',
+                    'disponibilidad_tipo',
+                    'disponibilidad_dias',
+                    'proveedor',
+                    'link_proveedor',
+                    'producto_id',
+                    'stock',
+                    'tipo',
                 ]),
                 'costo_unitario' => $costoBase,
                 'precio_venta' => $precioVenta,
@@ -726,6 +768,7 @@ class CotizacionController extends Controller
 
             'items.*.descripcion' => 'required|string',
             'items.*.cantidad' => 'required|numeric|min:1',
+            'items.*.aplica_costos_adicionales' => 'sometimes|boolean',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.tipo' => 'nullable|string|in:catalogo,personalizado,externo',
@@ -803,6 +846,7 @@ class CotizacionController extends Controller
                     'cotizacion_id' => $cotizacion->id,
                     'descripcion' => $item['descripcion'],
                     'cantidad' => $item['cantidad'],
+                    'aplica_costos_adicionales' => $item['aplica_costos_adicionales'] ?? true,
                     'costo_base' => $item['costo_base'],
                     'margen' => $item['margen'],
                     'orden' => $index + 1,
@@ -862,7 +906,6 @@ class CotizacionController extends Controller
                 'delegadoCotizacion',
             ]),
         ]);
-
     }
 
     public function updateCompleta(Request $request, int $id)
@@ -887,6 +930,7 @@ class CotizacionController extends Controller
 
             'items.*.descripcion' => 'required|string',
             'items.*.cantidad' => 'required|numeric|min:1',
+            'items.*.aplica_costos_adicionales' => 'sometimes|boolean',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.tipo' => 'nullable|string|in:catalogo,personalizado,externo',
@@ -975,6 +1019,7 @@ class CotizacionController extends Controller
                     'cotizacion_id' => $cotizacion->id,
                     'descripcion' => $item['descripcion'],
                     'cantidad' => $item['cantidad'],
+                    'aplica_costos_adicionales' => $item['aplica_costos_adicionales'] ?? true,
                     'costo_base' => $item['costo_base'],
                     'margen' => $item['margen'],
                     'orden' => $index + 1,
@@ -1408,18 +1453,18 @@ class CotizacionController extends Controller
         ], 200);
     }
 
-    //SUBIR IMAGEN
+    // SUBIR IMAGEN
     public function uploadImagen(Request $request)
-{
-    $request->validate([
-        'imagen' => 'required|image|max:2048',
-    ]);
+    {
+        $request->validate([
+            'imagen' => 'required|image|max:2048',
+        ]);
 
-    $path = $request->file('imagen')->store('cotizacion-items', 'public');
+        $path = $request->file('imagen')->store('cotizacion-items', 'public');
 
-    return response()->json([
-        'path' => $path,
-        'url' => asset('storage/' . $path),
-    ]);
-}
+        return response()->json([
+            'path' => $path,
+            'url' => asset('storage/'.$path),
+        ]);
+    }
 }
