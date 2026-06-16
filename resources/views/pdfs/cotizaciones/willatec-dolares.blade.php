@@ -95,6 +95,12 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
 
     .wrap {
         border-collapse: collapse;
+        page-break-inside: auto;
+    }
+
+    .wrap tr,
+    .wrap td {
+        page-break-inside: auto;
     }
 
     .strip {
@@ -266,14 +272,13 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .items thead tr {
-        background: #0D47A1;
+        background: #1565C0;
         color: #fff;
     }
 
     .items th {
-        font-size: 8.8px;
-        font-weight: 700;
-        padding: 7px 5px;
+        font-size: 7.6px;
+        padding: 5px 5px;
     }
 
     .items td {
@@ -332,7 +337,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .bottom {
-        page-break-inside: avoid;
+        /* page-break-inside: avoid; */
         padding: 2px 14px 8px;
     }
 
@@ -389,7 +394,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .total-final td {
-        background: #0D47A1;
+        background: #1565C0;
         color: #fff;
         border-bottom: 0;
         padding: 6px 10px;
@@ -409,7 +414,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .currency td {
-        background: #0D47A1;
+        background: #1565C0;
         color: rgba(255, 255, 255, 0.75);
         border-bottom: 0;
         font-size: 8px;
@@ -420,15 +425,20 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     .payment {
         padding: 2px 14px 2px;
         page-break-inside: avoid;
+        break-inside: avoid;
     }
 
     .payment-table {
         table-layout: fixed;
+        page-break-inside: avoid;
+        break-inside: avoid;
     }
 
     .payment-col {
         width: 33.33%;
         padding: 0 5px;
+        page-break-inside: avoid;
+        break-inside: avoid;
     }
 
     .payment-card {
@@ -437,6 +447,13 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         padding: 5px 7px;
         height: 84px;
         overflow: hidden;
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    .payment-table tr {
+        page-break-inside: avoid;
+        break-inside: avoid;
     }
 
     .pay-title {
@@ -542,7 +559,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
 
     .signature {
         padding: 4px 14px 0;
-        page-break-inside: avoid;
+        /* page-break-inside: avoid; */
     }
 
     .signature-cell {
@@ -584,7 +601,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         left: -24px;
         width: 110%;
         height: 40px;
-        background: #0D47A1;
+        background: #1565C0;
         color: #ffffff;
     }
 
@@ -601,7 +618,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         left: 335px;
         width: 120px;
         height: 18px;
-        background: #0D47A1;
+        background: #1565C0;
         text-align: center;
     }
 
@@ -610,7 +627,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         position: absolute;
         left: -12px;
         top: 0;
-        border-right: 12px solid #0D47A1;
+        border-right: 12px solid #1565C0;
         border-top: 18px solid transparent;
     }
 
@@ -619,7 +636,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         position: absolute;
         right: -12px;
         top: 0;
-        border-left: 12px solid #0D47A1;
+        border-left: 12px solid #1565C0;
         border-top: 18px solid transparent;
     }
 
@@ -787,323 +804,324 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
 
 <div class="left-strip-fixed"></div>
 
-<table class="wrap" cellpadding="0" cellspacing="0">
-    <tr>
-        <td class="body">
-            <table class="header" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td class="header-left-new">
-                        @if($logoWillatecSrc = $pdfImage($logoWillatec))
-                        <img src="{{ $logoWillatecSrc }}" class="logo-willatec" alt="Willatec">
-                        @endif
-                    </td>
+<div class="body">
+    <table class="header" cellpadding="0" cellspacing="0">
+        <tr>
+            <td class="header-left-new">
+                @if($logoWillatecSrc = $pdfImage($logoWillatec))
+                <img src="{{ $logoWillatecSrc }}" class="logo-willatec" alt="Willatec">
+                @endif
+            </td>
 
-                    <td class="header-center-new">
-                        <div class="tag">¡SOMOS PROVEEDOR HOMOLOGADO!</div>
-                        @if($logoHomologadoSrc = $pdfImage($logoHomologado))
-                        <img src="{{ $logoHomologadoSrc }}" class="logo-homologado-main" alt="Homologado">
-                        @endif
-                    </td>
+            <td class="header-center-new">
+                <div class="tag">¡SOMOS PROVEEDOR HOMOLOGADO!</div>
+                @if($logoHomologadoSrc = $pdfImage($logoHomologado))
+                <img src="{{ $logoHomologadoSrc }}" class="logo-homologado-main" alt="Homologado">
+                @endif
+            </td>
 
-                    <td class="header-right-new">
-                        <div class="title">COTIZACIÓN</div>
+            <td class="header-right-new">
+                <div class="title">COTIZACIÓN</div>
 
-                        <table class="meta" cellpadding="0" cellspacing="0">
-                            <tr>
-                                <td>Nro. Cotización:</td>
-                                <td class="value">{{ $cotizacion->numero }}</td>
-                            </tr>
-                            <tr>
-                                <td>Fecha emisión:</td>
-                                <td class="value">{{ $fechaEmision }}</td>
-                            </tr>
-                            <tr>
-                                <td>Válido hasta:</td>
-                                <td class="value">{{ $fechaValidez }}</td>
-                            </tr>
-                            <tr>
-                                <td>Vendedor:</td>
-                                <td class="value">{{ $primerNombre }} {{ $primerApellido }}</td>
-                            </tr>
-                        </table>
-
-                        <span class="badge">Válido {{ $validezDias }} días calendarios</span>
-                    </td>
-                </tr>
-            </table>
-            <table class="partners" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td class="partners-line"></td>
-                    <td class="partners-title">NUESTROS ALIADOS TECNOLÓGICOS</td>
-                    <td class="partners-line"></td>
-                </tr>
-            </table>
-
-            <table class="partners-logos-table" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td class="partner-logo-cell">
-                        @if($logoDellSrc = $pdfImage($logoDell))
-                        <img src="{{ $logoDellSrc }}" class="partner-logo partner-dell">
-                        @endif
-                    </td>
-                    <td class="partner-separator"></td>
-                    <td class="partner-logo-cell">
-                        @if($logoHpSrc = $pdfImage($logoHp))
-                        <img src="{{ $logoHpSrc }}" class="partner-logo partner-hp">
-                        @endif
-                    </td>
-                    <td class="partner-separator"></td>
-                    <td class="partner-logo-cell">
-                        @if($logoMicrosoftSrc = $pdfImage($logoMicrosoft))
-                        <img src="{{ $logoMicrosoftSrc }}" class="partner-logo partner-microsoft">
-                        @endif
-                    </td>
-                    <td class="partner-separator"></td>
-                    <td class="partner-logo-cell">
-                        @if($logoSynologySrc = $pdfImage($logoSynology))
-                        <img src="{{ $logoSynologySrc }}" class="partner-logo partner-synology">
-                        @endif
-                    </td>
-                    <td class="partner-separator"></td>
-                    <td class="partner-logo-cell">
-                        @if($logoLenovoSrc = $pdfImage($logoLenovo))
-                        <img src="{{ $logoLenovoSrc }}" class="partner-logo partner-lenovo">
-                        @endif
-                    </td>
-                </tr>
-            </table>
-            <table class="info" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td class="info-cell info-left">
-                        <div class="section-title">Datos del cliente</div>
-                        <div class="name">{{ $cotizacion->cliente_nombre ?? 'Cliente' }}</div>
-                        <div class="detail">
-                            RUC / DNI: <b>{{ $cotizacion->cliente_ruc ?? 'N/A' }}</b><br>
-                            Contacto: <b>{{ $cotizacion->cliente_contacto ?? 'N/A' }}</b><br>
-                            Teléfono: <b>{{ $cotizacion->cliente_telefono ?? 'N/A' }}</b><br>
-                            Correo: <b>{{ $cotizacion->cliente_correo ?? 'N/A' }}</b>
-                        </div>
-                    </td>
-                    <td class="info-cell">
-                        <div class="section-title">Datos del emisor</div>
-                        <div class="name">WILLATEC S.A.C</div>
-                        <div class="detail">
-                            RUC: <b>20602503331</b><br>
-                            WhatsApp: <b>{{ $cotizacion->user->profile->telefono ?? '934 577 815' }}</b> &nbsp; Teléfono: <b>(01) 757-1253</b><br>
-                            Correo: <b>ventas@willatec.com</b> &nbsp; Web: <b>www.willatec.com</b><br>
-                            Dirección: <b>Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña - Lima</b>
-                        </div>
-                    </td>
-                </tr>
-            </table>
-
-            <div class="items-wrap">
-                <table class="items" cellpadding="0" cellspacing="0">
-                    <thead>
-                        <tr>
-                            <th class="center" style="width:20px">#</th>
-                            <th>Producto / Servicio</th>
-                            <th class="center" style="width:60px">Imagen</th>
-                            <th class="right" style="width:35px">Cant.</th>
-                            <th class="right" style="width:72px">P. Unit.</th>
-                            <th class="right" style="width:72px">Subtotal</th>
-                            <th class="center" style="width:95px">Disponibilidad</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse($cotizacion->items as $item)
-                        @php
-                        $itemImage = null;
-                        if ($item->imagen) {
-                        $imagen = ltrim(str_replace('\\', '/', $item->imagen), '/');
-                        // Limpiar si viene con prefijos de URL
-                        foreach (['storage/app/public/', 'public/storage/', 'storage/'] as $prefix) {
-                        if (str_starts_with($imagen, $prefix)) {
-                        $imagen = substr($imagen, strlen($prefix));
-                        break;
-                        }
-                        }
-                        $rutaLocal = public_path('storage/' . $imagen);
-                        if (file_exists($rutaLocal)) {
-                        $itemImage = $rutaLocal;
-                        }
-                        }
-                        $itemImageSrc = $itemImage ? $pdfImage($itemImage) : null;
-                        @endphp
-                        <tr class="{{ $loop->even ? 'even' : '' }}">
-                            <td class="center">{{ $loop->iteration }}</td>
-                            <td>
-                                <span class="strong">{{ $item->descripcion }}</span><br>
-                                @if($item->marca)
-                                <span class="muted">Marca: {{ $item->marca }}</span><br>
-                                <span class="muted">Modelo / Código: {{ $item->codigo }}</span><br>
-                                @endif
-                                <span class="muted">Garantia: {{ $item->garantia_meses ?? '-' }} meses</span>
-                            </td>
-                            <td class="center">
-                                @if($itemImageSrc)
-                                <img src="{{ $itemImageSrc }}" class="prod-img" alt="">
-                                @else
-                                <span class="muted">Sin imagen</span>
-                                @endif
-                            </td>
-                            <td class="right">{{ $item->cantidad }}</td>
-                            <td class="right">{{ $simbolo }} {{ number_format((float) $item->precio_venta, 2) }}</td>
-                            <td class="right strong">{{ $simbolo }} {{ number_format((float) $item->subtotal, 2) }}</td>
-                            <td class="center">
-                                @if($item->disponibilidad_tipo === 'importacion')
-                                <div class="import">IMPORTACION<br>{{ $item->disponibilidad_dias }} dias c.<br>Puesta la OC.</div>
-                                @else
-                                <div class="stock">STOCK DISP.<br>{{ $item->disponibilidad_dias }} dias c.<br>Puesta la OC.</div>
-                                @endif
-                            </td>
-                        </tr>
-                        @empty
-                        <tr>
-                            <td colspan="7" class="center muted">Sin items registrados</td>
-                        </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-
-            <table class="bottom" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td class="conditions">
-                        <div class="section-title">Condiciones comerciales</div>
-                        <div class="condition"><span>&rsaquo;</span> Forma de Pago: {{ $formaPago }} calendario</div>
-                        <div class="condition"><span>&rsaquo;</span> Incluye entrega en oficinas del cliente, Lima Metropolitana.</div>
-                        <div class="condition"><span>&rsaquo;</span> Precios en {{ $nombreMoneda }} y NO incluyen IGV.</div>
-                        <div class="condition"><span>&rsaquo;</span> Precios sujetos a cambio sin previo aviso.</div>
-                        <div class="condition"><span>&rsaquo;</span> WILLATEC S.A.C, Incorporado al Régimen de Buenos Contribuyentes Resolución de Intendencia N° 0230050266292 (Emitido - Sunat)</div>
-                        <div class="note">
-                            El precio del producto esta sujeto al stock y nuevo ingreso de importacion de la marca.<br>
-                            Para productos importados, el tiempo de entrega puede variar entre 20 y 25 dias calendario.
-                        </div>
-                    </td>
-                    <td class="totals-cell">
-                        <table class="totals" cellpadding="0" cellspacing="0">
-                            <tr>
-                                <td class="label">Subtotal</td>
-                                <td class="amount">{{ $simbolo }} {{ number_format((float) $cotizacion->subtotal, 2) }}</td>
-                            </tr>
-                            <tr>
-                                <td class="label">IGV (18%)</td>
-                                <td class="amount">{{ $simbolo }} {{ number_format((float) $cotizacion->igv, 2) }}</td>
-                            </tr>
-                            <tr class="total-final">
-                                <td class="total-label">Total</td>
-                                <td class="total-amount">{{ $simbolo }} {{ number_format((float) $cotizacion->total, 2) }}</td>
-                            </tr>
-                            <tr class="currency">
-                                <td colspan="2">Moneda: {{ $codigoMoneda }} {{ $simbolo }}</td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-            <div class="signature">
-                <table cellpadding="0" cellspacing="0">
+                <table class="meta" cellpadding="0" cellspacing="0">
                     <tr>
-                        <td class="signature-cell">
-                            @if($firmaGerenteSrc = $pdfImage($firmaGerente))
-                            <img src="{{ $firmaGerenteSrc }}" class="signature-img" alt="Firma">
-                            @else
-                            <div style="height:58px">&nbsp;</div>
+                        <td>Nro. Cotización:</td>
+                        <td class="value">{{ $cotizacion->numero }}</td>
+                    </tr>
+                    <tr>
+                        <td>Fecha emisión:</td>
+                        <td class="value">{{ $fechaEmision }}</td>
+                    </tr>
+                    <tr>
+                        <td>Válido hasta:</td>
+                        <td class="value">{{ $fechaValidez }}</td>
+                    </tr>
+                    <tr>
+                        <td>Vendedor:</td>
+                        <td class="value">{{ $primerNombre }} {{ $primerApellido }}</td>
+                    </tr>
+                </table>
+
+                <span class="badge">Válido {{ $validezDias }} días calendarios</span>
+            </td>
+        </tr>
+    </table>
+    @if($cotizacion->items->count() <= 3)
+        <table class="partners" cellpadding="0" cellspacing="0">
+        <tr>
+            <td class="partners-line"></td>
+            <td class="partners-title">NUESTROS ALIADOS TECNOLÓGICOS</td>
+            <td class="partners-line"></td>
+        </tr>
+        </table>
+
+        <table class="partners-logos-table" cellpadding="0" cellspacing="0">
+            <tr>
+                <td class="partner-logo-cell">
+                    @if($logoDellSrc = $pdfImage($logoDell))
+                    <img src="{{ $logoDellSrc }}" class="partner-logo partner-dell">
+                    @endif
+                </td>
+                <td class="partner-separator"></td>
+                <td class="partner-logo-cell">
+                    @if($logoHpSrc = $pdfImage($logoHp))
+                    <img src="{{ $logoHpSrc }}" class="partner-logo partner-hp">
+                    @endif
+                </td>
+                <td class="partner-separator"></td>
+                <td class="partner-logo-cell">
+                    @if($logoMicrosoftSrc = $pdfImage($logoMicrosoft))
+                    <img src="{{ $logoMicrosoftSrc }}" class="partner-logo partner-microsoft">
+                    @endif
+                </td>
+                <td class="partner-separator"></td>
+                <td class="partner-logo-cell">
+                    @if($logoSynologySrc = $pdfImage($logoSynology))
+                    <img src="{{ $logoSynologySrc }}" class="partner-logo partner-synology">
+                    @endif
+                </td>
+                <td class="partner-separator"></td>
+                <td class="partner-logo-cell">
+                    @if($logoLenovoSrc = $pdfImage($logoLenovo))
+                    <img src="{{ $logoLenovoSrc }}" class="partner-logo partner-lenovo">
+                    @endif
+                </td>
+            </tr>
+        </table>
+        @endif
+        <table class="info" cellpadding="0" cellspacing="0">
+            <tr>
+                <td class="info-cell info-left">
+                    <div class="section-title">Datos del cliente</div>
+                    <div class="name">{{ $cotizacion->cliente_nombre ?? 'Cliente' }}</div>
+                    <div class="detail">
+                        RUC / DNI: <b>{{ $cotizacion->cliente_ruc ?? '-' }}</b><br>
+                        Contacto: <b>{{ $cotizacion->cliente_contacto ?? '-' }}</b><br>
+                        Teléfono: <b>{{ $cotizacion->cliente_telefono ?? '-' }}</b><br>
+                        Correo: <b>{{ $cotizacion->cliente_correo ?? '-' }}</b>
+                    </div>
+                </td>
+                <td class="info-cell">
+                    <div class="section-title">Datos del emisor</div>
+                    <div class="name">WILLATEC S.A.C</div>
+                    <div class="detail">
+                        RUC: <b>20602503331</b><br>
+                        WhatsApp: <b>{{ $cotizacion->user->profile->telefono ?? '934 577 815' }}</b> &nbsp; Teléfono: <b>(01) 757-1253</b><br>
+                        Correo: <b>ventas@willatec.com</b> &nbsp; Web: <b>www.willatec.com</b><br>
+                        Dirección: <b>Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña - Lima</b>
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <div class="items-wrap">
+            <table class="items" cellpadding="0" cellspacing="0">
+                <thead>
+                    <tr>
+                        <th class="center" style="width:20px">#</th>
+                        <th>Producto / Servicio</th>
+                        <th class="center" style="width:60px">Imagen</th>
+                        <th class="right" style="width:35px">Cant.</th>
+                        <th class="right" style="width:72px">P. Unit.</th>
+                        <th class="right" style="width:72px">Subtotal</th>
+                        <th class="center" style="width:95px">Disponibilidad</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($cotizacion->items as $item)
+                    @php
+                    $itemImage = null;
+                    if ($item->imagen) {
+                    $imagen = ltrim(str_replace('\\', '/', $item->imagen), '/');
+                    // Limpiar si viene con prefijos de URL
+                    foreach (['storage/app/public/', 'public/storage/', 'storage/'] as $prefix) {
+                    if (str_starts_with($imagen, $prefix)) {
+                    $imagen = substr($imagen, strlen($prefix));
+                    break;
+                    }
+                    }
+                    $rutaLocal = public_path('storage/' . $imagen);
+                    if (file_exists($rutaLocal)) {
+                    $itemImage = $rutaLocal;
+                    }
+                    }
+                    $itemImageSrc = $itemImage ? $pdfImage($itemImage) : null;
+                    @endphp
+                    <tr class="{{ $loop->even ? 'even' : '' }}">
+                        <td class="center">{{ $loop->iteration }}</td>
+                        <td>
+                            <span class="strong">{{ $item->descripcion }}</span><br>
+                            @if($item->marca)
+                            <span class="muted">Marca: {{ $item->marca }}</span><br>
                             @endif
-                            <div class="signature-line"></div>
-                            <div class="signature-date">Fecha: {{ $fechaEmision }}</div>
+
+                            @if(!empty($item->codigo) && trim($item->codigo) !== '-')
+                            <span class="muted">Modelo / Código: {{ $item->codigo }}</span><br>
+                            @endif
+                            <span class="muted">Garantia: {{ $item->garantia_meses ?? '-' }} meses</span>
                         </td>
-                        <td class="signature-cell">&nbsp;</td>
+                        <td class="center">
+                            @if($itemImageSrc)
+                            <img src="{{ $itemImageSrc }}" class="prod-img" alt="">
+                            @else
+                            <span class="muted">Sin imagen</span>
+                            @endif
+                        </td>
+                        <td class="right">{{ $item->cantidad }}</td>
+                        <td class="right">{{ $simbolo }} {{ number_format((float) $item->precio_venta, 2) }}</td>
+                        <td class="right strong">{{ $simbolo }} {{ number_format((float) $item->subtotal, 2) }}</td>
+                        <td class="center">
+                            @if($item->disponibilidad_tipo === 'importacion')
+                            <div class="import">IMPORTACION<br>{{ $item->disponibilidad_dias }} dias c.<br>Puesta la OC.</div>
+                            @else
+                            <div class="stock">STOCK DISP.<br>{{ $item->disponibilidad_dias }} dias c.<br>Puesta la OC.</div>
+                            @endif
+                        </td>
                     </tr>
-                </table>
-            </div>
-
-            <div class="payment">
-                <div class="section-title">Metodo de pago</div>
-
-                <table class="payment-table" cellpadding="0" cellspacing="0">
+                    @empty
                     <tr>
-                        <td class="payment-col">
-                            <div class="payment-card">
-                                <table cellpadding="0" cellspacing="0">
-                                    <tr>
-                                        <td class="pay-title">Cuenta corriente</td>
-                                        <td style="text-align:right">
-                                            @if($logoBcpSrc = $pdfImage($logoBcp))
-                                            <img src="{{ $logoBcpSrc }}" class="pay-logo-bcp" alt="BCP">
-                                            @endif
-                                        </td>
-                                    </tr>
-                                </table>
-
-                                <table class="pay-row" cellpadding="0" cellspacing="0">
-                                    <tr>
-                                        <td class="pay-tag">US $.</td>
-                                        <td class="pay-num">193-2421813-1-66</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="pay-tag">CCI:</td>
-                                        <td class="pay-num">00219300242181316612</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="pay-tag">S/.</td>
-                                        <td class="pay-num">191-2494330-0-51</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="pay-tag">CCI:</td>
-                                        <td class="pay-num">00219100249433005157</td>
-                                    </tr>
-                                </table>
-                            </div>
-                        </td>
-
-                        <td class="payment-col">
-                            <div class="payment-card yape">
-                                <div class="pay-title">Cuenta detracción</div>
-
-                                @if($logoBancoNacionSrc = $pdfImage($logoBancoNacion))
-                                <img src="{{ $logoBancoNacionSrc }}" class="pay-logo-nacion" alt="Banco de la Nación">
-                                @else
-                                <div class="strong">Banco de la Nación</div>
-                                @endif
-
-                                <div class="muted" style="margin-top:8px;">Número:</div>
-                                <div class="yape-number" style="font-size:11px;">
-                                    00-012-043538
-                                </div>
-                            </div>
-                        </td>
-
-                        <td class="payment-col">
-                            <div class="payment-card yape yape-card">
-                                @if($qrYapeSrc = $pdfImage($qrYape))
-                                <div class="yape-qr-wrap">
-                                    <img src="{{ $qrYapeSrc }}" class="qr-yape" alt="QR Yape">
-                                </div>
-                                @endif
-
-                                <table class="yape-bottom" cellpadding="0" cellspacing="0">
-                                    <tr>
-                                        <td class="yape-logo-cell">
-                                            @if($logoYapeSrc = $pdfImage($logoYape))
-                                            <img src="{{ $logoYapeSrc }}" class="pay-logo" alt="Yape">
-                                            @endif
-                                        </td>
-                                        <td class="yape-data-cell">
-                                            <div class="muted">Willatec Sac</div>
-                                            <div class="yape-number">905431917</div>
-                                        </td>
-                                    </tr>
-                                </table>
-                            </div>
-                        </td>
+                        <td colspan="7" class="center muted">Sin items registrados</td>
                     </tr>
-                </table>
-            </div>
-        </td>
-    </tr>
-</table>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+
+        <table class="bottom" cellpadding="0" cellspacing="0">
+            <tr>
+                <td class="conditions">
+                    <div class="section-title">Condiciones comerciales</div>
+                    <div class="condition"><span>&rsaquo;</span> Forma de Pago: {{ $formaPago }} calendario</div>
+                    <div class="condition"><span>&rsaquo;</span> Incluye entrega en oficinas del cliente, Lima Metropolitana.</div>
+                    <div class="condition"><span>&rsaquo;</span> Precios en {{ $nombreMoneda }} y NO incluyen IGV.</div>
+                    <div class="condition"><span>&rsaquo;</span> Precios sujetos a cambio sin previo aviso.</div>
+                    <div class="condition"><span>&rsaquo;</span> WILLATEC S.A.C, Incorporado al Régimen de Buenos Contribuyentes Resolución de Intendencia N° 0230050266292 (Emitido - Sunat)</div>
+                    <div class="note">
+                        El precio del producto esta sujeto al stock y nuevo ingreso de importacion de la marca.<br>
+                        Para productos importados, el tiempo de entrega puede variar entre 20 y 25 dias calendario.
+                    </div>
+                </td>
+                <td class="totals-cell">
+                    <table class="totals" cellpadding="0" cellspacing="0">
+                        <tr>
+                            <td class="label">Subtotal</td>
+                            <td class="amount">{{ $simbolo }} {{ number_format((float) $cotizacion->subtotal, 2) }}</td>
+                        </tr>
+                        <tr>
+                            <td class="label">IGV (18%)</td>
+                            <td class="amount">{{ $simbolo }} {{ number_format((float) $cotizacion->igv, 2) }}</td>
+                        </tr>
+                        <tr class="total-final">
+                            <td class="total-label">Total</td>
+                            <td class="total-amount">{{ $simbolo }} {{ number_format((float) $cotizacion->total, 2) }}</td>
+                        </tr>
+                        <tr class="currency">
+                            <td colspan="2">Moneda: {{ $codigoMoneda }} {{ $simbolo }}</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+        <div class="signature">
+            <table cellpadding="0" cellspacing="0">
+                <tr>
+                    <td class="signature-cell">
+                        @if($firmaGerenteSrc = $pdfImage($firmaGerente))
+                        <img src="{{ $firmaGerenteSrc }}" class="signature-img" alt="Firma">
+                        @else
+                        <div style="height:58px">&nbsp;</div>
+                        @endif
+                        <div class="signature-line"></div>
+                        <div class="signature-date">Fecha: {{ $fechaEmision }}</div>
+                    </td>
+                    <td class="signature-cell">&nbsp;</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="payment">
+            <div class="section-title">Metodo de pago</div>
+
+            <table class="payment-table" cellpadding="0" cellspacing="0">
+                <tr>
+                    <td class="payment-col">
+                        <div class="payment-card">
+                            <table cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td class="pay-title">Cuenta corriente</td>
+                                    <td style="text-align:right">
+                                        @if($logoBcpSrc = $pdfImage($logoBcp))
+                                        <img src="{{ $logoBcpSrc }}" class="pay-logo-bcp" alt="BCP">
+                                        @endif
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <table class="pay-row" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td class="pay-tag">US $.</td>
+                                    <td class="pay-num">193-2421813-1-66</td>
+                                </tr>
+                                <tr>
+                                    <td class="pay-tag">CCI:</td>
+                                    <td class="pay-num">00219300242181316612</td>
+                                </tr>
+                                <tr>
+                                    <td class="pay-tag">S/.</td>
+                                    <td class="pay-num">191-2494330-0-51</td>
+                                </tr>
+                                <tr>
+                                    <td class="pay-tag">CCI:</td>
+                                    <td class="pay-num">00219100249433005157</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </td>
+
+                    <td class="payment-col">
+                        <div class="payment-card yape">
+                            <div class="pay-title">Cuenta detracción</div>
+
+                            @if($logoBancoNacionSrc = $pdfImage($logoBancoNacion))
+                            <img src="{{ $logoBancoNacionSrc }}" class="pay-logo-nacion" alt="Banco de la Nación">
+                            @else
+                            <div class="strong">Banco de la Nación</div>
+                            @endif
+
+                            <div class="muted" style="margin-top:8px;">Número:</div>
+                            <div class="yape-number" style="font-size:11px;">
+                                00-012-043538
+                            </div>
+                        </div>
+                    </td>
+
+                    <td class="payment-col">
+                        <div class="payment-card yape yape-card">
+                            @if($qrYapeSrc = $pdfImage($qrYape))
+                            <div class="yape-qr-wrap">
+                                <img src="{{ $qrYapeSrc }}" class="qr-yape" alt="QR Yape">
+                            </div>
+                            @endif
+
+                            <table class="yape-bottom" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td class="yape-logo-cell">
+                                        @if($logoYapeSrc = $pdfImage($logoYape))
+                                        <img src="{{ $logoYapeSrc }}" class="pay-logo" alt="Yape">
+                                        @endif
+                                    </td>
+                                    <td class="yape-data-cell">
+                                        <div class="muted">Willatec Sac</div>
+                                        <div class="yape-number">905431917</div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+</div>
 
 <table class="footer" cellpadding="0" cellspacing="0">
     <tr>
