@@ -3,22 +3,33 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\Cliente;
+use Illuminate\Http\Request;
 
 class ClienteController extends Controller
 {
-    //Listar Clientes
+    // Listar Clientes
     public function index(Request $request)
     {
-        $query = Cliente::query();
+        $request->validate([
+            'estado' => 'nullable|string|max:50',
+            'tipo_cliente_id' => 'nullable|integer|exists:tipo_clientes,id',
+            'search' => 'nullable|string|max:100',
+            'per_page' => 'nullable|integer|min:1|max:100',
+        ]);
+
+        $query = Cliente::with(['tipoCliente', 'moneda']);
 
         if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
+            $query->where('estado', $request->string('estado')->toString());
+        }
+
+        if ($request->filled('tipo_cliente_id')) {
+            $query->where('tipo_cliente_id', $request->integer('tipo_cliente_id'));
         }
 
         if ($request->filled('search')) {
-            $search = $request->search;
+            $search = $request->string('search')->toString();
 
             $query->where(function ($q) use ($search) {
                 $q->where('nombre', 'like', "%{$search}%")
@@ -31,11 +42,11 @@ class ClienteController extends Controller
         return response()->json(
             $query
                 ->orderBy('nombre', 'asc')
-                ->paginate($request->per_page ?? 10)
+                ->paginate($request->integer('per_page', 10))
         );
     }
 
-    //Crear cliente
+    // Crear cliente
     public function store(Request $request)
     {
         $this->normalizeOptionalContactFields($request);
@@ -63,32 +74,32 @@ class ClienteController extends Controller
 
         return response()->json([
             'message' => 'Cliente creado correctamente',
-            'cliente' => $cliente
+            'cliente' => $cliente,
         ], 201);
     }
 
-    //Ver detalle
+    // Ver detalle
     public function show(int $id)
     {
         $cliente = Cliente::findOrFail($id);
 
-        if (!$cliente) {
+        if (! $cliente) {
             return response()->json([
-                'message' => 'Cliente no encontrado'
+                'message' => 'Cliente no encontrado',
             ], 404);
         }
 
         return response()->json($cliente);
     }
 
-    //Actualizar cliente
+    // Actualizar cliente
     public function update(Request $request, int $id)
     {
         $cliente = Cliente::findOrFail($id);
 
-        if (!$cliente) {
+        if (! $cliente) {
             return response()->json([
-                'message' => 'Cliente no encontrado'
+                'message' => 'Cliente no encontrado',
             ], 404);
         }
 
@@ -118,25 +129,25 @@ class ClienteController extends Controller
 
         return response()->json([
             'message' => 'Cliente actualizado correctamente',
-            'cliente' => $cliente
+            'cliente' => $cliente,
         ]);
     }
 
-    //Eliminar cliente
+    // Eliminar cliente
     public function destroy(int $id)
     {
         $cliente = Cliente::findOrFail($id);
 
-        if (!$cliente) {
+        if (! $cliente) {
             return response()->json([
-                'message' => 'Cliente no encontrado'
+                'message' => 'Cliente no encontrado',
             ], 404);
         }
 
         $cliente->delete();
 
         return response()->json([
-            'message' => 'Cliente eliminado correctamente'
+            'message' => 'Cliente eliminado correctamente',
         ]);
     }
 

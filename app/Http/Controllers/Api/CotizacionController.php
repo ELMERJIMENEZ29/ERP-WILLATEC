@@ -48,6 +48,11 @@ class CotizacionController extends Controller
 
     public function index(Request $request)
     {
+        $request->validate([
+            'user_id' => 'nullable|integer|exists:users,id',
+            'per_page' => 'nullable|integer|min:1|max:100',
+        ]);
+
         $query = Cotizacion::with([
             'cliente',
             'estadoCotizacion',
@@ -77,10 +82,14 @@ class CotizacionController extends Controller
             $query->where('estado_cotizacion_id', $request->estado_cotizacion_id);
         }
 
+        if ($request->filled('user_id')) {
+            $query->where('user_id', $request->integer('user_id'));
+        }
+
         return response()->json(
             $query
                 ->latest()
-                ->paginate($request->per_page ?? 10)
+                ->paginate($request->integer('per_page', 10))
         );
     }
 
