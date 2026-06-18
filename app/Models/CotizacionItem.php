@@ -35,6 +35,7 @@ class CotizacionItem extends Model
         'orden',
         'cotizacion_id',
         'producto_id',
+        'producto_externo_id',
         'tipo',
         'estado_cotizacion_item_id',
         'costo_total',
@@ -55,6 +56,11 @@ class CotizacionItem extends Model
     public function producto(): BelongsTo
     {
         return $this->belongsTo(Producto::class);
+    }
+
+    public function productoExterno(): BelongsTo
+    {
+        return $this->belongsTo(ProductoExterno::class);
     }
 
     public function estadoCotizacionItem(): BelongsTo

@@ -6,10 +6,11 @@ use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\CotizacionController;
 use App\Http\Controllers\Api\OrdenCompraController;
 use App\Http\Controllers\Api\ProductoController;
+use App\Http\Controllers\Api\ProductoExternoController;
+use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
-use App\Http\Controllers\Api\TwoFactorController;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:3,1');
@@ -34,7 +35,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
     // USUARIOS
-    Route::post('/users', [AuthController::class, 'register'])->middleware('role:superadmin|admin|ventas');
+    Route::post('/users', [AuthController::class, 'register'])->middleware('role:superadmin|admin');
     Route::patch('/users/{id}/reset-password', [AuthController::class, 'resetPassword'])->middleware('role:superadmin');
 
     Route::get('/notifications', [AuthController::class, 'notifications']);
@@ -75,6 +76,11 @@ Route::prefix('productos')->middleware('auth:sanctum')->group(function () {
 
 Route::post('/upload-imagen', [CotizacionController::class, 'uploadImagen'])
     ->middleware(['auth:sanctum']);
+
+Route::prefix('productos-externos')->middleware('auth:sanctum')->group(function () {
+    Route::get('/', [ProductoExternoController::class, 'index'])
+        ->middleware('role:superadmin|ventas');
+});
 
 Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
     // ── RUTAS ESTÁTICAS PRIMERO ──────────────────────────────

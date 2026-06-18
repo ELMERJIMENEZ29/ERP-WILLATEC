@@ -15,6 +15,7 @@ use App\Models\Moneda;
 use App\Models\Plantilla;
 use App\Models\Plataforma;
 use App\Models\Producto;
+use App\Models\ProductoExterno;
 use App\Models\User;
 use App\Notifications\CotizacionAprobadaNotification;
 use App\Notifications\CotizacionRechazadaNotification;
@@ -98,6 +99,7 @@ class CotizacionController extends Controller
         $cotizacion = Cotizacion::with([
             'cliente',
             'items.producto',
+            'items.productoExterno',
             'items.proveedores',
             'costosAdicionales',
             'estadoCotizacion',
@@ -344,6 +346,7 @@ class CotizacionController extends Controller
             'disponibilidad_tipo' => 'required|in:stock,importacion',
             'disponibilidad_dias' => 'required|integer|min:1|max:50',
             'producto_id' => 'nullable|exists:productos,id',
+            'producto_externo_id' => 'nullable|exists:productos_externos,id',
             'proveedor' => 'nullable|string',
             'link_proveedor' => 'nullable|string',
             'tipo' => 'nullable|string|in:catalogo,personalizado,externo',
@@ -389,6 +392,7 @@ class CotizacionController extends Controller
                 'link_proveedor' => $this->primerProveedorLink($request->input('proveedores'), $request->link_proveedor),
                 'orden' => $ultimoOrden + 1,
                 'producto_id' => $request->producto_id ?? null,
+                'producto_externo_id' => null,
                 'tipo' => $request->tipo ?? ($request->producto_id ? 'catalogo' : 'personalizado'),
 
                 // Valores calculados iniciales — recalcular() los refinará
@@ -407,6 +411,8 @@ class CotizacionController extends Controller
             } elseif ($request->filled('producto_id')) {
                 $itemData['imagen'] = Producto::whereKey($request->integer('producto_id'))->value('imagen');
             }
+
+            $itemData['producto_externo_id'] = $this->resolveProductoExternoId($itemData);
 
             $item = CotizacionItem::create($itemData);
             $this->syncItemProveedores($item, $request->input('proveedores'));
@@ -434,6 +440,7 @@ class CotizacionController extends Controller
             'disponibilidad_tipo' => 'nullable|in:stock,importacion',
             'disponibilidad_dias' => 'nullable|integer|min:1|max:50',
             'producto_id' => 'nullable|exists:productos,id',
+            'producto_externo_id' => 'nullable|exists:productos_externos,id',
             'proveedor' => 'nullable|string',
             'link_proveedor' => 'nullable|string',
             'tipo' => 'nullable|string|in:catalogo,personalizado,externo',
@@ -474,6 +481,7 @@ class CotizacionController extends Controller
                     'proveedor',
                     'link_proveedor',
                     'producto_id',
+                    'producto_externo_id',
                     'stock',
                     'tipo',
                 ]),
@@ -499,6 +507,12 @@ class CotizacionController extends Controller
                 $itemData['proveedor'] = $this->primerProveedorNombre($request->input('proveedores'), $itemData['proveedor'] ?? null);
                 $itemData['link_proveedor'] = $this->primerProveedorLink($request->input('proveedores'), $itemData['link_proveedor'] ?? null);
             }
+
+            $snapshotForProductoExterno = [
+                ...$item->toArray(),
+                ...$itemData,
+            ];
+            $itemData['producto_externo_id'] = $this->resolveProductoExternoId($snapshotForProductoExterno);
 
             $item->update($itemData);
             $this->syncItemProveedores($item, $request->input('proveedores'));
@@ -662,6 +676,7 @@ class CotizacionController extends Controller
         $cotizacion = Cotizacion::with([
             'cliente',
             'items.producto',
+            'items.productoExterno',
             'items.proveedores',
             'user.profile',
             'plantilla',
@@ -781,6 +796,7 @@ class CotizacionController extends Controller
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.tipo' => 'nullable|string|in:catalogo,personalizado,externo',
+            'items.*.producto_externo_id' => 'nullable|exists:productos_externos,id',
             'items.*.imagen' => 'sometimes|nullable',
             'items.*.proveedores' => 'nullable|array',
             'items.*.proveedores.*.nombre' => 'required|string|max:255',
@@ -850,8 +866,7 @@ class CotizacionController extends Controller
                 $precioVenta = round($costoBase / $factorMargen, 2);
                 $pvt = round($cantidad * $precioVenta, 2);
                 $ptc = round($cantidad * $costoBase, 2);
-
-                $cotizacionItem = CotizacionItem::create([
+                $itemData = [
                     'cotizacion_id' => $cotizacion->id,
                     'descripcion' => $item['descripcion'],
                     'cantidad' => $item['cantidad'],
@@ -860,11 +875,11 @@ class CotizacionController extends Controller
                     'margen' => $item['margen'],
                     'orden' => $index + 1,
                     'marca' => $item['marca'] ?? null,
-                    'codigo' => $item['codigo'],
-                    'unidad_medida' => $item['unidad_medida'],
-                    'garantia_meses' => $item['garantia_meses'],
-                    'disponibilidad_tipo' => $item['disponibilidad_tipo'],
-                    'disponibilidad_dias' => $item['disponibilidad_dias'],
+                    'codigo' => $item['codigo'] ?? null,
+                    'unidad_medida' => $item['unidad_medida'] ?? 'UND',
+                    'garantia_meses' => $item['garantia_meses'] ?? null,
+                    'disponibilidad_tipo' => $item['disponibilidad_tipo'] ?? null,
+                    'disponibilidad_dias' => $item['disponibilidad_dias'] ?? null,
                     'proveedor' => $this->primerProveedorNombre($item['proveedores'] ?? null, $item['proveedor'] ?? null),
                     'link_proveedor' => $this->primerProveedorLink($item['proveedores'] ?? null, $item['link_proveedor'] ?? null),
                     'producto_id' => $item['producto_id'] ?? null,
@@ -879,7 +894,11 @@ class CotizacionController extends Controller
                     'ganancia' => round($pvt - $ptc, 2),
                     'stock' => 0,
                     'delegado_id' => $cotizacion->delegado_id,
-                ]);
+                ];
+
+                $itemData['producto_externo_id'] = $this->resolveProductoExternoId($itemData);
+
+                $cotizacionItem = CotizacionItem::create($itemData);
 
                 $this->syncItemProveedores($cotizacionItem, $item['proveedores'] ?? null);
             }
@@ -907,6 +926,7 @@ class CotizacionController extends Controller
         return response()->json([
             'message' => ' Cotizacion creada correctamente',
             'cotizacion' => $cotizacion->load([
+                'items.productoExterno',
                 'items.proveedores',
                 'costosAdicionales',
                 'cliente',
@@ -943,6 +963,7 @@ class CotizacionController extends Controller
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.tipo' => 'nullable|string|in:catalogo,personalizado,externo',
+            'items.*.producto_externo_id' => 'nullable|exists:productos_externos,id',
             'items.*.imagen' => 'sometimes|nullable',
             'items.*.proveedores' => 'nullable|array',
             'items.*.proveedores.*.nombre' => 'required|string|max:255',
@@ -1023,8 +1044,7 @@ class CotizacionController extends Controller
                 $precioVenta = round($costoBase / $factorMargen, 2);
                 $pvt = round($cantidad * $precioVenta, 2);
                 $ptc = round($cantidad * $costoBase, 2);
-
-                $cotizacionItem = CotizacionItem::create([
+                $itemData = [
                     'cotizacion_id' => $cotizacion->id,
                     'descripcion' => $item['descripcion'],
                     'cantidad' => $item['cantidad'],
@@ -1033,11 +1053,11 @@ class CotizacionController extends Controller
                     'margen' => $item['margen'],
                     'orden' => $index + 1,
                     'marca' => $item['marca'] ?? null,
-                    'codigo' => $item['codigo'],
-                    'unidad_medida' => $item['unidad_medida'],
-                    'garantia_meses' => $item['garantia_meses'],
-                    'disponibilidad_tipo' => $item['disponibilidad_tipo'],
-                    'disponibilidad_dias' => $item['disponibilidad_dias'],
+                    'codigo' => $item['codigo'] ?? null,
+                    'unidad_medida' => $item['unidad_medida'] ?? 'UND',
+                    'garantia_meses' => $item['garantia_meses'] ?? null,
+                    'disponibilidad_tipo' => $item['disponibilidad_tipo'] ?? null,
+                    'disponibilidad_dias' => $item['disponibilidad_dias'] ?? null,
                     'proveedor' => $this->primerProveedorNombre($item['proveedores'] ?? null, $item['proveedor'] ?? null),
                     'link_proveedor' => $this->primerProveedorLink($item['proveedores'] ?? null, $item['link_proveedor'] ?? null),
                     'producto_id' => $item['producto_id'] ?? null,
@@ -1051,7 +1071,11 @@ class CotizacionController extends Controller
                     'costo_total' => $ptc,
                     'ganancia' => round($pvt - $ptc, 2),
                     'stock' => 0,
-                ]);
+                ];
+
+                $itemData['producto_externo_id'] = $this->resolveProductoExternoId($itemData);
+
+                $cotizacionItem = CotizacionItem::create($itemData);
 
                 $this->syncItemProveedores($cotizacionItem, $item['proveedores'] ?? null);
             }
@@ -1076,6 +1100,7 @@ class CotizacionController extends Controller
         return response()->json([
             'message' => 'Cotización actualizada',
             'cotizacion' => $cotizacion->load([
+                'items.productoExterno',
                 'items.proveedores',
                 'costosAdicionales',
                 'cliente',
@@ -1217,6 +1242,41 @@ class CotizacionController extends Controller
             ->filter()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function resolveProductoExternoId(array $item): ?int
+    {
+        if (! empty($item['producto_id'])) {
+            return null;
+        }
+
+        if (! empty($item['producto_externo_id'])) {
+            return (int) $item['producto_externo_id'];
+        }
+
+        $fingerprint = ProductoExterno::fingerprintFrom($item);
+
+        return (int) ProductoExterno::firstOrCreate(
+            ['fingerprint' => $fingerprint],
+            [
+                'descripcion' => $item['descripcion'],
+                'marca' => $item['marca'] ?? null,
+                'codigo' => $item['codigo'] ?? null,
+                'unidad_medida' => $item['unidad_medida'] ?? 'UND',
+                'proveedor' => $item['proveedor'] ?? null,
+                'link_proveedor' => $item['link_proveedor'] ?? null,
+                'costo_base_referencial' => $item['costo_base'] ?? 0,
+                'imagen' => $item['imagen'] ?? null,
+                'garantia_meses' => $item['garantia_meses'] ?? null,
+                'disponibilidad_tipo' => $item['disponibilidad_tipo'] ?? null,
+                'disponibilidad_dias' => $item['disponibilidad_dias'] ?? null,
+                'stock' => $item['stock'] ?? 0,
+                'activo' => true,
+            ]
+        )->id;
     }
 
     /**
