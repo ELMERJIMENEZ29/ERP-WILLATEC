@@ -112,6 +112,16 @@ class Cotizacion extends Model
         return $this->hasMany(CotizacionHistorial::class);
     }
 
+    public function versiones(): HasMany
+    {
+        return $this->hasMany(CotizacionVersion::class)->orderBy('version_number');
+    }
+
+    public function modificaciones(): HasMany
+    {
+        return $this->hasMany(CotizacionModificacion::class);
+    }
+
     /**
      * @return array<string, string>
      */

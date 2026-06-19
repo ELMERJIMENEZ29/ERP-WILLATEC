@@ -104,6 +104,21 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
     Route::get('/monedas', [CotizacionController::class, 'indexMonedas'])
         ->middleware('role:superadmin|ventas');
 
+    Route::get('/modificaciones/{modificacion}', [CotizacionController::class, 'showModificacion'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::put('/modificaciones/{modificacion}', [CotizacionController::class, 'updateModificacion'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::patch('/modificaciones/{modificacion}/enviar-revision', [CotizacionController::class, 'enviarModificacionRevision'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::patch('/modificaciones/{modificacion}/aprobar', [CotizacionController::class, 'aprobarModificacion'])
+        ->middleware('role:superadmin|admin');
+
+    Route::patch('/modificaciones/{modificacion}/rechazar', [CotizacionController::class, 'rechazarModificacion'])
+        ->middleware('role:superadmin|admin');
+
     // ── RUTAS DINÁMICAS DESPUÉS ──────────────────────────────
     Route::get('/{id}', [CotizacionController::class, 'show'])
         ->middleware('role:superadmin|ventas');
@@ -127,6 +142,12 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
         ->middleware('role:superadmin|ventas');
 
     Route::get('/{id}/historial', [CotizacionController::class, 'historial'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::get('/{cotizacion}/versiones', [CotizacionController::class, 'versiones'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::post('/{cotizacion}/solicitar-modificacion', [CotizacionController::class, 'solicitarModificacion'])
         ->middleware('role:superadmin|ventas');
 
     Route::patch('/{cotizacion}/aprobar', [CotizacionController::class, 'aprobar'])

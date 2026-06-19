@@ -9,6 +9,8 @@ use App\Models\CotizacionCostosAdicional;
 use App\Models\CotizacionHistorial;
 use App\Models\CotizacionItem;
 use App\Models\CotizacionItemProveedor;
+use App\Models\CotizacionModificacion;
+use App\Models\CotizacionVersion;
 use App\Models\EstadoCotizacion;
 use App\Models\EstadoCotizacionItem;
 use App\Models\Moneda;
@@ -18,6 +20,9 @@ use App\Models\Producto;
 use App\Models\ProductoExterno;
 use App\Models\User;
 use App\Notifications\CotizacionAprobadaNotification;
+use App\Notifications\CotizacionEnviadaRevisionNotification;
+use App\Notifications\CotizacionModificacionEnRevisionNotification;
+use App\Notifications\CotizacionModificacionSolicitadaNotification;
 use App\Notifications\CotizacionRechazadaNotification;
 use App\Services\CotizacionService;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -41,6 +46,11 @@ class CotizacionController extends Controller
     public function __construct(CotizacionService $service)
     {
         $this->service = $service;
+    }
+
+    private function notifySuperadmins(object $notification): void
+    {
+        User::role('superadmin')->get()->each->notify($notification);
     }
 
     // =========================
@@ -300,6 +310,9 @@ class CotizacionController extends Controller
             }
         });
 
+        $cotizacion->refresh()->load(['cliente', 'estadoCotizacion', 'user', 'delegado', 'delegadoCotizacion']);
+        $this->notifySuperadmins(new CotizacionEnviadaRevisionNotification($cotizacion, $request->user()));
+
         return response()->json([
             'message' => 'Cotización enviada a revisión correctamente',
             'cotizacion' => $cotizacion->refresh()->load(['cliente', 'estadoCotizacion', 'user', 'delegado', 'delegadoCotizacion']),
@@ -358,6 +371,9 @@ class CotizacionController extends Controller
             'imagen' => 'sometimes|nullable|image|max:2048',
             'imagen_path' => 'sometimes|nullable|string|max:2048',
         ]);
+
+        $cotizacion = Cotizacion::findOrFail($cotizacionId);
+        $this->ensureCanEditCotizacion($request, $cotizacion);
 
         DB::transaction(function () use ($request, $cotizacionId) {
 
@@ -428,6 +444,7 @@ class CotizacionController extends Controller
     public function updateItem(Request $request, int $id)
     {
         $item = CotizacionItem::findOrFail($id);
+        $this->ensureCanEditCotizacion($request, $item->cotizacion);
 
         $request->validate([
             'descripcion' => 'nullable|string',
@@ -523,9 +540,10 @@ class CotizacionController extends Controller
         return response()->json(['message' => 'Item actualizado']);
     }
 
-    public function deleteItem(int $id)
+    public function deleteItem(Request $request, int $id)
     {
         $item = CotizacionItem::findOrFail($id);
+        $this->ensureCanEditCotizacion($request, $item->cotizacion);
 
         DB::transaction(function () use ($item) {
 
@@ -605,6 +623,9 @@ class CotizacionController extends Controller
             'monto' => 'required|numeric|min:0',
         ]);
 
+        $cotizacion = Cotizacion::findOrFail($cotizacionId);
+        $this->ensureCanEditCotizacion($request, $cotizacion);
+
         DB::transaction(function () use ($request, $cotizacionId) {
 
             CotizacionCostosAdicional::create([
@@ -621,9 +642,10 @@ class CotizacionController extends Controller
         return response()->json(['message' => 'Costo agregado']);
     }
 
-    public function deleteCosto(int $id)
+    public function deleteCosto(Request $request, int $id)
     {
         $costo = CotizacionCostosAdicional::findOrFail($id);
+        $this->ensureCanEditCotizacion($request, $costo->cotizacion);
 
         DB::transaction(function () use ($costo) {
 
@@ -641,9 +663,10 @@ class CotizacionController extends Controller
     // 🔥 ACCIONES
     // =========================
 
-    public function recalcular(int $id)
+    public function recalcular(Request $request, int $id)
     {
         $cotizacion = Cotizacion::findOrFail($id);
+        $this->ensureCanEditCotizacion($request, $cotizacion);
 
         $this->service->recalcular($cotizacion);
 
@@ -671,6 +694,211 @@ class CotizacionController extends Controller
     // =========================
     // 🔥 EXPORTACION PDF
     // =========================
+    public function versiones(Request $request, Cotizacion $cotizacion)
+    {
+        return response()->json([
+            'cotizacion_id' => $cotizacion->id,
+            'numero' => $cotizacion->numero,
+            'version_vigente' => $cotizacion->versiones()->max('version_number') ?: 1,
+            'versiones' => $cotizacion->versiones()
+                ->with(['creador:id,nombres,apellidos,email', 'aprobador:id,nombres,apellidos,email'])
+                ->get(),
+            'modificaciones' => $cotizacion->modificaciones()
+                ->with(['solicitante:id,nombres,apellidos,email', 'revisor:id,nombres,apellidos,email'])
+                ->latest()
+                ->get(),
+        ]);
+    }
+
+    public function solicitarModificacion(Request $request, Cotizacion $cotizacion)
+    {
+        $this->ensureCanRequestModification($request, $cotizacion);
+        $this->ensureCotizacionIsApproved($cotizacion);
+
+        $request->validate([
+            'motivo' => 'required|string|max:1000',
+        ]);
+
+        $modificacion = null;
+
+        DB::transaction(function () use ($request, $cotizacion, &$modificacion) {
+            $versionOriginal = $this->ensureCotizacionVersionSnapshot(
+                $cotizacion,
+                $request->user()->id,
+                'Version original antes de solicitud de modificacion.'
+            );
+
+            $pendiente = $cotizacion->modificaciones()
+                ->whereIn('estado', [
+                    CotizacionModificacion::ESTADO_BORRADOR,
+                    CotizacionModificacion::ESTADO_EN_REVISION,
+                ])
+                ->lockForUpdate()
+                ->first();
+
+            if ($pendiente) {
+                abort(422, 'Ya existe una modificacion pendiente para esta cotizacion.');
+            }
+
+            $modificacion = CotizacionModificacion::create([
+                'cotizacion_id' => $cotizacion->id,
+                'original_version_id' => $versionOriginal->id,
+                'version_number' => $versionOriginal->version_number + 1,
+                'estado' => CotizacionModificacion::ESTADO_BORRADOR,
+                'motivo' => $request->string('motivo')->toString(),
+                'propuesta' => $this->buildCotizacionEditablePayload($cotizacion),
+                'requested_by' => $request->user()->id,
+            ]);
+        });
+
+        if ($modificacion) {
+            $modificacion->load('cotizacion');
+            $this->notifySuperadmins(new CotizacionModificacionSolicitadaNotification($modificacion, $request->user()));
+        }
+
+        return response()->json([
+            'message' => 'Solicitud de modificacion creada correctamente',
+            'modificacion' => $modificacion?->load(['cotizacion', 'originalVersion', 'solicitante']),
+        ], 201);
+    }
+
+    public function showModificacion(Request $request, CotizacionModificacion $modificacion)
+    {
+        $this->ensureCanViewModification($request, $modificacion);
+
+        return response()->json(
+            $modificacion->load([
+                'cotizacion.estadoCotizacion',
+                'originalVersion',
+                'solicitante:id,nombres,apellidos,email',
+                'revisor:id,nombres,apellidos,email',
+            ])
+        );
+    }
+
+    public function updateModificacion(Request $request, CotizacionModificacion $modificacion)
+    {
+        $this->ensureCanEditModification($request, $modificacion);
+
+        $payload = $this->buildCotizacionProposalPayload($request, $modificacion->cotizacion);
+
+        $modificacion->update([
+            'estado' => CotizacionModificacion::ESTADO_EN_REVISION,
+            'propuesta' => $payload,
+            'submitted_at' => now(),
+        ]);
+
+        $modificacion->refresh()->load('cotizacion');
+        $this->notifySuperadmins(new CotizacionModificacionEnRevisionNotification($modificacion, $request->user()));
+
+        return response()->json([
+            'message' => 'Modificacion guardada y enviada a revision',
+            'modificacion' => $modificacion->refresh()->load(['cotizacion', 'solicitante']),
+        ]);
+    }
+
+    public function enviarModificacionRevision(Request $request, CotizacionModificacion $modificacion)
+    {
+        $this->ensureCanEditModification($request, $modificacion);
+
+        $modificacion->update([
+            'estado' => CotizacionModificacion::ESTADO_EN_REVISION,
+            'submitted_at' => now(),
+        ]);
+
+        $modificacion->refresh()->load('cotizacion');
+        $this->notifySuperadmins(new CotizacionModificacionEnRevisionNotification($modificacion, $request->user()));
+
+        return response()->json([
+            'message' => 'Modificacion enviada a revision',
+            'modificacion' => $modificacion->refresh()->load(['cotizacion', 'solicitante']),
+        ]);
+    }
+
+    public function aprobarModificacion(Request $request, CotizacionModificacion $modificacion)
+    {
+        $this->ensureCanReviewModification($request);
+
+        if ($modificacion->estado !== CotizacionModificacion::ESTADO_EN_REVISION) {
+            abort(422, 'Solo se pueden aprobar modificaciones en revision.');
+        }
+
+        $version = null;
+
+        DB::transaction(function () use ($request, $modificacion, &$version) {
+            $cotizacion = $modificacion->cotizacion()->lockForUpdate()->firstOrFail();
+            $this->ensureCotizacionIsApproved($cotizacion);
+            $this->ensureCotizacionVersionSnapshot(
+                $cotizacion,
+                $modificacion->requested_by,
+                'Version original antes de aprobar modificacion.'
+            );
+
+            $this->applyCotizacionProposalPayload($request, $cotizacion, $modificacion->propuesta);
+
+            $cotizacion->update([
+                'estado_cotizacion_id' => $this->estadoCotizacionId('aprobada'),
+            ]);
+
+            $version = CotizacionVersion::create([
+                'cotizacion_id' => $cotizacion->id,
+                'version_number' => $modificacion->version_number,
+                'numero_version' => $this->numeroVersion($cotizacion, $modificacion->version_number),
+                'snapshot' => $this->buildCotizacionSnapshot($cotizacion->refresh()),
+                'created_by' => $modificacion->requested_by,
+                'approved_by' => $request->user()->id,
+                'approved_at' => now(),
+                'notas' => $modificacion->motivo,
+            ]);
+
+            $modificacion->update([
+                'estado' => CotizacionModificacion::ESTADO_APROBADA,
+                'reviewed_by' => $request->user()->id,
+                'comentario_revision' => $request->input('comentario_revision'),
+                'reviewed_at' => now(),
+            ]);
+        });
+
+        return response()->json([
+            'message' => 'Modificacion aprobada y aplicada como nueva version vigente',
+            'version' => $version,
+            'cotizacion' => $modificacion->cotizacion->refresh()->load([
+                'items.proveedores',
+                'costosAdicionales',
+                'cliente',
+                'estadoCotizacion',
+                'user',
+                'delegado',
+                'delegadoCotizacion',
+            ]),
+        ]);
+    }
+
+    public function rechazarModificacion(Request $request, CotizacionModificacion $modificacion)
+    {
+        $this->ensureCanReviewModification($request);
+
+        if ($modificacion->estado !== CotizacionModificacion::ESTADO_EN_REVISION) {
+            abort(422, 'Solo se pueden rechazar modificaciones en revision.');
+        }
+
+        $request->validate([
+            'comentario_revision' => 'required|string|max:1000',
+        ]);
+
+        $modificacion->update([
+            'estado' => CotizacionModificacion::ESTADO_RECHAZADA,
+            'reviewed_by' => $request->user()->id,
+            'comentario_revision' => $request->string('comentario_revision')->toString(),
+            'reviewed_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Modificacion rechazada; se conserva la version aprobada vigente',
+            'modificacion' => $modificacion->refresh()->load(['cotizacion', 'solicitante', 'revisor']),
+        ]);
+    }
+
     public function exportarPdf(Cotizacion $cotizacion)
     {
         $cotizacion = Cotizacion::with([
@@ -878,7 +1106,7 @@ class CotizacionController extends Controller
                     'codigo' => $item['codigo'] ?? null,
                     'unidad_medida' => $item['unidad_medida'] ?? 'UND',
                     'garantia_meses' => $item['garantia_meses'] ?? null,
-                    'disponibilidad_tipo' => $item['disponibilidad_tipo'] ?? null,
+                    'disponibilidad_tipo' => $item['disponibilidad_tipo'] ?? 'stock',
                     'disponibilidad_dias' => $item['disponibilidad_dias'] ?? null,
                     'proveedor' => $this->primerProveedorNombre($item['proveedores'] ?? null, $item['proveedor'] ?? null),
                     'link_proveedor' => $this->primerProveedorLink($item['proveedores'] ?? null, $item['link_proveedor'] ?? null),
@@ -1056,7 +1284,7 @@ class CotizacionController extends Controller
                     'codigo' => $item['codigo'] ?? null,
                     'unidad_medida' => $item['unidad_medida'] ?? 'UND',
                     'garantia_meses' => $item['garantia_meses'] ?? null,
-                    'disponibilidad_tipo' => $item['disponibilidad_tipo'] ?? null,
+                    'disponibilidad_tipo' => $item['disponibilidad_tipo'] ?? 'stock',
                     'disponibilidad_dias' => $item['disponibilidad_dias'] ?? null,
                     'proveedor' => $this->primerProveedorNombre($item['proveedores'] ?? null, $item['proveedor'] ?? null),
                     'link_proveedor' => $this->primerProveedorLink($item['proveedores'] ?? null, $item['link_proveedor'] ?? null),
@@ -1109,6 +1337,298 @@ class CotizacionController extends Controller
                 'delegadoCotizacion',
             ]),
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildCotizacionProposalPayload(Request $request, Cotizacion $cotizacion): array
+    {
+        $data = $request->validate($this->cotizacionProposalRules());
+        $cliente = Cliente::findOrFail($data['cliente_id']);
+
+        $data['cliente_nombre'] = $cliente->nombre;
+        $data['cliente_ruc'] = $cliente->ruc;
+        $data['cliente_contacto'] = array_key_exists('cliente_contacto', $data)
+            ? $data['cliente_contacto']
+            : $cotizacion->cliente_contacto;
+        $data['cliente_telefono'] = $cliente->telefono;
+        $data['cliente_correo'] = $cliente->correo;
+
+        foreach ($data['items'] as $index => $item) {
+            $item['imagen'] = $this->resolveCotizacionItemImagen($request, $index, $item);
+            $item['proveedor'] = $this->primerProveedorNombre($item['proveedores'] ?? null, $item['proveedor'] ?? null);
+            $item['link_proveedor'] = $this->primerProveedorLink($item['proveedores'] ?? null, $item['link_proveedor'] ?? null);
+            $data['items'][$index] = $item;
+        }
+
+        return $data;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildCotizacionSnapshot(Cotizacion $cotizacion): array
+    {
+        $cotizacion->loadMissing([
+            'items.proveedores',
+            'costosAdicionales',
+            'cliente',
+            'plantilla',
+            'moneda',
+            'estadoCotizacion',
+            'user',
+            'delegado',
+            'delegadoCotizacion',
+        ]);
+
+        return [
+            'cotizacion' => $cotizacion->only([
+                'id',
+                'numero',
+                'fecha',
+                'validez_dias',
+                'forma_pago',
+                'tipo_cambio',
+                'titulo',
+                'modo_distribucion',
+                'moneda_id',
+                'subtotal',
+                'igv',
+                'total',
+                'ganancia',
+                'total_gasto',
+                'cliente_id',
+                'plantilla_id',
+                'estado_cotizacion_id',
+                'user_id',
+                'plataforma_id',
+                'cliente_nombre',
+                'cliente_ruc',
+                'cliente_contacto',
+                'cliente_telefono',
+                'cliente_correo',
+                'delegado_id',
+                'delegado_cotizacion_id',
+            ]),
+            'items' => $cotizacion->items
+                ->sortBy('orden')
+                ->values()
+                ->map(fn (CotizacionItem $item): array => [
+                    ...$item->only([
+                        'descripcion',
+                        'cantidad',
+                        'aplica_costos_adicionales',
+                        'marca',
+                        'codigo',
+                        'unidad_medida',
+                        'disponibilidad',
+                        'costo_unitario',
+                        'costo_base',
+                        'margen',
+                        'precio_venta',
+                        'subtotal',
+                        'imagen',
+                        'orden',
+                        'producto_id',
+                        'producto_externo_id',
+                        'tipo',
+                        'estado_cotizacion_item_id',
+                        'costo_total',
+                        'ganancia',
+                        'garantia_meses',
+                        'disponibilidad_tipo',
+                        'disponibilidad_dias',
+                        'proveedor',
+                        'link_proveedor',
+                        'stock',
+                    ]),
+                    'proveedores' => $item->proveedores
+                        ->sortBy('orden')
+                        ->values()
+                        ->map(fn (CotizacionItemProveedor $proveedor): array => $proveedor->only([
+                            'nombre',
+                            'link',
+                            'precio',
+                            'notas',
+                            'orden',
+                        ]))
+                        ->all(),
+                ])
+                ->all(),
+            'costos' => $cotizacion->costosAdicionales
+                ->map(fn (CotizacionCostosAdicional $costo): array => $costo->only([
+                    'tipo',
+                    'descripcion',
+                    'monto',
+                ]))
+                ->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildCotizacionEditablePayload(Cotizacion $cotizacion): array
+    {
+        $snapshot = $this->buildCotizacionSnapshot($cotizacion);
+        $header = $snapshot['cotizacion'];
+
+        return [
+            'cliente_id' => $header['cliente_id'],
+            'plantilla_id' => $header['plantilla_id'],
+            'plataforma_id' => $header['plataforma_id'],
+            'titulo' => $header['titulo'],
+            'modo_distribucion' => $header['modo_distribucion'],
+            'moneda_id' => $header['moneda_id'],
+            'delegado_id' => $header['delegado_id'],
+            'delegado_cotizacion_id' => $header['delegado_cotizacion_id'],
+            'validez_dias' => $header['validez_dias'],
+            'forma_pago' => $header['forma_pago'],
+            'cliente_contacto' => $header['cliente_contacto'],
+            'items' => $snapshot['items'],
+            'costos' => $snapshot['costos'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function applyCotizacionProposalPayload(Request $request, Cotizacion $cotizacion, array $payload): void
+    {
+        $cliente = Cliente::findOrFail($payload['cliente_id']);
+        $delegadoId = $payload['delegado_id'] ?? $cotizacion->delegado_id;
+        $delegadoCotizacionId = $payload['delegado_cotizacion_id'] ?? $cotizacion->delegado_cotizacion_id;
+
+        $this->ensureSalesUser($delegadoId ? (int) $delegadoId : null);
+        $this->ensureSalesUser($delegadoCotizacionId ? (int) $delegadoCotizacionId : null);
+
+        $cotizacion->update([
+            'cliente_id' => $cliente->id,
+            'cliente_nombre' => $cliente->nombre,
+            'cliente_ruc' => $cliente->ruc,
+            'cliente_contacto' => $payload['cliente_contacto'] ?? $cotizacion->cliente_contacto,
+            'cliente_telefono' => $cliente->telefono,
+            'cliente_correo' => $cliente->correo,
+            'plantilla_id' => $payload['plantilla_id'],
+            'plataforma_id' => $payload['plataforma_id'],
+            'moneda_id' => $payload['moneda_id'],
+            'modo_distribucion' => $payload['modo_distribucion'] ?? $cotizacion->modo_distribucion,
+            'titulo' => $payload['titulo'],
+            'validez_dias' => (int) ($payload['validez_dias'] ?? $cotizacion->validez_dias),
+            'subtotal' => 0,
+            'igv' => 0,
+            'total' => 0,
+            'estado_cotizacion_id' => $this->estadoCotizacionId('aprobada'),
+            'delegado_id' => $delegadoId,
+            'delegado_cotizacion_id' => $delegadoCotizacionId,
+            'forma_pago' => $payload['forma_pago'] ?? $cotizacion->forma_pago,
+        ]);
+
+        $cotizacion->items()->delete();
+        $cotizacion->costosAdicionales()->delete();
+
+        foreach ($payload['items'] as $index => $item) {
+            $costoBase = (float) ($item['costo_base'] ?? 0);
+            $margen = min((float) ($item['margen'] ?? 0), 99.99);
+            $cantidad = (int) ($item['cantidad'] ?? 1);
+
+            $factorMargen = $margen < 100 ? 1 - ($margen / 100) : 0.0001;
+            $precioVenta = round($costoBase / $factorMargen, 2);
+            $pvt = round($cantidad * $precioVenta, 2);
+            $ptc = round($cantidad * $costoBase, 2);
+
+            $itemData = [
+                'cotizacion_id' => $cotizacion->id,
+                'descripcion' => $item['descripcion'],
+                'cantidad' => $cantidad,
+                'aplica_costos_adicionales' => $item['aplica_costos_adicionales'] ?? true,
+                'costo_base' => $costoBase,
+                'margen' => $margen,
+                'orden' => $index + 1,
+                'marca' => $item['marca'] ?? null,
+                'codigo' => $item['codigo'] ?? null,
+                'unidad_medida' => $item['unidad_medida'] ?? 'UND',
+                'garantia_meses' => $item['garantia_meses'] ?? null,
+                'disponibilidad_tipo' => $item['disponibilidad_tipo'] ?? 'stock',
+                'disponibilidad_dias' => $item['disponibilidad_dias'] ?? null,
+                'proveedor' => $this->primerProveedorNombre($item['proveedores'] ?? null, $item['proveedor'] ?? null),
+                'link_proveedor' => $this->primerProveedorLink($item['proveedores'] ?? null, $item['link_proveedor'] ?? null),
+                'producto_id' => $item['producto_id'] ?? null,
+                'tipo' => $item['tipo'] ?? 'personalizado',
+                'imagen' => $item['imagen'] ?? null,
+                'costo_unitario' => $costoBase,
+                'precio_venta' => $precioVenta,
+                'subtotal' => $pvt,
+                'costo_total' => $ptc,
+                'ganancia' => round($pvt - $ptc, 2),
+                'stock' => $item['stock'] ?? 0,
+            ];
+
+            $itemData['producto_externo_id'] = $this->resolveProductoExternoId($itemData);
+
+            $cotizacionItem = CotizacionItem::create($itemData);
+            $this->syncItemProveedores($cotizacionItem, $item['proveedores'] ?? null);
+        }
+
+        foreach ($payload['costos'] ?? [] as $costo) {
+            CotizacionCostosAdicional::create([
+                'cotizacion_id' => $cotizacion->id,
+                'tipo' => $costo['tipo'],
+                'descripcion' => $costo['descripcion'] ?? null,
+                'monto' => $costo['monto'],
+            ]);
+        }
+
+        $this->service->recalcular($cotizacion);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function cotizacionProposalRules(): array
+    {
+        return [
+            'cliente_id' => 'required|exists:clientes,id',
+            'plantilla_id' => 'required|exists:plantillas,id',
+            'plataforma_id' => 'required|exists:plataformas,id',
+            'titulo' => 'required|string',
+            'modo_distribucion' => 'nullable|in:POR_ITEM,POR_CANTIDAD',
+            'moneda_id' => 'required|exists:monedas,id',
+            'delegado_id' => 'nullable|exists:users,id',
+            'delegado_cotizacion_id' => 'nullable|exists:users,id',
+            'validez_dias' => 'nullable|integer|min:1|max:365',
+            'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'cliente_contacto' => 'nullable|string|max:255',
+            'items' => 'required|array|min:1',
+            'items.*.descripcion' => 'required|string',
+            'items.*.cantidad' => 'required|numeric|min:1',
+            'items.*.aplica_costos_adicionales' => 'sometimes|boolean',
+            'items.*.costo_base' => 'required|numeric|min:0',
+            'items.*.margen' => 'required|numeric|min:0',
+            'items.*.marca' => 'nullable|string|max:255',
+            'items.*.codigo' => 'nullable|string|max:255',
+            'items.*.unidad_medida' => 'nullable|string|max:50',
+            'items.*.garantia_meses' => 'nullable|integer|in:3,6,12,24,36',
+            'items.*.disponibilidad_tipo' => 'nullable|in:stock,importacion',
+            'items.*.disponibilidad_dias' => 'nullable|integer|min:1|max:50',
+            'items.*.proveedor' => 'nullable|string|max:255',
+            'items.*.link_proveedor' => 'nullable|string',
+            'items.*.stock' => 'nullable|integer|min:0',
+            'items.*.tipo' => 'nullable|string|in:catalogo,personalizado,externo',
+            'items.*.producto_id' => 'nullable|exists:productos,id',
+            'items.*.producto_externo_id' => 'nullable|exists:productos_externos,id',
+            'items.*.imagen' => 'sometimes|nullable',
+            'items.*.proveedores' => 'nullable|array',
+            'items.*.proveedores.*.nombre' => 'required|string|max:255',
+            'items.*.proveedores.*.link' => 'nullable|string',
+            'items.*.proveedores.*.precio' => 'nullable|numeric|min:0',
+            'items.*.proveedores.*.notas' => 'nullable|string',
+            'costos' => 'nullable|array',
+            'costos.*.tipo' => 'required|string',
+            'costos.*.descripcion' => 'nullable|string',
+            'costos.*.monto' => 'required|numeric|min:0',
+        ];
     }
 
     private function ensureSalesUser(?int $userId): void
@@ -1271,7 +1791,7 @@ class CotizacionController extends Controller
                 'costo_base_referencial' => $item['costo_base'] ?? 0,
                 'imagen' => $item['imagen'] ?? null,
                 'garantia_meses' => $item['garantia_meses'] ?? null,
-                'disponibilidad_tipo' => $item['disponibilidad_tipo'] ?? null,
+                'disponibilidad_tipo' => $item['disponibilidad_tipo'] ?? 'stock',
                 'disponibilidad_dias' => $item['disponibilidad_dias'] ?? null,
                 'stock' => $item['stock'] ?? 0,
                 'activo' => true,
@@ -1390,6 +1910,8 @@ class CotizacionController extends Controller
 
     private function ensureCanEditCotizacion(Request $request, Cotizacion $cotizacion): void
     {
+        $this->ensureCotizacionIsNotApprovedForDirectEdit($cotizacion);
+
         if ($request->user()->hasRole('superadmin')) {
             return;
         }
@@ -1407,6 +1929,115 @@ class CotizacionController extends Controller
 
         return (int) $cotizacion->user_id === $userId
             || ($cotizacion->delegado_cotizacion_id && (int) $cotizacion->delegado_cotizacion_id === $userId);
+    }
+
+    private function ensureCanRequestModification(Request $request, Cotizacion $cotizacion): void
+    {
+        if ($request->user()->hasRole('superadmin')) {
+            return;
+        }
+
+        if ($this->isCotizacionOwnerOrEditDelegate($request, $cotizacion)) {
+            return;
+        }
+
+        abort(403, 'No autorizado para solicitar modificacion de esta cotizacion.');
+    }
+
+    private function ensureCanViewModification(Request $request, CotizacionModificacion $modificacion): void
+    {
+        if ($request->user()->hasAnyRole(['superadmin', 'admin'])) {
+            return;
+        }
+
+        $cotizacion = $modificacion->cotizacion;
+        $userId = (int) $request->user()->id;
+
+        if (
+            (int) $modificacion->requested_by === $userId
+            || (int) $cotizacion->user_id === $userId
+            || ($cotizacion->delegado_cotizacion_id && (int) $cotizacion->delegado_cotizacion_id === $userId)
+        ) {
+            return;
+        }
+
+        abort(403, 'No autorizado para ver esta modificacion.');
+    }
+
+    private function ensureCanEditModification(Request $request, CotizacionModificacion $modificacion): void
+    {
+        if (! in_array($modificacion->estado, [
+            CotizacionModificacion::ESTADO_BORRADOR,
+            CotizacionModificacion::ESTADO_RECHAZADA,
+        ], true)) {
+            abort(422, 'La modificacion ya fue enviada a revision y no puede editarse.');
+        }
+
+        if ($request->user()->hasRole('superadmin')) {
+            return;
+        }
+
+        if ((int) $modificacion->requested_by === (int) $request->user()->id) {
+            return;
+        }
+
+        abort(403, 'No autorizado para editar esta modificacion.');
+    }
+
+    private function ensureCanReviewModification(Request $request): void
+    {
+        if ($request->user()->hasAnyRole(['superadmin', 'admin'])) {
+            return;
+        }
+
+        abort(403, 'No autorizado para revisar modificaciones de cotizacion.');
+    }
+
+    private function ensureCotizacionIsApproved(Cotizacion $cotizacion): void
+    {
+        $cotizacion->loadMissing('estadoCotizacion');
+
+        if (strtolower((string) $cotizacion->estadoCotizacion?->nombre) === 'aprobada') {
+            return;
+        }
+
+        abort(422, 'Solo las cotizaciones aprobadas pueden solicitar modificacion.');
+    }
+
+    private function ensureCotizacionIsNotApprovedForDirectEdit(Cotizacion $cotizacion): void
+    {
+        $cotizacion->loadMissing('estadoCotizacion');
+
+        if (strtolower((string) $cotizacion->estadoCotizacion?->nombre) !== 'aprobada') {
+            return;
+        }
+
+        abort(422, 'La cotizacion aprobada es de solo lectura. Solicita una modificacion para editarla.');
+    }
+
+    private function ensureCotizacionVersionSnapshot(Cotizacion $cotizacion, ?int $userId, ?string $notas = null): CotizacionVersion
+    {
+        $existing = $cotizacion->versiones()->where('version_number', 1)->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        return CotizacionVersion::create([
+            'cotizacion_id' => $cotizacion->id,
+            'version_number' => 1,
+            'numero_version' => $this->numeroVersion($cotizacion, 1),
+            'snapshot' => $this->buildCotizacionSnapshot($cotizacion),
+            'created_by' => $cotizacion->user_id,
+            'approved_by' => $userId,
+            'approved_at' => now(),
+            'notas' => $notas,
+        ]);
+    }
+
+    private function numeroVersion(Cotizacion $cotizacion, int $versionNumber): string
+    {
+        return "{$cotizacion->numero} V{$versionNumber}";
     }
 
     // =========================
@@ -1457,6 +2088,12 @@ class CotizacionController extends Controller
                 'comentario' => null,
                 'user_id' => $request->user()->id,
             ]);
+
+            $this->ensureCotizacionVersionSnapshot(
+                $cotizacion->refresh(),
+                $request->user()->id,
+                'Version aprobada inicial.'
+            );
         });
 
         $cotizacion->refresh()->load(['items.proveedores', 'costosAdicionales', 'cliente', 'estadoCotizacion', 'user', 'delegado']);

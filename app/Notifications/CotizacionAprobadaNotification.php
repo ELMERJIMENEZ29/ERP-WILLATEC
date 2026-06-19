@@ -24,14 +24,19 @@ class CotizacionAprobadaNotification extends Notification
     public function toArray(object $notifiable): array
     {
         $approvedAt = now('America/Lima');
-        $approverName = trim($this->approver->nombres.' '.$this->approver->apellidos);
+        $approverName = trim($this->approver->nombres.' '.$this->approver->apellidos) ?: $this->approver->email;
+        $numero = $this->cotizacion->numero ?: 'Cotizacion #'.$this->cotizacion->id;
 
         return [
+            'title' => 'Cotizacion aprobada',
+            'description' => sprintf('La cotizacion %s fue aprobada por %s.', $numero, $approverName),
+            'action_url' => "/cotizaciones/{$this->cotizacion->id}/view",
             'cotizacion_id' => $this->cotizacion->id,
             'cotizacion_numero' => $this->cotizacion->numero,
             'action' => 'aprobada',
             'message' => sprintf(
-                'Cotización aprobada por %s a las %s.',
+                'La cotizacion %s fue aprobada por %s a las %s.',
+                $numero,
                 $approverName,
                 $approvedAt->format('H:i')
             ),
