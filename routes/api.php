@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\AuditoriaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\CotizacionController;
+use App\Http\Controllers\Api\OcEmitidaController;
+use App\Http\Controllers\Api\OcRecibidaController;
 use App\Http\Controllers\Api\OrdenCompraController;
 use App\Http\Controllers\Api\ProductoController;
 use App\Http\Controllers\Api\ProductoExternoController;
@@ -159,6 +161,15 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
     Route::get('/{cotizacion}/exportar-pdf', [CotizacionController::class, 'exportarPdf'])
         ->middleware('role:superadmin|ventas');
 
+    Route::get('/{cotizacion}/oc-recibida/preview', [OcRecibidaController::class, 'preview'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::get('/{cotizacion}/oc-emitida/preview', [OcEmitidaController::class, 'preview'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::get('/{cotizacion}/oc-emitida/items', [OcEmitidaController::class, 'itemsPorProveedorResponse'])
+        ->middleware('role:superadmin|ventas');
+
     // Items
     Route::post('/{id}/items', [CotizacionController::class, 'addItem'])
         ->middleware('role:superadmin|ventas');
@@ -178,6 +189,22 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
 
     Route::delete('/costos/{id}', [CotizacionController::class, 'deleteCosto'])
         ->middleware('role:superadmin|ventas');
+});
+
+Route::prefix('oc-recibidas')->middleware('auth:sanctum')->group(function () {
+    Route::get('/', [OcRecibidaController::class, 'index'])->middleware('role:superadmin|ventas');
+    Route::post('/', [OcRecibidaController::class, 'store'])->middleware('role:superadmin|ventas');
+    Route::get('/{ocRecibida}', [OcRecibidaController::class, 'show'])->middleware('role:superadmin|ventas');
+    Route::patch('/{ocRecibida}/items', [OcRecibidaController::class, 'updateItems'])->middleware('role:superadmin|ventas');
+    Route::post('/{ocRecibida}/documentos', [OcRecibidaController::class, 'documentos'])->middleware('role:superadmin|ventas');
+});
+
+Route::prefix('oc-emitidas')->middleware('auth:sanctum')->group(function () {
+    Route::get('/', [OcEmitidaController::class, 'index'])->middleware('role:superadmin|ventas');
+    Route::post('/', [OcEmitidaController::class, 'store'])->middleware('role:superadmin|ventas');
+    Route::get('/{ocEmitida}', [OcEmitidaController::class, 'show'])->middleware('role:superadmin|ventas');
+    Route::post('/{ocEmitida}/documentos', [OcEmitidaController::class, 'documentos'])->middleware('role:superadmin|ventas');
+    Route::get('/{ocEmitida}/pdf', [OcEmitidaController::class, 'pdf'])->middleware('role:superadmin|ventas');
 });
 
 Route::prefix('ordencompra')->middleware('auth:sanctum')->group(function () {

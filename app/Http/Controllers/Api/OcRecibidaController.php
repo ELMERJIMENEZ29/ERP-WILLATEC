@@ -1,0 +1,293 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Cotizacion;
+use App\Models\EstadoCotizacion;
+use App\Models\OcRecibida;
+use App\Models\OcRecibidaItem;
+use App\Models\User;
+use App\Notifications\OcRecibidaRegistradaNotification;
+use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+
+class OcRecibidaController extends Controller
+{
+    public function preview(Cotizacion $cotizacion)
+    {
+        $cotizacion->load(['cliente', 'items.proveedores']);
+
+        return response()->json([
+            'cotizacion' => [
+                'id' => $cotizacion->id,
+                'numero' => $cotizacion->numero,
+                'cliente_nombre' => $cotizacion->cliente_nombre,
+                'cliente_ruc' => $cotizacion->cliente_ruc,
+                'fecha_recepcion' => now()->toDateString(),
+            ],
+            'items' => $cotizacion->items->map(fn ($item): array => [
+                'cotizacion_item_id' => $item->id,
+                'descripcion' => $item->descripcion,
+                'codigo' => $item->codigo,
+                'marca' => $item->marca,
+                'unidad_medida' => $item->unidad_medida,
+                'cantidad_cotizada' => $item->cantidad,
+                'cantidad_recibida' => $item->cantidad,
+                'seleccionado' => true,
+                'proveedores' => $item->proveedores,
+            ])->values(),
+        ]);
+    }
+
+    public function index(Request $request)
+    {
+        $request->validate([
+            'search' => 'nullable|string|max:255',
+            'estado' => 'nullable|in:pendiente,en_proceso,por_entrega,atendido',
+            'per_page' => 'nullable|integer|min:1|max:100',
+        ]);
+
+        $query = OcRecibida::query()
+            ->with(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc'])
+            ->withCount([
+                'items as items_total' => fn ($query) => $query->where('seleccionado', true),
+                'items as items_comprados' => fn ($query) => $query->where('seleccionado', true)->where('comprado', true),
+                'items as items_entregados' => fn ($query) => $query->where('seleccionado', true)->where('entregado', true),
+            ]);
+
+        if ($request->filled('estado')) {
+            $query->where('estado', $request->estado);
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($query) use ($search): void {
+                $query->where('numero', 'like', "%{$search}%")
+                    ->orWhere('cliente_nombre', 'like', "%{$search}%")
+                    ->orWhereHas('cotizacion', fn ($cotizacionQuery) => $cotizacionQuery->where('numero', 'like', "%{$search}%"));
+            });
+        }
+
+        return response()->json(
+            $query->latest()->paginate($request->integer('per_page', 10))
+        );
+    }
+
+    public function show(OcRecibida $ocRecibida)
+    {
+        return response()->json(
+            $ocRecibida->load(['items.cotizacionItem.proveedores', 'cotizacion', 'cliente'])
+        );
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'cotizacion_id' => 'required|exists:cotizaciones,id',
+            'fecha_recepcion' => 'nullable|date',
+            'observaciones' => 'nullable|string',
+            'orden_compra_cliente' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
+            'guia_emision' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
+            'items' => 'required|array|min:1',
+            'items.*.cotizacion_item_id' => 'required|integer|exists:cotizacion_items,id',
+            'items.*.seleccionado' => 'required|boolean',
+            'items.*.cantidad_recibida' => 'required|integer|min:0',
+        ]);
+
+        $cotizacion = Cotizacion::with(['items', 'cliente'])->findOrFail($validated['cotizacion_id']);
+
+        $selectedItems = collect($validated['items'])
+            ->filter(fn (array $item): bool => (bool) $item['seleccionado'] && (int) $item['cantidad_recibida'] > 0);
+
+        if ($selectedItems->isEmpty()) {
+            return response()->json([
+                'message' => 'Debe seleccionar al menos un item con cantidad recibida mayor a cero.',
+            ], 422);
+        }
+
+        $ocRecibida = DB::transaction(function () use ($request, $validated, $cotizacion): OcRecibida {
+            $ocRecibida = OcRecibida::firstOrNew(['cotizacion_id' => $cotizacion->id]);
+
+            if (! $ocRecibida->exists) {
+                $ocRecibida->numero = $this->generarNumero();
+            }
+
+            $ocRecibida->fill([
+                'fecha_recepcion' => $validated['fecha_recepcion'] ?? now()->toDateString(),
+                'estado' => OcRecibida::ESTADO_PENDIENTE,
+                'observaciones' => $validated['observaciones'] ?? null,
+                'cliente_nombre' => $cotizacion->cliente_nombre,
+                'cliente_ruc' => $cotizacion->cliente_ruc,
+                'cliente_contacto' => $cotizacion->cliente_contacto,
+                'cliente_correo' => $cotizacion->cliente_correo,
+                'cliente_id' => $cotizacion->cliente_id,
+                'user_id' => $request->user()->id,
+            ]);
+
+            if ($request->hasFile('orden_compra_cliente')) {
+                $ocRecibida->orden_compra_cliente_path = $this->storeDocumento($request->file('orden_compra_cliente'), 'oc-recibidas');
+            }
+
+            if ($request->hasFile('guia_emision')) {
+                $ocRecibida->guia_emision_path = $this->storeDocumento($request->file('guia_emision'), 'oc-recibidas');
+            }
+
+            $ocRecibida->save();
+            $ocRecibida->items()->delete();
+
+            $itemsById = $cotizacion->items->keyBy('id');
+
+            foreach ($validated['items'] as $itemData) {
+                $cotizacionItem = $itemsById->get((int) $itemData['cotizacion_item_id']);
+
+                if (! $cotizacionItem) {
+                    continue;
+                }
+
+                OcRecibidaItem::create([
+                    'oc_recibida_id' => $ocRecibida->id,
+                    'cotizacion_item_id' => $cotizacionItem->id,
+                    'descripcion' => $cotizacionItem->descripcion,
+                    'codigo' => $cotizacionItem->codigo,
+                    'marca' => $cotizacionItem->marca,
+                    'unidad_medida' => $cotizacionItem->unidad_medida,
+                    'cantidad_cotizada' => $cotizacionItem->cantidad,
+                    'cantidad_recibida' => min((int) $itemData['cantidad_recibida'], (int) $cotizacionItem->cantidad),
+                    'seleccionado' => (bool) $itemData['seleccionado'] && (int) $itemData['cantidad_recibida'] > 0,
+                ]);
+            }
+
+            $ocRecibida->refresh()->load('items');
+            $this->actualizarEstadoOc($ocRecibida);
+            $this->actualizarEstadoCotizacion($cotizacion, $ocRecibida);
+
+            return $ocRecibida->refresh()->load(['items', 'cotizacion.estadoCotizacion']);
+        });
+
+        $this->notifyAdministrators(new OcRecibidaRegistradaNotification($ocRecibida, $request->user()));
+
+        return response()->json([
+            'message' => 'OC RECIBIDA GUARDADA',
+            'oc_recibida' => $ocRecibida,
+            'cotizacion' => [
+                'id' => $ocRecibida->cotizacion->id,
+                'estado' => $ocRecibida->cotizacion->estadoCotizacion?->nombre,
+            ],
+        ], 201);
+    }
+
+    public function updateItems(Request $request, OcRecibida $ocRecibida)
+    {
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.id' => 'required|integer|exists:oc_recibida_items,id',
+            'items.*.comprado' => 'required|boolean',
+            'items.*.entregado' => 'required|boolean',
+        ]);
+
+        DB::transaction(function () use ($validated, $ocRecibida): void {
+            foreach ($validated['items'] as $itemData) {
+                $ocRecibida->items()
+                    ->whereKey($itemData['id'])
+                    ->update([
+                        'comprado' => (bool) $itemData['comprado'],
+                        'entregado' => (bool) $itemData['entregado'],
+                    ]);
+            }
+
+            $this->actualizarEstadoOc($ocRecibida->refresh()->load('items'));
+        });
+
+        $ocRecibida->refresh()->load('items');
+
+        return response()->json([
+            'message' => $ocRecibida->estado === OcRecibida::ESTADO_ATENDIDO
+                ? 'Items actualizados. OC atendida.'
+                : 'Items actualizados.',
+            'estado' => $ocRecibida->estado,
+            'documentos_completos' => $ocRecibida->documentos_completos,
+            'faltantes' => $ocRecibida->documentos_faltantes,
+            'items_pendientes_entrega' => $ocRecibida->items
+                ->where('seleccionado', true)
+                ->where('entregado', false)
+                ->pluck('id')
+                ->values(),
+        ]);
+    }
+
+    public function documentos(Request $request, OcRecibida $ocRecibida)
+    {
+        $request->validate([
+            'orden_compra_cliente' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
+            'guia_emision' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
+        ]);
+
+        if ($request->hasFile('orden_compra_cliente')) {
+            $ocRecibida->orden_compra_cliente_path = $this->storeDocumento($request->file('orden_compra_cliente'), 'oc-recibidas');
+        }
+
+        if ($request->hasFile('guia_emision')) {
+            $ocRecibida->guia_emision_path = $this->storeDocumento($request->file('guia_emision'), 'oc-recibidas');
+        }
+
+        $ocRecibida->save();
+        $this->actualizarEstadoOc($ocRecibida->refresh()->load('items'));
+
+        return response()->json([
+            'message' => 'Documentos actualizados',
+            'estado' => $ocRecibida->refresh()->estado,
+            'documentos_completos' => $ocRecibida->documentos_completos,
+            'faltantes' => $ocRecibida->documentos_faltantes,
+        ]);
+    }
+
+    private function actualizarEstadoOc(OcRecibida $ocRecibida): void
+    {
+        $items = $ocRecibida->items->where('seleccionado', true);
+
+        if ($items->isEmpty() || $items->where('comprado', true)->isEmpty()) {
+            $estado = OcRecibida::ESTADO_PENDIENTE;
+        } elseif ($items->where('comprado', false)->isNotEmpty()) {
+            $estado = OcRecibida::ESTADO_EN_PROCESO;
+        } elseif ($items->where('entregado', false)->isNotEmpty() || ! $ocRecibida->documentos_completos) {
+            $estado = OcRecibida::ESTADO_POR_ENTREGA;
+        } else {
+            $estado = OcRecibida::ESTADO_ATENDIDO;
+        }
+
+        $ocRecibida->update(['estado' => $estado]);
+    }
+
+    private function actualizarEstadoCotizacion(Cotizacion $cotizacion, OcRecibida $ocRecibida): void
+    {
+        $itemsCotizados = $cotizacion->items()->count();
+        $itemsSeleccionados = $ocRecibida->items()
+            ->where('seleccionado', true)
+            ->where('cantidad_recibida', '>', 0)
+            ->count();
+
+        $estadoNombre = $itemsCotizados > 0 && $itemsSeleccionados >= $itemsCotizados
+            ? 'oc_registrada'
+            : 'parcialmente_aprobada';
+
+        $estado = EstadoCotizacion::firstOrCreate(['nombre' => $estadoNombre]);
+        $cotizacion->update(['estado_cotizacion_id' => $estado->id]);
+    }
+
+    private function generarNumero(): string
+    {
+        return 'OCR-'.str_pad((string) (OcRecibida::count() + 1), 6, '0', STR_PAD_LEFT);
+    }
+
+    private function storeDocumento(UploadedFile $file, string $directory): string
+    {
+        return $file->store($directory, 'public');
+    }
+
+    private function notifyAdministrators(object $notification): void
+    {
+        User::role(['superadmin', 'admin'])->get()->each->notify($notification);
+    }
+}
