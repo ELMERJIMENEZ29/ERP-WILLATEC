@@ -70,7 +70,12 @@ class CotizacionController extends Controller
             'user',
             'delegado',
             'delegadoCotizacion',
-        ])->withCount('items');
+        ])
+            ->withCount('items')
+            ->withCount([
+                'modificaciones as modificaciones_pendientes_count' => fn ($query) => $query
+                    ->where('estado', CotizacionModificacion::ESTADO_EN_REVISION),
+            ]);
 
         if ($request->filled('cliente_id')) {
             $query->where('cliente_id', $request->cliente_id);
