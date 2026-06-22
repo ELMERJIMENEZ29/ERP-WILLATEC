@@ -147,4 +147,43 @@ test('una cotizacion aprobada se modifica mediante propuesta versionada', functi
         'version_number' => 2,
         'numero_version' => 'COT-001 V2',
     ]);
+
+    Sanctum::actingAs($ventas);
+
+    $segundaModificacionId = $this->postJson("/api/cotizaciones/{$cotizacion->id}/solicitar-modificacion", [
+        'motivo' => 'Agregar imagen a la version vigente',
+    ])
+        ->assertCreated()
+        ->assertJsonPath('modificacion.version_number', 3)
+        ->json('modificacion.id');
+
+    $this->putJson("/api/cotizaciones/modificaciones/{$segundaModificacionId}", [
+        ...$payload,
+        'titulo' => 'Cotizacion version tres',
+        'items' => [[
+            'descripcion' => 'Item version tres',
+            'cantidad' => 3,
+            'costo_base' => 130,
+            'margen' => 15,
+            'tipo' => 'personalizado',
+            'imagen' => '/storage/cotizacion-items/version-tres.jpg',
+        ]],
+    ])->assertOk();
+
+    Sanctum::actingAs($admin);
+
+    $versionTres = $this->patchJson("/api/cotizaciones/modificaciones/{$segundaModificacionId}/aprobar")
+        ->assertOk()
+        ->assertJsonPath('version.numero_version', 'COT-001 V3')
+        ->json('version');
+
+    expect($cotizacion->refresh()->titulo)->toBe('Cotizacion version tres');
+    expect($cotizacion->items()->first()->imagen)->toBe('cotizacion-items/version-tres.jpg');
+    expect($versionTres['snapshot']['items'][0]['imagen'])->toBe('cotizacion-items/version-tres.jpg');
+
+    $this->assertDatabaseHas('cotizacion_versiones', [
+        'cotizacion_id' => $cotizacion->id,
+        'version_number' => 3,
+        'numero_version' => 'COT-001 V3',
+    ]);
 });

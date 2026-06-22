@@ -727,6 +727,7 @@ class CotizacionController extends Controller
                 $request->user()->id,
                 'Version original antes de solicitud de modificacion.'
             );
+            $versionVigente = $this->latestCotizacionVersion($cotizacion) ?? $versionOriginal;
 
             $pendiente = $cotizacion->modificaciones()
                 ->whereIn('estado', [
@@ -742,8 +743,8 @@ class CotizacionController extends Controller
 
             $modificacion = CotizacionModificacion::create([
                 'cotizacion_id' => $cotizacion->id,
-                'original_version_id' => $versionOriginal->id,
-                'version_number' => $versionOriginal->version_number + 1,
+                'original_version_id' => $versionVigente->id,
+                'version_number' => $versionVigente->version_number + 1,
                 'estado' => CotizacionModificacion::ESTADO_BORRADOR,
                 'motivo' => $request->string('motivo')->toString(),
                 'propuesta' => $this->buildCotizacionEditablePayload($cotizacion),
@@ -833,6 +834,7 @@ class CotizacionController extends Controller
                 $modificacion->requested_by,
                 'Version original antes de aprobar modificacion.'
             );
+            $nextVersionNumber = ($this->latestCotizacionVersion($cotizacion)?->version_number ?? 1) + 1;
 
             $this->applyCotizacionProposalPayload($request, $cotizacion, $modificacion->propuesta);
 
@@ -842,8 +844,8 @@ class CotizacionController extends Controller
 
             $version = CotizacionVersion::create([
                 'cotizacion_id' => $cotizacion->id,
-                'version_number' => $modificacion->version_number,
-                'numero_version' => $this->numeroVersion($cotizacion, $modificacion->version_number),
+                'version_number' => $nextVersionNumber,
+                'numero_version' => $this->numeroVersion($cotizacion, $nextVersionNumber),
                 'snapshot' => $this->buildCotizacionSnapshot($cotizacion->refresh()),
                 'created_by' => $modificacion->requested_by,
                 'approved_by' => $request->user()->id,
@@ -853,6 +855,7 @@ class CotizacionController extends Controller
 
             $modificacion->update([
                 'estado' => CotizacionModificacion::ESTADO_APROBADA,
+                'version_number' => $nextVersionNumber,
                 'reviewed_by' => $request->user()->id,
                 'comentario_revision' => $request->input('comentario_revision'),
                 'reviewed_at' => now(),
@@ -1556,7 +1559,7 @@ class CotizacionController extends Controller
                 'link_proveedor' => $this->primerProveedorLink($item['proveedores'] ?? null, $item['link_proveedor'] ?? null),
                 'producto_id' => $item['producto_id'] ?? null,
                 'tipo' => $item['tipo'] ?? 'personalizado',
-                'imagen' => $item['imagen'] ?? null,
+                'imagen' => $this->resolveCotizacionItemImagenFromPayload($item),
                 'costo_unitario' => $costoBase,
                 'precio_venta' => $precioVenta,
                 'subtotal' => $pvt,
@@ -1827,6 +1830,24 @@ class CotizacionController extends Controller
         return null;
     }
 
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function resolveCotizacionItemImagenFromPayload(array $item): ?string
+    {
+        foreach (['imagen', 'imagen_path'] as $key) {
+            if (! empty($item[$key]) && is_string($item[$key])) {
+                return $this->normalizePublicStoragePath($item[$key]);
+            }
+        }
+
+        if (! empty($item['producto_id'])) {
+            return Producto::whereKey($item['producto_id'])->value('imagen');
+        }
+
+        return null;
+    }
+
     private function normalizePublicStoragePath(string $path): ?string
     {
         $path = parse_url($path, PHP_URL_PATH) ?: $path;
@@ -2033,6 +2054,15 @@ class CotizacionController extends Controller
             'approved_at' => now(),
             'notas' => $notas,
         ]);
+    }
+
+    private function latestCotizacionVersion(Cotizacion $cotizacion): ?CotizacionVersion
+    {
+        return $cotizacion->versiones()
+            ->lockForUpdate()
+            ->reorder()
+            ->orderByDesc('version_number')
+            ->first();
     }
 
     private function numeroVersion(Cotizacion $cotizacion, int $versionNumber): string
