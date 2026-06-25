@@ -121,6 +121,7 @@ test('una cotizacion aprobada se modifica mediante propuesta versionada', functi
         'titulo' => 'Cotizacion version dos',
         'items' => [[
             'descripcion' => 'Item version dos',
+            'nota' => 'Nota opcional para el PDF',
             'cantidad' => 2,
             'costo_base' => 120,
             'margen' => 15,
@@ -130,11 +131,14 @@ test('una cotizacion aprobada se modifica mediante propuesta versionada', functi
 
     Sanctum::actingAs($admin);
 
-    $this->patchJson("/api/cotizaciones/modificaciones/{$modificacionId}/aprobar")
+    $versionDos = $this->patchJson("/api/cotizaciones/modificaciones/{$modificacionId}/aprobar")
         ->assertOk()
-        ->assertJsonPath('version.numero_version', 'COT-001 V2');
+        ->assertJsonPath('version.numero_version', 'COT-001 V2')
+        ->json('version');
 
     expect($cotizacion->refresh()->titulo)->toBe('Cotizacion version dos');
+    expect($cotizacion->items()->first()->nota)->toBe('Nota opcional para el PDF');
+    expect($versionDos['snapshot']['items'][0]['nota'])->toBe('Nota opcional para el PDF');
 
     $this->assertDatabaseHas('cotizacion_versiones', [
         'cotizacion_id' => $cotizacion->id,
