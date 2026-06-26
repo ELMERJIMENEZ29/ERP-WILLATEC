@@ -31,6 +31,7 @@ class CotizacionModificacion extends Model
         'requested_by',
         'reviewed_by',
         'comentario_revision',
+        'comentario_reenvio_revision',
         'submitted_at',
         'reviewed_at',
     ];

@@ -12,6 +12,7 @@ use App\Models\TipoCliente;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
@@ -139,6 +140,12 @@ test('una cotizacion aprobada se modifica mediante propuesta versionada', functi
     expect($cotizacion->refresh()->titulo)->toBe('Cotizacion version dos');
     expect($cotizacion->items()->first()->nota)->toBe('Nota opcional para el PDF');
     expect($versionDos['snapshot']['items'][0]['nota'])->toBe('Nota opcional para el PDF');
+    expect(
+        DB::table('notifications')
+            ->where('notifiable_id', $ventas->id)
+            ->where('type', 'App\\Notifications\\CotizacionModificacionAprobadaNotification')
+            ->exists()
+    )->toBeTrue();
 
     $this->assertDatabaseHas('cotizacion_versiones', [
         'cotizacion_id' => $cotizacion->id,
@@ -190,4 +197,37 @@ test('una cotizacion aprobada se modifica mediante propuesta versionada', functi
         'version_number' => 3,
         'numero_version' => 'COT-001 V3',
     ]);
+
+    Sanctum::actingAs($ventas);
+
+    $terceraModificacionId = $this->postJson("/api/cotizaciones/{$cotizacion->id}/solicitar-modificacion", [
+        'motivo' => 'Cambio que sera rechazado',
+    ])
+        ->assertCreated()
+        ->json('modificacion.id');
+
+    $this->putJson("/api/cotizaciones/modificaciones/{$terceraModificacionId}", [
+        ...$payload,
+        'titulo' => 'Cotizacion version rechazada',
+        'items' => [[
+            'descripcion' => 'Item version rechazada',
+            'cantidad' => 1,
+            'costo_base' => 90,
+            'margen' => 15,
+            'tipo' => 'personalizado',
+        ]],
+    ])->assertOk();
+
+    Sanctum::actingAs($admin);
+
+    $this->patchJson("/api/cotizaciones/modificaciones/{$terceraModificacionId}/rechazar", [
+        'comentario_revision' => 'Ajustar margen antes de aprobar',
+    ])->assertOk();
+
+    expect(
+        DB::table('notifications')
+            ->where('notifiable_id', $ventas->id)
+            ->where('type', 'App\\Notifications\\CotizacionModificacionRechazadaNotification')
+            ->exists()
+    )->toBeTrue();
 });

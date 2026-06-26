@@ -21,7 +21,9 @@ use App\Models\ProductoExterno;
 use App\Models\User;
 use App\Notifications\CotizacionAprobadaNotification;
 use App\Notifications\CotizacionEnviadaRevisionNotification;
+use App\Notifications\CotizacionModificacionAprobadaNotification;
 use App\Notifications\CotizacionModificacionEnRevisionNotification;
+use App\Notifications\CotizacionModificacionRechazadaNotification;
 use App\Notifications\CotizacionModificacionSolicitadaNotification;
 use App\Notifications\CotizacionRechazadaNotification;
 use App\Services\CotizacionService;
@@ -211,6 +213,7 @@ class CotizacionController extends Controller
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
             'cliente_contacto' => 'nullable|string|max:255',
+            'comentario' => 'nullable|string|max:1000',
         ]);
 
         $hasDelegadoKey = array_key_exists('delegado_id', $request->all());
@@ -294,6 +297,10 @@ class CotizacionController extends Controller
 
     public function enviarRevision(Request $request, Cotizacion $cotizacion)
     {
+        $request->validate([
+            'comentario' => 'nullable|string|max:1000',
+        ]);
+
         $this->ensureCanEditCotizacion($request, $cotizacion);
 
         $estadoAnterior = $cotizacion->estado_cotizacion_id;
@@ -361,7 +368,7 @@ class CotizacionController extends Controller
             'costo_base' => 'required|numeric|min:0',
             'margen' => 'required|numeric|min:0',
             'nota' => 'nullable|string',
-            'garantia_meses' => 'nullable|integer|in:3,6,12,24,36',
+            'garantia_meses' => 'nullable|integer|min:0|max:60',
             'disponibilidad_tipo' => 'required|in:stock,importacion',
             'disponibilidad_dias' => 'required|integer|min:1|max:50',
             'producto_id' => 'nullable|exists:productos,id',
@@ -461,7 +468,7 @@ class CotizacionController extends Controller
             'margen' => 'nullable|numeric|min:0',
             'nota' => 'nullable|string',
             'stock' => 'nullable|integer|min:0',
-            'garantia_meses' => 'nullable|integer|in:3,6,12,24,36',
+            'garantia_meses' => 'nullable|integer|min:0|max:60',
             'disponibilidad_tipo' => 'nullable|in:stock,importacion',
             'disponibilidad_dias' => 'nullable|integer|min:1|max:50',
             'producto_id' => 'nullable|exists:productos,id',
@@ -790,11 +797,18 @@ class CotizacionController extends Controller
     {
         $this->ensureCanEditModification($request, $modificacion);
 
+        $request->validate([
+            'comentario_reenvio_revision' => 'nullable|string|max:1000',
+        ]);
+
         $payload = $this->buildCotizacionProposalPayload($request, $modificacion->cotizacion);
 
         $modificacion->update([
             'estado' => CotizacionModificacion::ESTADO_EN_REVISION,
             'propuesta' => $payload,
+            'comentario_reenvio_revision' => $request->filled('comentario_reenvio_revision')
+                ? $request->string('comentario_reenvio_revision')->toString()
+                : null,
             'submitted_at' => now(),
         ]);
 
@@ -811,8 +825,15 @@ class CotizacionController extends Controller
     {
         $this->ensureCanEditModification($request, $modificacion);
 
+        $request->validate([
+            'comentario_reenvio_revision' => 'nullable|string|max:1000',
+        ]);
+
         $modificacion->update([
             'estado' => CotizacionModificacion::ESTADO_EN_REVISION,
+            'comentario_reenvio_revision' => $request->filled('comentario_reenvio_revision')
+                ? $request->string('comentario_reenvio_revision')->toString()
+                : null,
             'submitted_at' => now(),
         ]);
 
@@ -871,6 +892,12 @@ class CotizacionController extends Controller
             ]);
         });
 
+        $modificacion->refresh()->load(['cotizacion', 'solicitante']);
+
+        if ($modificacion->solicitante) {
+            $modificacion->solicitante->notify(new CotizacionModificacionAprobadaNotification($modificacion, $request->user()));
+        }
+
         return response()->json([
             'message' => 'Modificacion aprobada y aplicada como nueva version vigente',
             'version' => $version,
@@ -905,9 +932,19 @@ class CotizacionController extends Controller
             'reviewed_at' => now(),
         ]);
 
+        $modificacion->refresh()->load(['cotizacion', 'solicitante', 'revisor']);
+
+        if ($modificacion->solicitante) {
+            $modificacion->solicitante->notify(new CotizacionModificacionRechazadaNotification(
+                $modificacion,
+                $request->user(),
+                $request->string('comentario_revision')->toString()
+            ));
+        }
+
         return response()->json([
             'message' => 'Modificacion rechazada; se conserva la version aprobada vigente',
-            'modificacion' => $modificacion->refresh()->load(['cotizacion', 'solicitante', 'revisor']),
+            'modificacion' => $modificacion,
         ]);
     }
 
@@ -1027,6 +1064,7 @@ class CotizacionController extends Controller
             'estado_cotizacion_id' => 'nullable|exists:estado_cotizaciones,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
             'cliente_contacto' => 'nullable|string|max:255',
+            'comentario' => 'nullable|string|max:1000',
 
             'items' => 'required|array|min:1',
 
@@ -1196,6 +1234,7 @@ class CotizacionController extends Controller
             'estado_cotizacion_id' => 'nullable|exists:estado_cotizaciones,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
             'cliente_contacto' => 'nullable|string|max:255',
+            'comentario' => 'nullable|string|max:1000',
 
             'items' => 'required|array|min:1',
 
@@ -1628,7 +1667,7 @@ class CotizacionController extends Controller
             'items.*.marca' => 'nullable|string|max:255',
             'items.*.codigo' => 'nullable|string|max:255',
             'items.*.unidad_medida' => 'nullable|string|max:50',
-            'items.*.garantia_meses' => 'nullable|integer|in:3,6,12,24,36',
+            'items.*.garantia_meses' => 'nullable|integer|min:0|max:60',
             'items.*.disponibilidad_tipo' => 'nullable|in:stock,importacion',
             'items.*.disponibilidad_dias' => 'nullable|integer|min:1|max:50',
             'items.*.proveedor' => 'nullable|string|max:255',
@@ -1920,6 +1959,18 @@ class CotizacionController extends Controller
         ]);
 
         if ($estadoAnteriorId === $estadoEnviadaId) {
+            return;
+        }
+
+        if ($request->filled('comentario')) {
+            CotizacionHistorial::create([
+                'cotizacion_id' => $cotizacion->id,
+                'estado_anterior_id' => $estadoAnteriorId,
+                'estado_nuevo_id' => $estadoEnviadaId,
+                'comentario' => $request->string('comentario')->toString(),
+                'user_id' => $request->user()->id,
+            ]);
+
             return;
         }
 
