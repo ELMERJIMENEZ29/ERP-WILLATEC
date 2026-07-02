@@ -84,6 +84,8 @@ class OcRecibidaController extends Controller
 
     public function store(Request $request)
     {
+        $this->normalizeBooleanItemFields($request, ['seleccionado']);
+
         $validated = $request->validate([
             'cotizacion_id' => 'required|exists:cotizaciones,id',
             'fecha_recepcion' => 'nullable|date',
@@ -284,6 +286,34 @@ class OcRecibidaController extends Controller
     private function storeDocumento(UploadedFile $file, string $directory): string
     {
         return $file->store($directory, 'public');
+    }
+
+    private function normalizeBooleanItemFields(Request $request, array $fields): void
+    {
+        if (! $request->has('items') || ! is_array($request->input('items'))) {
+            return;
+        }
+
+        $items = collect($request->input('items'))->map(function ($item) use ($fields) {
+            if (! is_array($item)) {
+                return $item;
+            }
+
+            foreach ($fields as $field) {
+                if (! array_key_exists($field, $item)) {
+                    continue;
+                }
+
+                $normalized = filter_var($item[$field], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                if ($normalized !== null) {
+                    $item[$field] = $normalized;
+                }
+            }
+
+            return $item;
+        })->all();
+
+        $request->merge(['items' => $items]);
     }
 
     private function notifyAdministrators(object $notification): void

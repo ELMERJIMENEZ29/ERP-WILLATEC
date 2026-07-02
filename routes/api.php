@@ -16,6 +16,8 @@ use Spatie\Permission\Models\Role;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:3,1');
+Route::post('/superadmin/security-question-reset', [AuthController::class, 'resetPasswordWithSecurityQuestions'])
+    ->middleware('throttle:3,1');
 
 Route::post('/two-factor/challenge', [AuthController::class, 'twoFactorChallenge'])
     ->middleware('throttle:5,1');
@@ -31,6 +33,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/user', [AuthController::class, 'user']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/password/change', [AuthController::class, 'changePassword']);
+    Route::get('/superadmin/security-questions', [AuthController::class, 'securityQuestions'])
+        ->middleware('role:superadmin');
+    Route::put('/superadmin/security-questions', [AuthController::class, 'updateSecurityQuestions'])
+        ->middleware('role:superadmin');
 
     Route::get('/roles', function () {
         return Role::select('id', 'name')->get();

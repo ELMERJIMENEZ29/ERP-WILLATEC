@@ -9,16 +9,21 @@ use App\Notifications\PasswordChangedNotification;
 use App\Notifications\PasswordResetRequestedNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
-use Spatie\Permission\Models\Role;
-use Illuminate\Support\Facades\Crypt;
 use PragmaRX\Google2FA\Google2FA;
+use Spatie\Permission\Models\Role;
 
 class AuthController extends Controller
 {
+    private const SUPERADMIN_SECURITY_QUESTIONS = [
+        '¿Cual es el nombre de tu primera mascota?',
+        '¿Cual fue tu apodo en la universidad?',
+    ];
+
     public function login(Request $request)
     {
         $request->validate([
@@ -48,7 +53,7 @@ class AuthController extends Controller
             $loginToken = Str::random(60);
 
             cache()->put(
-                '2fa_login_' . $loginToken,
+                '2fa_login_'.$loginToken,
                 $user->id,
                 now()->addMinutes(5)
             );
@@ -68,7 +73,7 @@ class AuthController extends Controller
             'user' => $user->load('profile', 'roles'),
             'token' => $token,
             'requires_password_change' => $user->requires_password_change,
-            'two_factor_enabled' => !is_null($user->two_factor_confirmed_at),
+            'two_factor_enabled' => ! is_null($user->two_factor_confirmed_at),
         ]);
     }
 
@@ -83,6 +88,25 @@ class AuthController extends Controller
             ->first();
 
         if ($user) {
+            if ($user->hasRole('superadmin')) {
+                $configuredQuestions = $this->configuredSecurityQuestions($user);
+
+                if (count($configuredQuestions) >= 2) {
+                    return response()->json([
+                        'message' => 'Responde tus preguntas de seguridad para restablecer tu contrasena.',
+                        'recovery_type' => 'security_questions',
+                        'email' => $user->email,
+                        'questions' => $this->publicSecurityQuestions($user),
+                        'requires_2fa' => $this->userHasConfirmedTwoFactor($user),
+                    ]);
+                }
+
+                return response()->json([
+                    'message' => 'El superadmin no tiene preguntas de seguridad configuradas. Contacta al responsable tecnico para recuperar el acceso.',
+                    'recovery_type' => 'security_questions_unavailable',
+                ]);
+            }
+
             $token = Str::random(60);
 
             DB::table('password_reset_tokens')->upsert([
@@ -105,6 +129,122 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Si el correo existe, el superadministrador recibirá la solicitud para generar una contraseña temporal.',
+        ]);
+    }
+
+    public function securityQuestions(Request $request)
+    {
+        $questions = $this->publicSecurityQuestions($request->user());
+
+        return response()->json([
+            'configured' => count($this->configuredSecurityQuestions($request->user())) >= 2,
+            'questions' => $questions,
+        ]);
+    }
+
+    public function updateSecurityQuestions(Request $request)
+    {
+        $validated = $request->validate([
+            'current_password' => 'required|string',
+            'questions' => 'required|array|size:2',
+            'questions.*.answer' => 'required|string|min:2|max:255',
+        ]);
+
+        $user = $request->user();
+
+        if (! Hash::check($validated['current_password'], $user->password)) {
+            return response()->json([
+                'message' => 'La contrasena actual es incorrecta',
+            ], 422);
+        }
+
+        $questions = collect($validated['questions'])
+            ->values()
+            ->map(fn (array $item, int $index): array => [
+                'question' => self::SUPERADMIN_SECURITY_QUESTIONS[$index],
+                'answer_hash' => Hash::make($this->normalizeSecurityAnswer($item['answer'])),
+            ])
+            ->values()
+            ->all();
+
+        $user->forceFill([
+            'security_questions' => $questions,
+        ])->save();
+
+        return response()->json([
+            'message' => 'Preguntas de seguridad actualizadas correctamente.',
+            'configured' => true,
+            'questions' => $this->publicSecurityQuestions($user->refresh()),
+        ]);
+    }
+
+    public function resetPasswordWithSecurityQuestions(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'required|email',
+            'answers' => 'required|array|size:2',
+            'answers.*' => 'required|string|min:1|max:255',
+            'two_factor_code' => 'nullable|string',
+            'password' => 'required|min:6|confirmed',
+        ]);
+
+        $user = User::where('email', $validated['email'])
+            ->where('activo', true)
+            ->first();
+
+        if (! $user || ! $user->hasRole('superadmin')) {
+            return response()->json([
+                'message' => 'No se pudo validar la recuperacion de superadmin.',
+            ], 422);
+        }
+
+        $questions = $this->configuredSecurityQuestions($user);
+
+        if (count($questions) < 2) {
+            return response()->json([
+                'message' => 'El superadmin no tiene preguntas de seguridad configuradas.',
+            ], 422);
+        }
+
+        if ($this->userHasConfirmedTwoFactor($user)) {
+            if (! $request->filled('two_factor_code')) {
+                return response()->json([
+                    'message' => 'Ingresa el codigo de verificacion de 2 pasos.',
+                ], 422);
+            }
+
+            $google2fa = new Google2FA;
+            $secret = Crypt::decryptString($user->two_factor_secret);
+
+            if (! $google2fa->verifyKey($secret, $validated['two_factor_code'])) {
+                return response()->json([
+                    'message' => 'El codigo de verificacion de 2 pasos es invalido.',
+                ], 422);
+            }
+        }
+
+        foreach (array_values($questions) as $index => $question) {
+            $answer = $validated['answers'][$index] ?? null;
+            $answerHash = $question['answer_hash'] ?? null;
+
+            if (! $answer || ! $answerHash || ! Hash::check($this->normalizeSecurityAnswer($answer), $answerHash)) {
+                return response()->json([
+                    'message' => 'Una o mas respuestas de seguridad son incorrectas.',
+                ], 422);
+            }
+        }
+
+        $user->forceFill([
+            'password' => Hash::make($validated['password']),
+            'requires_password_change' => false,
+        ])->save();
+
+        DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+        $user->tokens()->delete();
+        $user->notify(new PasswordChangedNotification($user));
+
+        return response()->json([
+            'message' => 'Contrasena restablecida correctamente. Ya puedes iniciar sesion.',
         ]);
     }
 
@@ -178,7 +318,7 @@ class AuthController extends Controller
             ->notifications()
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(fn($notification) => [
+            ->map(fn ($notification) => [
                 'id' => $notification->id,
                 'type' => class_basename($notification->type),
                 'data' => $notification->data,
@@ -257,6 +397,7 @@ class AuthController extends Controller
             'last_login_at' => $lastLoginAt,
         ]);
     }
+
     public function twoFactorChallenge(Request $request)
     {
         $request->validate([
@@ -265,7 +406,7 @@ class AuthController extends Controller
             'recovery_code' => 'nullable|string',
         ]);
 
-        $userId = cache()->get('2fa_login_' . $request->login_token);
+        $userId = cache()->get('2fa_login_'.$request->login_token);
 
         if (! $userId) {
             return response()->json(['message' => 'Token temporal expirado'], 422);
@@ -276,7 +417,7 @@ class AuthController extends Controller
         $valid = false;
 
         if ($request->filled('code')) {
-            $google2fa = new Google2FA();
+            $google2fa = new Google2FA;
             $secret = Crypt::decryptString($user->two_factor_secret);
             $valid = $google2fa->verifyKey($secret, $request->code);
         }
@@ -289,7 +430,7 @@ class AuthController extends Controller
 
                 $codes = array_values(array_filter(
                     $codes,
-                    fn($code) => $code !== $request->recovery_code
+                    fn ($code) => $code !== $request->recovery_code
                 ));
 
                 $user->forceFill([
@@ -302,7 +443,7 @@ class AuthController extends Controller
             return response()->json(['message' => 'Código inválido'], 422);
         }
 
-        cache()->forget('2fa_login_' . $request->login_token);
+        cache()->forget('2fa_login_'.$request->login_token);
 
         $user->forceFill([
             'last_login_at' => now('America/Lima'),
@@ -317,5 +458,44 @@ class AuthController extends Controller
             'token' => $token,
             'requires_password_change' => $user->requires_password_change,
         ]);
+    }
+
+    private function publicSecurityQuestions(User $user): array
+    {
+        $storedQuestions = collect($user->security_questions ?? []);
+
+        return collect(self::SUPERADMIN_SECURITY_QUESTIONS)
+            ->map(function (string $question, int $index) use ($storedQuestions): array {
+                $storedQuestion = $storedQuestions->first(
+                    fn (array $item): bool => ($item['question'] ?? '') === $question
+                );
+
+                return [
+                    'id' => $index,
+                    'question' => $question,
+                    'configured' => isset($storedQuestion['answer_hash']),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function configuredSecurityQuestions(User $user): array
+    {
+        return collect($user->security_questions ?? [])
+            ->filter(fn (array $item): bool => in_array($item['question'] ?? '', self::SUPERADMIN_SECURITY_QUESTIONS, true))
+            ->sortBy(fn (array $item): int => (int) array_search($item['question'], self::SUPERADMIN_SECURITY_QUESTIONS, true))
+            ->values()
+            ->all();
+    }
+
+    private function userHasConfirmedTwoFactor(User $user): bool
+    {
+        return filled($user->two_factor_secret) && filled($user->two_factor_confirmed_at);
+    }
+
+    private function normalizeSecurityAnswer(string $answer): string
+    {
+        return Str::lower(preg_replace('/\s+/', ' ', trim($answer)) ?? '');
     }
 }

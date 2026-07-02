@@ -30,6 +30,7 @@ class User extends Authenticatable
         'password',
         'requires_password_change',
         'last_login_at',
+        'security_questions',
     ];
 
     /**
@@ -42,6 +43,7 @@ class User extends Authenticatable
         'remember_token',
         'two_factor_secret',
         'two_factor_recovery_codes',
+        'security_questions',
     ];
 
     /**
@@ -57,6 +59,7 @@ class User extends Authenticatable
             'requires_password_change' => 'boolean',
             'last_login_at' => 'datetime',
             'two_factor_confirmed_at' => 'datetime',
+            'security_questions' => 'array',
         ];
     }
 

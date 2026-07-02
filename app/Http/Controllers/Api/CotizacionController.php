@@ -167,7 +167,7 @@ class CotizacionController extends Controller
         }
 
         $this->ensureSalesUser($request->integer('delegado_id') ?: null);
-        $this->ensureSalesUser($request->integer('delegado_cotizacion_id') ?: null);
+        $this->ensureSalesOrSuperadminUser($request->integer('delegado_cotizacion_id') ?: null);
 
         $numero = $this->service->generarNumero();
         $cliente = Cliente::findOrFail($request->cliente_id);
@@ -248,7 +248,7 @@ class CotizacionController extends Controller
 
         $this->ensureCanEditCotizacion($request, $cotizacion);
         $this->ensureSalesUser($delegadoId);
-        $this->ensureSalesUser($delegadoCotizacionId);
+        $this->ensureSalesOrSuperadminUser($delegadoCotizacionId);
 
         $estadoAnterior = (int) $cotizacion->estado_cotizacion_id;
 
@@ -1104,7 +1104,7 @@ class CotizacionController extends Controller
         }
 
         $this->ensureSalesUser($request->integer('delegado_id') ?: null);
-        $this->ensureSalesUser($request->integer('delegado_cotizacion_id') ?: null);
+        $this->ensureSalesOrSuperadminUser($request->integer('delegado_cotizacion_id') ?: null);
 
         $cotizacion = null;
 
@@ -1292,7 +1292,7 @@ class CotizacionController extends Controller
 
         $this->ensureCanEditCotizacion($request, $cotizacion);
         $this->ensureSalesUser($delegadoId);
-        $this->ensureSalesUser($delegadoCotizacionId);
+        $this->ensureSalesOrSuperadminUser($delegadoCotizacionId);
 
         $estadoAnterior = (int) $cotizacion->estado_cotizacion_id;
 
@@ -1567,7 +1567,7 @@ class CotizacionController extends Controller
         $delegadoCotizacionId = $payload['delegado_cotizacion_id'] ?? $cotizacion->delegado_cotizacion_id;
 
         $this->ensureSalesUser($delegadoId ? (int) $delegadoId : null);
-        $this->ensureSalesUser($delegadoCotizacionId ? (int) $delegadoCotizacionId : null);
+        $this->ensureSalesOrSuperadminUser($delegadoCotizacionId ? (int) $delegadoCotizacionId : null);
 
         $cotizacion->update([
             'cliente_id' => $cliente->id,
@@ -1707,6 +1707,17 @@ class CotizacionController extends Controller
 
         if (! User::role('ventas')->whereKey($userId)->exists()) {
             abort(422, 'El delegado de cotización debe tener rol de ventas.');
+        }
+    }
+
+    private function ensureSalesOrSuperadminUser(?int $userId): void
+    {
+        if (! $userId) {
+            return;
+        }
+
+        if (! User::role(['ventas', 'superadmin'])->whereKey($userId)->exists()) {
+            abort(422, 'El delegado de edicion debe tener rol de ventas o superadmin.');
         }
     }
 

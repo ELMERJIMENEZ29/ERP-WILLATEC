@@ -80,6 +80,34 @@ test('oc recibida solo queda atendida cuando items estan comprados entregados y 
         ->assertJsonPath('documentos_completos', true);
 });
 
+test('oc recibida acepta seleccionado como texto cuando se envia multipart', function () {
+    Storage::fake('public');
+    $base = crearCotizacionBase();
+    Sanctum::actingAs($base['ventas']);
+
+    $this->post('/api/oc-recibidas', [
+        'cotizacion_id' => $base['cotizacion']->id,
+        'fecha_recepcion' => '2026-06-20',
+        'orden_compra_cliente' => UploadedFile::fake()->create('oc.pdf', 10, 'application/pdf'),
+        'items' => [
+            [
+                'cotizacion_item_id' => $base['items'][0]->id,
+                'seleccionado' => 'true',
+                'cantidad_recibida' => 2,
+            ],
+            [
+                'cotizacion_item_id' => $base['items'][1]->id,
+                'seleccionado' => 'false',
+                'cantidad_recibida' => 1,
+            ],
+        ],
+    ])
+        ->assertCreated()
+        ->assertJsonPath('message', 'OC RECIBIDA GUARDADA')
+        ->assertJsonPath('oc_recibida.items.0.seleccionado', true)
+        ->assertJsonPath('oc_recibida.items.1.seleccionado', false);
+});
+
 test('oc emitida se genera desde proveedor de cotizacion con totales y pdf', function () {
     Storage::fake('public');
     $base = crearCotizacionBase();
