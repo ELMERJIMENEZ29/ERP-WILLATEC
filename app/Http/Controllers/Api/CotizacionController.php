@@ -64,6 +64,8 @@ class CotizacionController extends Controller
         $request->validate([
             'user_id' => 'nullable|integer|exists:users,id',
             'per_page' => 'nullable|integer|min:1|max:100',
+            'fecha_desde' => 'nullable|date',
+            'fecha_hasta' => 'nullable|date|after_or_equal:fecha_desde',
         ]);
 
         $query = Cotizacion::with([
@@ -98,6 +100,14 @@ class CotizacionController extends Controller
 
         if ($request->filled('estado_cotizacion_id')) {
             $query->where('estado_cotizacion_id', $request->estado_cotizacion_id);
+        }
+
+        if ($request->filled('fecha_desde')) {
+            $query->whereDate('fecha', '>=', $request->date('fecha_desde')->toDateString());
+        }
+
+        if ($request->filled('fecha_hasta')) {
+            $query->whereDate('fecha', '<=', $request->date('fecha_hasta')->toDateString());
         }
 
         if ($request->filled('user_id')) {

@@ -205,7 +205,7 @@ class CotizacionService
                     ]);
             }
 
-            return str_pad($numero, 5, '0', STR_PAD_LEFT).'-'.$anio;
+            return str_pad($numero, 6, '0', STR_PAD_LEFT).'-'.$anio;
         });
     }
 }
