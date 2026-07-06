@@ -6,6 +6,8 @@ use Carbon\Carbon;
 
 $primerNombre = explode(' ', trim($cotizacion->user->nombres ?? ''))[0] ?? '';
 $primerApellido = explode(' ', trim($cotizacion->user->apellidos ?? ''))[0] ?? '';
+$telefonoCreador = trim((string) data_get($cotizacion, 'user.profile.telefono', ''));
+$whatsappEmisor = $telefonoCreador !== '' ? $telefonoCreador : '934 577 815';
 $validezDias = (int) ($cotizacion->validez_dias ?? 10);
 $fechaEmision = Carbon::parse($cotizacion->fecha)->format('d/m/Y');
 $fechaValidez = Carbon::parse($cotizacion->fecha)
@@ -954,7 +956,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                 <div class="name">WILLATEC S.A.C</div>
                 <div class="detail">
                     RUC: <b>20602503331</b><br>
-                    WhatsApp: <b>{{ $cotizacion->user->profile->telefono ?? '934 577 815' }}</b> &nbsp; Teléfono: <b>(01) 757-1253</b><br>
+                    WhatsApp: <b>{{ $whatsappEmisor }}</b> &nbsp; Teléfono: <b>(01) 757-1253</b><br>
                     Correo: <b>ventas@willatec.com</b> &nbsp; Web: <b>www.willatec.com</b><br>
                     Dirección: <b>Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña - Lima</b>
                 </div>
