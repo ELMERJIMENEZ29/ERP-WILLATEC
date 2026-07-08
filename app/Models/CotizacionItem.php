@@ -47,6 +47,7 @@ class CotizacionItem extends Model
         'proveedor',
         'link_proveedor',
         'stock',
+        'importacion_calculo',
     ];
 
     public function cotizacion(): BelongsTo
@@ -89,6 +90,7 @@ class CotizacionItem extends Model
         return [
             'cantidad' => 'integer',
             'aplica_costos_adicionales' => 'boolean',
+            'importacion_calculo' => 'array',
         ];
     }
 

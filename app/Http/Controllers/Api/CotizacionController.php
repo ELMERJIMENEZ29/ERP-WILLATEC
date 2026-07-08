@@ -178,6 +178,8 @@ class CotizacionController extends Controller
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'entrega_provincia' => 'sometimes|boolean',
+            'entrega_destino' => 'nullable|string|max:150',
             'cliente_contacto' => 'nullable|string|max:255',
         ]);
 
@@ -198,6 +200,10 @@ class CotizacionController extends Controller
             'tipo_cambio' => 1, // luego lo conectamos a API
             'validez_dias' => $request->integer('validez_dias') ?: 10,
             'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
+            'entrega_provincia' => $request->boolean('entrega_provincia'),
+            'entrega_destino' => $request->boolean('entrega_provincia')
+                ? $request->input('entrega_destino')
+                : null,
 
             'cliente_id' => $cliente->id,
             'plantilla_id' => $request->plantilla_id,
@@ -241,6 +247,8 @@ class CotizacionController extends Controller
             'delegado_id' => 'nullable|exists:users,id',
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'entrega_provincia' => 'sometimes|boolean',
+            'entrega_destino' => 'nullable|string|max:150',
             'cliente_contacto' => 'nullable|string|max:255',
             'comentario' => 'nullable|string|max:1000',
         ]);
@@ -289,6 +297,10 @@ class CotizacionController extends Controller
                 'delegado_id' => $delegadoId,
                 'delegado_cotizacion_id' => $delegadoCotizacionId,
                 'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
+                'entrega_provincia' => $request->boolean('entrega_provincia'),
+                'entrega_destino' => $request->boolean('entrega_provincia')
+                    ? $request->input('entrega_destino')
+                    : null,
             ]);
 
             $this->service->recalcular($cotizacion);
@@ -410,6 +422,7 @@ class CotizacionController extends Controller
             'proveedores.*.link' => 'nullable|string',
             'proveedores.*.precio' => 'nullable|numeric|min:0',
             'proveedores.*.notas' => 'nullable|string',
+            'importacion_calculo' => 'nullable|array',
             'imagen' => 'sometimes|nullable|image|max:2048',
             'imagen_path' => 'sometimes|nullable|string|max:2048',
         ]);
@@ -464,6 +477,7 @@ class CotizacionController extends Controller
                 'costo_total' => $ptc,
                 'ganancia' => round($pvt - $ptc, 2),
                 'stock' => $request->stock ?? 0,
+                'importacion_calculo' => $request->input('importacion_calculo'),
             ];
 
             if ($request->hasFile('imagen')) {
@@ -513,6 +527,7 @@ class CotizacionController extends Controller
             'proveedores.*.link' => 'nullable|string',
             'proveedores.*.precio' => 'nullable|numeric|min:0',
             'proveedores.*.notas' => 'nullable|string',
+            'importacion_calculo' => 'nullable|array',
             'imagen' => 'sometimes|nullable|image|max:2048',
         ]);
 
@@ -549,6 +564,7 @@ class CotizacionController extends Controller
                     'producto_externo_id',
                     'stock',
                     'tipo',
+                    'importacion_calculo',
                 ]),
                 'costo_unitario' => $costoBase,
                 'precio_venta' => $precioVenta,
@@ -1098,6 +1114,8 @@ class CotizacionController extends Controller
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'estado_cotizacion_id' => 'nullable|exists:estado_cotizaciones,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'entrega_provincia' => 'sometimes|boolean',
+            'entrega_destino' => 'nullable|string|max:150',
             'cliente_contacto' => 'nullable|string|max:255',
             'comentario' => 'nullable|string|max:1000',
 
@@ -1117,6 +1135,7 @@ class CotizacionController extends Controller
             'items.*.proveedores.*.link' => 'nullable|string',
             'items.*.proveedores.*.precio' => 'nullable|numeric|min:0',
             'items.*.proveedores.*.notas' => 'nullable|string',
+            'items.*.importacion_calculo' => 'nullable|array',
 
             'costos' => 'nullable|array',
 
@@ -1144,6 +1163,10 @@ class CotizacionController extends Controller
                 'tipo_cambio' => 1, // luego lo conectamos a API
                 'validez_dias' => $request->integer('validez_dias') ?: 10,
                 'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
+                'entrega_provincia' => $request->boolean('entrega_provincia'),
+                'entrega_destino' => $request->boolean('entrega_provincia')
+                    ? $request->input('entrega_destino')
+                    : null,
 
                 'cliente_id' => $cliente->id,
                 'plantilla_id' => $request->plantilla_id,
@@ -1203,6 +1226,7 @@ class CotizacionController extends Controller
                     'moneda_id' => $request->moneda_id,
                     'plantilla_origen_id' => $request->plantilla_id,
                     'precio_incluye_igv' => $this->plantillaIncluyeIgv($request->integer('plantilla_id')),
+                    'importacion_calculo' => $item['importacion_calculo'] ?? null,
 
                     // Valores calculados iniciales — recalcular() los refinará con costos adicionales
                     'costo_unitario' => $costoBase,
@@ -1271,6 +1295,8 @@ class CotizacionController extends Controller
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'estado_cotizacion_id' => 'nullable|exists:estado_cotizaciones,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'entrega_provincia' => 'sometimes|boolean',
+            'entrega_destino' => 'nullable|string|max:150',
             'cliente_contacto' => 'nullable|string|max:255',
             'comentario' => 'nullable|string|max:1000',
 
@@ -1290,6 +1316,7 @@ class CotizacionController extends Controller
             'items.*.proveedores.*.link' => 'nullable|string',
             'items.*.proveedores.*.precio' => 'nullable|numeric|min:0',
             'items.*.proveedores.*.notas' => 'nullable|string',
+            'items.*.importacion_calculo' => 'nullable|array',
 
             'costos' => 'nullable|array',
 
@@ -1348,6 +1375,10 @@ class CotizacionController extends Controller
                 'delegado_id' => $delegadoId,
                 'delegado_cotizacion_id' => $delegadoCotizacionId,
                 'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
+                'entrega_provincia' => $request->boolean('entrega_provincia'),
+                'entrega_destino' => $request->boolean('entrega_provincia')
+                    ? $request->input('entrega_destino')
+                    : null,
             ]);
 
             // ELIMINAR SNAPSHOT VIEJO
@@ -1395,6 +1426,7 @@ class CotizacionController extends Controller
                     'costo_total' => $ptc,
                     'ganancia' => round($pvt - $ptc, 2),
                     'stock' => 0,
+                    'importacion_calculo' => $item['importacion_calculo'] ?? null,
                 ];
 
                 $itemData['producto_externo_id'] = $this->resolveProductoExternoId($itemData);
@@ -1448,6 +1480,10 @@ class CotizacionController extends Controller
         $data['cliente_contacto'] = array_key_exists('cliente_contacto', $data)
             ? $data['cliente_contacto']
             : $cotizacion->cliente_contacto;
+        $data['entrega_provincia'] = (bool) ($data['entrega_provincia'] ?? false);
+        $data['entrega_destino'] = $data['entrega_provincia']
+            ? ($data['entrega_destino'] ?? null)
+            : null;
         $data['cliente_telefono'] = $cliente->telefono;
         $data['cliente_correo'] = $cliente->correo;
 
@@ -1485,6 +1521,8 @@ class CotizacionController extends Controller
                 'fecha',
                 'validez_dias',
                 'forma_pago',
+                'entrega_provincia',
+                'entrega_destino',
                 'tipo_cambio',
                 'titulo',
                 'modo_distribucion',
@@ -1539,6 +1577,7 @@ class CotizacionController extends Controller
                         'proveedor',
                         'link_proveedor',
                         'stock',
+                        'importacion_calculo',
                     ]),
                     'proveedores' => $item->proveedores
                         ->sortBy('orden')
@@ -1582,6 +1621,8 @@ class CotizacionController extends Controller
             'delegado_cotizacion_id' => $header['delegado_cotizacion_id'],
             'validez_dias' => $header['validez_dias'],
             'forma_pago' => $header['forma_pago'],
+            'entrega_provincia' => $header['entrega_provincia'] ?? false,
+            'entrega_destino' => $header['entrega_destino'] ?? null,
             'cliente_contacto' => $header['cliente_contacto'],
             'items' => $snapshot['items'],
             'costos' => $snapshot['costos'],
@@ -1620,6 +1661,10 @@ class CotizacionController extends Controller
             'delegado_id' => $delegadoId,
             'delegado_cotizacion_id' => $delegadoCotizacionId,
             'forma_pago' => $payload['forma_pago'] ?? $cotizacion->forma_pago,
+            'entrega_provincia' => (bool) ($payload['entrega_provincia'] ?? false),
+            'entrega_destino' => ! empty($payload['entrega_provincia'])
+                ? ($payload['entrega_destino'] ?? null)
+                : null,
         ]);
 
         $cotizacion->items()->delete();
@@ -1658,6 +1703,7 @@ class CotizacionController extends Controller
                 'moneda_id' => $payload['moneda_id'],
                 'plantilla_origen_id' => $payload['plantilla_id'],
                 'precio_incluye_igv' => $this->plantillaIncluyeIgv((int) $payload['plantilla_id']),
+                'importacion_calculo' => $item['importacion_calculo'] ?? null,
                 'costo_unitario' => $costoBase,
                 'precio_venta' => $precioVenta,
                 'subtotal' => $pvt,
@@ -1700,6 +1746,8 @@ class CotizacionController extends Controller
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'entrega_provincia' => 'sometimes|boolean',
+            'entrega_destino' => 'nullable|string|max:150',
             'cliente_contacto' => 'nullable|string|max:255',
             'items' => 'required|array|min:1',
             'items.*.descripcion' => 'required|string',
@@ -1726,6 +1774,7 @@ class CotizacionController extends Controller
             'items.*.proveedores.*.link' => 'nullable|string',
             'items.*.proveedores.*.precio' => 'nullable|numeric|min:0',
             'items.*.proveedores.*.notas' => 'nullable|string',
+            'items.*.importacion_calculo' => 'nullable|array',
             'costos' => 'nullable|array',
             'costos.*.tipo' => 'required|string',
             'costos.*.descripcion' => 'nullable|string',

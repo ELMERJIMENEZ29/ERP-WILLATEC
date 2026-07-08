@@ -17,6 +17,10 @@ $simbolo = $cotizacion->moneda->simbolo ?? '$';
 $codigoMoneda = $cotizacion->moneda->codigo ?? 'USD';
 $nombreMoneda = $codigoMoneda === 'PEN' ? 'Soles Peruanos (PEN)' : 'Dolares Americanos (USD)';
 $formaPago = $cotizacion->forma_pago ?? 'AL CONTADO';
+$formaPagoCalendario = in_array($formaPago, ['CRÉDITO 15 DÍAS', 'CRÉDITO 30 DÍAS', 'CRÃ‰DITO 15 DÃAS', 'CRÃ‰DITO 30 DÃAS'], true) ? ' calendario' : '';
+$destinoEntrega = $cotizacion->entrega_provincia && filled($cotizacion->entrega_destino)
+? $cotizacion->entrega_destino
+: 'Lima Metropolitana';
 $logoBancoNacion = public_path('img/banco-nacion-logo.png');
 $logoWillatec = public_path('img/logoWILLATEC-black.png');
 $logoHomologado = public_path('img/logo-homologado.png');
@@ -1034,8 +1038,8 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         <tr>
             <td class="conditions">
                 <div class="section-title">Condiciones comerciales</div>
-                <div class="condition"><span>&rsaquo;</span> Forma de Pago: {{ $formaPago }} calendario</div>
-                <div class="condition"><span>&rsaquo;</span> Incluye entrega en oficinas del cliente, Lima Metropolitana.</div>
+                <div class="condition"><span>&rsaquo;</span> Forma de Pago: {{ $formaPago }}{{ $formaPagoCalendario }}</div>
+                <div class="condition"><span>&rsaquo;</span> Incluye entrega en oficinas del cliente, {{ $destinoEntrega }}.</div>
                 <div class="condition"><span>&rsaquo;</span> Precios en {{ $nombreMoneda }} y SI incluyen IGV.</div>
                 <div class="condition"><span>&rsaquo;</span> Precios sujetos a cambio sin previo aviso.</div>
                 <div class="condition"><span>&rsaquo;</span> WILLATEC S.A.C, Incorporado al Régimen de Buenos Contribuyentes Resolución de Intendencia N° 0230050266292 (Emitido - Sunat)</div>
