@@ -2,9 +2,8 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-use Illuminate\Database\Seeder;
 use App\Models\Categoria;
+use Illuminate\Database\Seeder;
 
 class CategoriaSeeder extends Seeder
 {
@@ -13,29 +12,26 @@ class CategoriaSeeder extends Seeder
      */
     public function run(): void
     {
-        Categoria::updateOrCreate(
-            ['nombre' => 'Tecnología'],
-        );
-        Categoria::updateOrCreate(
-            ['nombre' => 'Hogar'],
-        );
-        Categoria::updateOrCreate(
-            ['nombre' => 'Deportes'],
-        );
-        Categoria::updateOrCreate(
-            ['nombre' => 'Salud'],
-        );
-        Categoria::updateOrCreate(
-            ['nombre' => 'Alimentos y Bebidas'],
-        );
-        Categoria::updateOrCreate(
-            ['nombre' => 'Estanterías / Racks'],
-        );
-        Categoria::updateOrCreate(
-            ['nombre' => 'Repuestos impresoras'],
-        );
-        Categoria::updateOrCreate(
-            ['nombre' => 'Otros'],
-        );
+        $categorias = [
+            1 => 'LAPTOPS',
+            2 => 'ACCESORIOS',
+            3 => 'PERIFÉRICOS',
+            4 => 'COMPUTADORAS',
+            5 => 'LICENCIAS',
+            6 => 'SERVIDORES',
+            7 => 'GADGETS',
+            8 => 'SUMINISTROS',
+            9 => 'REDES',
+            10 => 'SEGURIDAD',
+            11 => 'COMPONENTES',
+            12 => 'ALMACENAMIENTO',
+        ];
+
+        foreach ($categorias as $id => $nombre) {
+            Categoria::updateOrCreate(
+                ['id' => $id],
+                ['nombre' => $nombre],
+            );
+        }
     }
 }

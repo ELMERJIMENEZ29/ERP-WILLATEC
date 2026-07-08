@@ -32,6 +32,7 @@ class SyncProductosExternos extends Command
         $linked = 0;
 
         CotizacionItem::query()
+            ->with('cotizacion:id,moneda_id,plantilla_id')
             ->whereNull('producto_id')
             ->where(function ($query): void {
                 $query->whereNull('producto_externo_id')
@@ -53,6 +54,9 @@ class SyncProductosExternos extends Command
                                 'proveedor' => $item->proveedor,
                                 'link_proveedor' => $item->link_proveedor,
                                 'costo_base_referencial' => $item->costo_base ?? 0,
+                                'moneda_id' => $item->cotizacion?->moneda_id,
+                                'precio_incluye_igv' => $this->plantillaIncluyeIgv($item->cotizacion?->plantilla_id),
+                                'plantilla_origen_id' => $item->cotizacion?->plantilla_id,
                                 'imagen' => $item->imagen,
                                 'garantia_meses' => $item->garantia_meses,
                                 'disponibilidad_tipo' => $item->disponibilidad_tipo,
@@ -74,5 +78,18 @@ class SyncProductosExternos extends Command
         $this->info("Items vinculados: {$linked}");
 
         return self::SUCCESS;
+    }
+
+    private function plantillaIncluyeIgv(?int $plantillaId): ?bool
+    {
+        if (! $plantillaId) {
+            return null;
+        }
+
+        if (in_array($plantillaId, [1, 2, 3, 4, 5], true)) {
+            return in_array($plantillaId, [3, 5], true);
+        }
+
+        return null;
     }
 }

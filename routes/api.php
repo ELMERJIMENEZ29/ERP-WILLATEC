@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuditoriaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\CotizacionController;
+use App\Http\Controllers\Api\InventarioController;
 use App\Http\Controllers\Api\OcEmitidaController;
 use App\Http\Controllers\Api\OcRecibidaController;
 use App\Http\Controllers\Api\OrdenCompraController;
@@ -11,6 +12,8 @@ use App\Http\Controllers\Api\ProductoController;
 use App\Http\Controllers\Api\ProductoExternoController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\WooCommerceProductoController;
+use App\Http\Controllers\Api\WooCommerceWebhookController;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
 
@@ -18,6 +21,8 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:3,1');
 Route::post('/superadmin/security-question-reset', [AuthController::class, 'resetPasswordWithSecurityQuestions'])
     ->middleware('throttle:3,1');
+Route::post('/woocommerce/webhook/orders', [WooCommerceWebhookController::class, 'orders'])
+    ->middleware('throttle:60,1');
 
 Route::post('/two-factor/challenge', [AuthController::class, 'twoFactorChallenge'])
     ->middleware('throttle:5,1');
@@ -68,18 +73,24 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::get('/auditoria', [AuditoriaController::class, 'index'])
         ->middleware('role:superadmin|admin');
+
+    Route::get('/inventario/movimientos', [InventarioController::class, 'indexMovimientos'])
+        ->middleware('role:superadmin');
 });
 
 Route::prefix('productos')->middleware('auth:sanctum')->group(function () {
     // PRODUCTOS
     Route::get('/', [ProductoController::class, 'index']);
+    Route::get('/{producto}/inventario', [InventarioController::class, 'show'])->middleware('role:superadmin|admin|soporte');
+    Route::get('/{producto}/movimientos', [InventarioController::class, 'movimientos'])->middleware('role:superadmin|admin|soporte');
+    Route::post('/{producto}/ajustar-stock', [InventarioController::class, 'ajustarStock'])->middleware('role:superadmin|admin|soporte');
     Route::get('/{id}', [ProductoController::class, 'show']);
 
-    Route::post('/', [ProductoController::class, 'store'])->middleware('role:superadmin|ventas|admin');
+    Route::post('/', [ProductoController::class, 'store'])->middleware('role:superadmin|ventas|admin|soporte');
 
-    Route::put('/{id}', [ProductoController::class, 'update'])->middleware('role:superadmin|ventas|admin');
+    Route::put('/{id}', [ProductoController::class, 'update'])->middleware('role:superadmin|ventas|admin|soporte');
 
-    Route::delete('/{id}', [ProductoController::class, 'destroy'])->middleware('role:superadmin|ventas|admin');
+    Route::delete('/{id}', [ProductoController::class, 'destroy'])->middleware('role:superadmin|ventas|admin|soporte');
 });
 
 Route::post('/upload-imagen', [CotizacionController::class, 'uploadImagen'])
@@ -88,6 +99,12 @@ Route::post('/upload-imagen', [CotizacionController::class, 'uploadImagen'])
 Route::prefix('productos-externos')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [ProductoExternoController::class, 'index'])
         ->middleware('role:superadmin|ventas');
+});
+
+Route::prefix('woocommerce')->middleware(['auth:sanctum', 'role:superadmin|admin'])->group(function () {
+    Route::post('/productos/mapear', [WooCommerceProductoController::class, 'mapear']);
+    Route::post('/productos/{producto}/sync-stock', [WooCommerceProductoController::class, 'sincronizarStock']);
+    Route::get('/sync-logs', [WooCommerceProductoController::class, 'logs']);
 });
 
 Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {

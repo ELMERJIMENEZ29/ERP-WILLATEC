@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreProductoRequest;
+use App\Http\Requests\UpdateProductoRequest;
 use App\Models\Producto;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -37,31 +39,32 @@ class ProductoController extends Controller
     }
 
     // Crear producto
-    public function store(Request $request)
+    public function store(StoreProductoRequest $request)
     {
-
-        $request->validate([
-            'nombre' => 'required|string|max:255',
-            'marca' => 'nullable|string|max:255',
-            'modelo' => 'nullable|string|max:255',
-            'codigo' => 'nullable|string|max:100',
-            'descripcion' => 'nullable|string',
-            'precio_referencial' => 'nullable|numeric|min:0',
-            'unidad_medida' => 'nullable|string|max:50',
-            'stock' => 'nullable|integer|min:0',
-            'categoria_id' => 'nullable|exists:categorias,id',
-            'imagen' => 'sometimes|nullable|image|max:2048',
-        ]);
+        $stockActual = (float) ($request->input('stock_actual', $request->input('stock', 0)));
+        $stockReservado = (float) $request->input('stock_reservado', 0);
 
         $data = [
             'nombre' => $request->nombre,
+            'sku' => $request->sku,
             'marca' => $request->marca,
             'modelo' => $request->modelo,
-            'codigo' => $request->codigo,
+            'codigo' => $request->codigo ?? $request->sku,
+            'codigo_barras' => $request->codigo_barras,
             'descripcion' => $request->descripcion,
+            'tipo_producto' => $request->tipo_producto ?? 'stock',
+            'controla_stock' => $request->boolean('controla_stock', true),
+            'stock_actual' => $stockActual,
+            'stock_reservado' => $stockReservado,
+            'stock_disponible' => max(0, $stockActual - $stockReservado),
+            'stock_minimo' => $request->input('stock_minimo', 0),
+            'costo_unitario' => $request->input('costo_unitario', 0),
+            'precio_venta' => $request->input('precio_venta', $request->input('precio_referencial', 0)),
+            'moneda_id' => $request->moneda_id,
             'precio_referencial' => $request->precio_referencial,
             'unidad_medida' => $request->unidad_medida,
-            'stock' => $request->stock ?? 0,
+            'estado' => $request->estado ?? 'nuevo',
+            'stock' => (int) round($stockActual),
             'categoria_id' => $request->categoria_id,
             'activo' => true,
         ];
@@ -79,37 +82,47 @@ class ProductoController extends Controller
     }
 
     // Actualizar producto
-    public function update(Request $request, int $id)
+    public function update(UpdateProductoRequest $request, int $id)
     {
 
         $producto = Producto::findOrFail($id);
 
-        $request->validate([
-            'nombre' => 'required|string|max:255',
-            'marca' => 'nullable|string|max:255',
-            'modelo' => 'nullable|string|max:255',
-            'codigo' => 'nullable|string|max:100',
-            'descripcion' => 'nullable|string',
-            'precio_referencial' => 'nullable|numeric|min:0',
-            'unidad_medida' => 'nullable|string|max:50',
-            'activo' => 'nullable|in:true,false,0,1',
-            'stock' => 'nullable|integer|min:0',
-            'categoria_id' => 'nullable|exists:categorias,id',
-            'imagen' => 'sometimes|nullable|image|max:2048',
-        ]);
-
         $data = $request->only([
             'nombre',
+            'sku',
             'marca',
             'modelo',
             'codigo',
+            'codigo_barras',
             'descripcion',
+            'tipo_producto',
+            'controla_stock',
+            'stock_actual',
+            'stock_reservado',
+            'stock_minimo',
+            'costo_unitario',
+            'precio_venta',
+            'moneda_id',
             'precio_referencial',
             'unidad_medida',
-            'activo'=> filter_var($request->activo, FILTER_VALIDATE_BOOLEAN),
+            'estado',
             'stock',
             'categoria_id',
         ]);
+
+        if ($request->has('activo')) {
+            $data['activo'] = filter_var($request->activo, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        if ($request->filled('stock_actual') || $request->filled('stock_reservado') || $request->filled('stock')) {
+            $stockActual = (float) ($data['stock_actual'] ?? $request->input('stock', $producto->stock_actual ?? 0));
+            $stockReservado = (float) ($data['stock_reservado'] ?? $producto->stock_reservado ?? 0);
+
+            $data['stock_actual'] = $stockActual;
+            $data['stock_reservado'] = $stockReservado;
+            $data['stock_disponible'] = max(0, $stockActual - $stockReservado);
+            $data['stock'] = (int) round($stockActual);
+        }
 
         if ($request->hasFile('imagen')) {
             if ($producto->imagen) {

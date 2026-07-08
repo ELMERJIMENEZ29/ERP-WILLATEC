@@ -18,6 +18,14 @@ class ProductoExternoController extends Controller
         ]);
 
         $query = ProductoExterno::query()
+            ->with([
+                'moneda',
+                'plantillaOrigen',
+                'ultimoCotizacionItem.proveedores',
+                'ultimoCotizacionItem.cotizacion.plantilla',
+                'ultimoCotizacionItemConProveedores.proveedores',
+                'ultimoCotizacionItemConProveedores.cotizacion.plantilla',
+            ])
             ->withCount(['cotizacionItems as veces_cotizado'])
             ->addSelect([
                 'ultimo_margen_usado' => CotizacionItem::select('margen')

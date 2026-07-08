@@ -37,6 +37,10 @@ class CotizacionController extends Controller
 {
     private const BUSINESS_TIMEZONE = 'America/Lima';
 
+    private const PLANTILLA_IDS_CON_IGV = [3, 5];
+
+    private const PLANTILLA_IDS_CON_REGLA_IGV = [1, 2, 3, 4, 5];
+
     private const FORMAS_PAGO = [
         'AL CONTADO',
         'CRÉDITO 15 DÍAS',
@@ -53,6 +57,21 @@ class CotizacionController extends Controller
     private function notifySuperadmins(object $notification): void
     {
         User::role('superadmin')->get()->each->notify($notification);
+    }
+
+    private function plantillaIncluyeIgv(?int $plantillaId): ?bool
+    {
+        if (! $plantillaId) {
+            return null;
+        }
+
+        if (in_array($plantillaId, self::PLANTILLA_IDS_CON_REGLA_IGV, true)) {
+            return in_array($plantillaId, self::PLANTILLA_IDS_CON_IGV, true);
+        }
+
+        $incluyeIgv = Plantilla::whereKey($plantillaId)->value('incluye_igv');
+
+        return $incluyeIgv === null ? null : (bool) $incluyeIgv;
     }
 
     // =========================
@@ -398,7 +417,7 @@ class CotizacionController extends Controller
         $cotizacion = Cotizacion::findOrFail($cotizacionId);
         $this->ensureCanEditCotizacion($request, $cotizacion);
 
-        DB::transaction(function () use ($request, $cotizacionId) {
+        DB::transaction(function () use ($request, $cotizacion, $cotizacionId) {
 
             $ultimoOrden = CotizacionItem::where('cotizacion_id', $cotizacionId)->max('orden') ?? 0;
 
@@ -434,6 +453,9 @@ class CotizacionController extends Controller
                 'producto_id' => $request->producto_id ?? null,
                 'producto_externo_id' => null,
                 'tipo' => $request->tipo ?? ($request->producto_id ? 'catalogo' : 'personalizado'),
+                'moneda_id' => $cotizacion->moneda_id,
+                'plantilla_origen_id' => $cotizacion->plantilla_id,
+                'precio_incluye_igv' => $this->plantillaIncluyeIgv($cotizacion->plantilla_id),
 
                 // Valores calculados iniciales — recalcular() los refinará
                 'costo_unitario' => $costoBase,
@@ -554,6 +576,9 @@ class CotizacionController extends Controller
             $snapshotForProductoExterno = [
                 ...$item->toArray(),
                 ...$itemData,
+                'moneda_id' => $item->cotizacion->moneda_id,
+                'plantilla_origen_id' => $item->cotizacion->plantilla_id,
+                'precio_incluye_igv' => $this->plantillaIncluyeIgv($item->cotizacion->plantilla_id),
             ];
             $itemData['producto_externo_id'] = $this->resolveProductoExternoId($snapshotForProductoExterno);
 
@@ -1175,6 +1200,9 @@ class CotizacionController extends Controller
                     'producto_id' => $item['producto_id'] ?? null,
                     'tipo' => $item['tipo'] ?? 'personalizado',
                     'imagen' => $this->resolveCotizacionItemImagen($request, $index, $item),
+                    'moneda_id' => $request->moneda_id,
+                    'plantilla_origen_id' => $request->plantilla_id,
+                    'precio_incluye_igv' => $this->plantillaIncluyeIgv($request->integer('plantilla_id')),
 
                     // Valores calculados iniciales — recalcular() los refinará con costos adicionales
                     'costo_unitario' => $costoBase,
@@ -1356,6 +1384,9 @@ class CotizacionController extends Controller
                     'producto_id' => $item['producto_id'] ?? null,
                     'tipo' => $item['tipo'] ?? 'personalizado',
                     'imagen' => $this->resolveCotizacionItemImagen($request, $index, $item),
+                    'moneda_id' => $request->moneda_id,
+                    'plantilla_origen_id' => $request->plantilla_id,
+                    'precio_incluye_igv' => $this->plantillaIncluyeIgv($request->integer('plantilla_id')),
 
                     // Valores calculados iniciales — recalcular() los refinará con costos adicionales
                     'costo_unitario' => $costoBase,
@@ -1624,6 +1655,9 @@ class CotizacionController extends Controller
                 'producto_id' => $item['producto_id'] ?? null,
                 'tipo' => $item['tipo'] ?? 'personalizado',
                 'imagen' => $this->resolveCotizacionItemImagenFromPayload($item),
+                'moneda_id' => $payload['moneda_id'],
+                'plantilla_origen_id' => $payload['plantilla_id'],
+                'precio_incluye_igv' => $this->plantillaIncluyeIgv((int) $payload['plantilla_id']),
                 'costo_unitario' => $costoBase,
                 'precio_venta' => $precioVenta,
                 'subtotal' => $pvt,
@@ -1858,7 +1892,7 @@ class CotizacionController extends Controller
 
         $fingerprint = ProductoExterno::fingerprintFrom($item);
 
-        return (int) ProductoExterno::firstOrCreate(
+        $productoExterno = ProductoExterno::firstOrCreate(
             ['fingerprint' => $fingerprint],
             [
                 'descripcion' => $item['descripcion'],
@@ -1868,6 +1902,9 @@ class CotizacionController extends Controller
                 'proveedor' => $item['proveedor'] ?? null,
                 'link_proveedor' => $item['link_proveedor'] ?? null,
                 'costo_base_referencial' => $item['costo_base'] ?? 0,
+                'moneda_id' => $item['moneda_id'] ?? null,
+                'precio_incluye_igv' => $item['precio_incluye_igv'] ?? null,
+                'plantilla_origen_id' => $item['plantilla_origen_id'] ?? null,
                 'imagen' => $item['imagen'] ?? null,
                 'garantia_meses' => $item['garantia_meses'] ?? null,
                 'disponibilidad_tipo' => $item['disponibilidad_tipo'] ?? 'stock',
@@ -1875,7 +1912,27 @@ class CotizacionController extends Controller
                 'stock' => $item['stock'] ?? 0,
                 'activo' => true,
             ]
-        )->id;
+        );
+
+        $contextUpdates = [];
+
+        if (! $productoExterno->moneda_id && ! empty($item['moneda_id'])) {
+            $contextUpdates['moneda_id'] = $item['moneda_id'];
+        }
+
+        if ($productoExterno->precio_incluye_igv === null && array_key_exists('precio_incluye_igv', $item)) {
+            $contextUpdates['precio_incluye_igv'] = $item['precio_incluye_igv'];
+        }
+
+        if (! $productoExterno->plantilla_origen_id && ! empty($item['plantilla_origen_id'])) {
+            $contextUpdates['plantilla_origen_id'] = $item['plantilla_origen_id'];
+        }
+
+        if ($contextUpdates !== []) {
+            $productoExterno->forceFill($contextUpdates)->save();
+        }
+
+        return (int) $productoExterno->id;
     }
 
     /**

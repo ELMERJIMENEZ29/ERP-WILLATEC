@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class ProductoExterno extends Model
@@ -18,6 +20,9 @@ class ProductoExterno extends Model
         'proveedor',
         'link_proveedor',
         'costo_base_referencial',
+        'moneda_id',
+        'precio_incluye_igv',
+        'plantilla_origen_id',
         'imagen',
         'garantia_meses',
         'disponibilidad_tipo',
@@ -30,6 +35,28 @@ class ProductoExterno extends Model
     public function cotizacionItems(): HasMany
     {
         return $this->hasMany(CotizacionItem::class);
+    }
+
+    public function moneda(): BelongsTo
+    {
+        return $this->belongsTo(Moneda::class);
+    }
+
+    public function plantillaOrigen(): BelongsTo
+    {
+        return $this->belongsTo(Plantilla::class, 'plantilla_origen_id');
+    }
+
+    public function ultimoCotizacionItem(): HasOne
+    {
+        return $this->hasOne(CotizacionItem::class)->latestOfMany();
+    }
+
+    public function ultimoCotizacionItemConProveedores(): HasOne
+    {
+        return $this->hasOne(CotizacionItem::class)
+            ->whereHas('proveedores')
+            ->latestOfMany();
     }
 
     /**
@@ -71,6 +98,9 @@ class ProductoExterno extends Model
         return [
             'activo' => 'boolean',
             'costo_base_referencial' => 'decimal:2',
+            'moneda_id' => 'integer',
+            'precio_incluye_igv' => 'boolean',
+            'plantilla_origen_id' => 'integer',
             'garantia_meses' => 'integer',
             'disponibilidad_dias' => 'integer',
             'stock' => 'integer',
