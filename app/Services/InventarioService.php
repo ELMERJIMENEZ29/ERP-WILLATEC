@@ -19,7 +19,14 @@ class InventarioService
         ?int $createdBy = null,
         ?string $observacion = null,
         ?string $ipOrigen = null,
-        ?string $userAgent = null
+        ?string $userAgent = null,
+        ?float $costoUnitario = null,
+        ?string $documentoTipo = null,
+        ?string $documentoNumero = null,
+        ?string $documentoPath = null,
+        ?string $fechaDocumento = null,
+        ?string $proveedor = null,
+        ?int $monedaId = null
     ): Producto {
         return $this->moverStock(
             productoId: $productoId,
@@ -32,7 +39,53 @@ class InventarioService
             createdBy: $createdBy,
             observacion: $observacion,
             ipOrigen: $ipOrigen,
-            userAgent: $userAgent
+            userAgent: $userAgent,
+            costoUnitario: $costoUnitario,
+            documentoTipo: $documentoTipo,
+            documentoNumero: $documentoNumero,
+            documentoPath: $documentoPath,
+            fechaDocumento: $fechaDocumento,
+            proveedor: $proveedor,
+            monedaId: $monedaId
+        );
+    }
+
+    public function registrarSalidaDesdeReserva(
+        int $productoId,
+        float $cantidad,
+        ?string $referenciaTipo = null,
+        ?int $referenciaId = null,
+        string $origen = 'erp',
+        ?string $idempotencyKey = null,
+        ?int $createdBy = null,
+        ?string $observacion = null,
+        ?string $ipOrigen = null,
+        ?string $userAgent = null,
+        ?string $documentoTipo = null,
+        ?string $documentoNumero = null,
+        ?string $documentoPath = null,
+        ?string $fechaDocumento = null,
+        ?int $monedaId = null,
+        bool $liberarReservaAsociada = true
+    ): Producto {
+        return $this->moverStock(
+            productoId: $productoId,
+            tipoMovimiento: InventarioMovimiento::TIPO_SALIDA,
+            cantidad: $cantidad,
+            referenciaTipo: $referenciaTipo,
+            referenciaId: $referenciaId,
+            origen: $origen,
+            idempotencyKey: $idempotencyKey,
+            createdBy: $createdBy,
+            observacion: $observacion,
+            ipOrigen: $ipOrigen,
+            userAgent: $userAgent,
+            documentoTipo: $documentoTipo,
+            documentoNumero: $documentoNumero,
+            documentoPath: $documentoPath,
+            fechaDocumento: $fechaDocumento,
+            monedaId: $monedaId,
+            liberarReservaAsociada: $liberarReservaAsociada
         );
     }
 
@@ -46,7 +99,8 @@ class InventarioService
         ?int $createdBy = null,
         ?string $observacion = null,
         ?string $ipOrigen = null,
-        ?string $userAgent = null
+        ?string $userAgent = null,
+        ?int $monedaId = null
     ): Producto {
         return $this->moverStock(
             productoId: $productoId,
@@ -59,7 +113,8 @@ class InventarioService
             createdBy: $createdBy,
             observacion: $observacion,
             ipOrigen: $ipOrigen,
-            userAgent: $userAgent
+            userAgent: $userAgent,
+            monedaId: $monedaId
         );
     }
 
@@ -73,7 +128,8 @@ class InventarioService
         ?int $createdBy = null,
         ?string $observacion = null,
         ?string $ipOrigen = null,
-        ?string $userAgent = null
+        ?string $userAgent = null,
+        ?int $monedaId = null
     ): Producto {
         return $this->moverStock(
             productoId: $productoId,
@@ -86,7 +142,8 @@ class InventarioService
             createdBy: $createdBy,
             observacion: $observacion,
             ipOrigen: $ipOrigen,
-            userAgent: $userAgent
+            userAgent: $userAgent,
+            monedaId: $monedaId
         );
     }
 
@@ -100,7 +157,14 @@ class InventarioService
         ?int $createdBy = null,
         ?string $observacion = null,
         ?string $ipOrigen = null,
-        ?string $userAgent = null
+        ?string $userAgent = null,
+        ?float $costoUnitario = null,
+        ?string $documentoTipo = null,
+        ?string $documentoNumero = null,
+        ?string $documentoPath = null,
+        ?string $fechaDocumento = null,
+        ?string $proveedor = null,
+        ?int $monedaId = null
     ): Producto {
         return $this->moverStock(
             productoId: $productoId,
@@ -113,7 +177,14 @@ class InventarioService
             createdBy: $createdBy,
             observacion: $observacion,
             ipOrigen: $ipOrigen,
-            userAgent: $userAgent
+            userAgent: $userAgent,
+            costoUnitario: $costoUnitario,
+            documentoTipo: $documentoTipo,
+            documentoNumero: $documentoNumero,
+            documentoPath: $documentoPath,
+            fechaDocumento: $fechaDocumento,
+            proveedor: $proveedor,
+            monedaId: $monedaId
         );
     }
 
@@ -151,6 +222,7 @@ class InventarioService
                 'stock_antes' => $stockAntes,
                 'stock_despues' => (float) $producto->stock_actual,
                 'origen' => 'ajuste_manual',
+                'moneda_id' => $producto->moneda_id,
                 'observacion' => $observacion,
                 'ip_origen' => $ipOrigen,
                 'user_agent' => $userAgent,
@@ -183,7 +255,15 @@ class InventarioService
         ?int $createdBy,
         ?string $observacion,
         ?string $ipOrigen = null,
-        ?string $userAgent = null
+        ?string $userAgent = null,
+        ?float $costoUnitario = null,
+        ?int $monedaId = null,
+        ?string $documentoTipo = null,
+        ?string $documentoNumero = null,
+        ?string $documentoPath = null,
+        ?string $fechaDocumento = null,
+        ?string $proveedor = null,
+        bool $liberarReservaAsociada = false
     ): Producto {
         return DB::transaction(function () use (
             $productoId,
@@ -196,7 +276,15 @@ class InventarioService
             $createdBy,
             $observacion,
             $ipOrigen,
-            $userAgent
+            $userAgent,
+            $costoUnitario,
+            $monedaId,
+            $documentoTipo,
+            $documentoNumero,
+            $documentoPath,
+            $fechaDocumento,
+            $proveedor,
+            $liberarReservaAsociada
         ): Producto {
             if ($idempotencyKey) {
                 $movimientoExistente = InventarioMovimiento::query()
@@ -222,13 +310,19 @@ class InventarioService
 
             $stockAntes = (float) $producto->stock_actual;
             $stockReservado = (float) $producto->stock_reservado;
+            $costoPromedioAntes = (float) ($producto->costo_promedio ?? $producto->costo_unitario ?? 0);
+            $valorStockAntes = (float) ($producto->valor_stock ?? ($stockAntes * $costoPromedioAntes));
+            $entradaCantidad = 0.0;
+            $salidaCantidad = 0.0;
+            $costoMovimiento = $costoUnitario ?? $costoPromedioAntes;
+            $monedaMovimientoId = $monedaId ?? $producto->moneda_id;
 
             match ($tipoMovimiento) {
                 InventarioMovimiento::TIPO_ENTRADA,
                 InventarioMovimiento::TIPO_DEVOLUCION,
-                InventarioMovimiento::TIPO_SINCRONIZACION_WOOCOMMERCE => $producto->stock_actual = $stockAntes + $cantidad,
+                InventarioMovimiento::TIPO_SINCRONIZACION_WOOCOMMERCE => $producto->stock_actual = $stockAntes + ($entradaCantidad = $cantidad),
 
-                InventarioMovimiento::TIPO_SALIDA => $producto->stock_actual = $this->restarSinNegativo($stockAntes, $cantidad, 'stock_actual'),
+                InventarioMovimiento::TIPO_SALIDA => $this->aplicarSalida($producto, $cantidad, $liberarReservaAsociada, $salidaCantidad),
 
                 InventarioMovimiento::TIPO_RESERVA => $producto->stock_reservado = $stockReservado + $this->validarStockDisponible($producto, $cantidad),
 
@@ -239,6 +333,26 @@ class InventarioService
                 ]),
             };
 
+            if ($entradaCantidad > 0) {
+                $costoMovimiento = max(0, (float) $costoMovimiento);
+                if ($monedaMovimientoId) {
+                    $producto->moneda_id = $monedaMovimientoId;
+                }
+                $nuevoValorStock = $valorStockAntes + ($entradaCantidad * $costoMovimiento);
+                $nuevoStock = (float) $producto->stock_actual;
+                $producto->costo_promedio = $nuevoStock > 0 ? round($nuevoValorStock / $nuevoStock, 4) : 0;
+                $producto->costo_unitario = $producto->costo_promedio;
+                $producto->valor_stock = round($nuevoValorStock, 2);
+            } elseif ($salidaCantidad > 0) {
+                $costoMovimiento = $costoPromedioAntes;
+                $producto->costo_promedio = $costoPromedioAntes;
+                $producto->costo_unitario = $costoPromedioAntes;
+                $producto->valor_stock = round(max(0, (float) $producto->stock_actual) * $costoPromedioAntes, 2);
+            } else {
+                $producto->costo_promedio = $costoPromedioAntes;
+                $producto->valor_stock = round(max(0, (float) $producto->stock_actual) * $costoPromedioAntes, 2);
+            }
+
             $this->recalcularProducto($producto);
             $producto->save();
 
@@ -246,13 +360,27 @@ class InventarioService
                 'producto_id' => $producto->id,
                 'tipo_movimiento' => $tipoMovimiento,
                 'cantidad' => $cantidad,
+                'entrada_cantidad' => $entradaCantidad,
+                'salida_cantidad' => $salidaCantidad,
                 'stock_antes' => $stockAntes,
                 'stock_despues' => (float) $producto->stock_actual,
+                'saldo_cantidad' => (float) $producto->stock_actual,
+                'costo_unitario' => $costoMovimiento,
+                'moneda_id' => $monedaMovimientoId,
+                'costo_promedio_antes' => $costoPromedioAntes,
+                'costo_promedio_despues' => (float) $producto->costo_promedio,
+                'valor_movimiento' => round($cantidad * $costoMovimiento, 2),
+                'valor_stock_despues' => (float) $producto->valor_stock,
                 'referencia_tipo' => $referenciaTipo,
                 'referencia_id' => $referenciaId,
                 'origen' => $origen,
                 'idempotency_key' => $idempotencyKey,
                 'observacion' => $observacion,
+                'documento_tipo' => $documentoTipo,
+                'documento_numero' => $documentoNumero,
+                'documento_path' => $documentoPath,
+                'fecha_documento' => $fechaDocumento,
+                'proveedor' => $proveedor,
                 'ip_origen' => $ipOrigen,
                 'user_agent' => $userAgent,
                 'created_by' => $createdBy,
@@ -271,6 +399,16 @@ class InventarioService
         }
 
         return $cantidad;
+    }
+
+    private function aplicarSalida(Producto $producto, float $cantidad, bool $liberarReservaAsociada, float &$salidaCantidad): void
+    {
+        $producto->stock_actual = $this->restarSinNegativo((float) $producto->stock_actual, $cantidad, 'stock_actual');
+        $salidaCantidad = $cantidad;
+
+        if ($liberarReservaAsociada) {
+            $producto->stock_reservado = $this->restarSinNegativo((float) $producto->stock_reservado, $cantidad, 'stock_reservado');
+        }
     }
 
     private function restarSinNegativo(float $valorActual, float $cantidad, string $campo): float
@@ -295,5 +433,6 @@ class InventarioService
         $producto->stock_reservado = $stockReservado;
         $producto->stock_disponible = max(0, $stockActual - $stockReservado);
         $producto->stock = (int) round($stockActual);
+        $producto->valor_stock = round($stockActual * (float) ($producto->costo_promedio ?? 0), 2);
     }
 }

@@ -43,6 +43,7 @@ class ProductoController extends Controller
     {
         $stockActual = (float) ($request->input('stock_actual', $request->input('stock', 0)));
         $stockReservado = (float) $request->input('stock_reservado', 0);
+        $costoPromedio = (float) $request->input('costo_unitario', 0);
 
         $data = [
             'nombre' => $request->nombre,
@@ -59,6 +60,8 @@ class ProductoController extends Controller
             'stock_disponible' => max(0, $stockActual - $stockReservado),
             'stock_minimo' => $request->input('stock_minimo', 0),
             'costo_unitario' => $request->input('costo_unitario', 0),
+            'costo_promedio' => $costoPromedio,
+            'valor_stock' => round($stockActual * $costoPromedio, 2),
             'precio_venta' => $request->input('precio_venta', $request->input('precio_referencial', 0)),
             'moneda_id' => $request->moneda_id,
             'precio_referencial' => $request->precio_referencial,
@@ -101,6 +104,8 @@ class ProductoController extends Controller
             'stock_reservado',
             'stock_minimo',
             'costo_unitario',
+            'costo_promedio',
+            'valor_stock',
             'precio_venta',
             'moneda_id',
             'precio_referencial',
@@ -122,6 +127,16 @@ class ProductoController extends Controller
             $data['stock_reservado'] = $stockReservado;
             $data['stock_disponible'] = max(0, $stockActual - $stockReservado);
             $data['stock'] = (int) round($stockActual);
+        }
+
+        if ($request->filled('costo_unitario')) {
+            $data['costo_promedio'] = (float) $request->input('costo_unitario');
+        }
+
+        if (array_key_exists('costo_promedio', $data) || array_key_exists('stock_actual', $data)) {
+            $stockActual = (float) ($data['stock_actual'] ?? $producto->stock_actual ?? 0);
+            $costoPromedio = (float) ($data['costo_promedio'] ?? $producto->costo_promedio ?? $producto->costo_unitario ?? 0);
+            $data['valor_stock'] = round($stockActual * $costoPromedio, 2);
         }
 
         if ($request->hasFile('imagen')) {

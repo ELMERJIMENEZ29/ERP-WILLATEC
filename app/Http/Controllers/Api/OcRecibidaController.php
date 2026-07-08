@@ -5,13 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Cotizacion;
 use App\Models\EstadoCotizacion;
+use App\Models\InventarioMovimiento;
 use App\Models\OcRecibida;
 use App\Models\OcRecibidaItem;
 use App\Models\User;
 use App\Notifications\OcRecibidaRegistradaNotification;
+use App\Services\InventarioService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class OcRecibidaController extends Controller
 {
@@ -92,6 +95,8 @@ class OcRecibidaController extends Controller
             'observaciones' => 'nullable|string',
             'orden_compra_cliente' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
             'guia_emision' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
+            'factura_numero' => 'nullable|string|max:100',
+            'factura' => 'nullable|file|mimes:pdf,xml,doc,docx,jpg,jpeg,png|max:10240',
             'items' => 'required|array|min:1',
             'items.*.cotizacion_item_id' => 'required|integer|exists:cotizacion_items,id',
             'items.*.seleccionado' => 'required|boolean',
@@ -120,6 +125,7 @@ class OcRecibidaController extends Controller
                 'fecha_recepcion' => $validated['fecha_recepcion'] ?? now()->toDateString(),
                 'estado' => OcRecibida::ESTADO_PENDIENTE,
                 'observaciones' => $validated['observaciones'] ?? null,
+                'factura_numero' => $validated['factura_numero'] ?? $ocRecibida->factura_numero,
                 'cliente_nombre' => $cotizacion->cliente_nombre,
                 'cliente_ruc' => $cotizacion->cliente_ruc,
                 'cliente_contacto' => $cotizacion->cliente_contacto,
@@ -134,6 +140,10 @@ class OcRecibidaController extends Controller
 
             if ($request->hasFile('guia_emision')) {
                 $ocRecibida->guia_emision_path = $this->storeDocumento($request->file('guia_emision'), 'oc-recibidas');
+            }
+
+            if ($request->hasFile('factura')) {
+                $ocRecibida->factura_path = $this->storeDocumento($request->file('factura'), 'oc-recibidas/facturas');
             }
 
             $ocRecibida->save();
@@ -162,6 +172,7 @@ class OcRecibidaController extends Controller
             }
 
             $ocRecibida->refresh()->load('items');
+            $this->reservarStockOc($ocRecibida->load('items.cotizacionItem'), $request);
             $this->actualizarEstadoOc($ocRecibida);
             $this->actualizarEstadoCotizacion($cotizacion, $ocRecibida);
 
@@ -189,7 +200,9 @@ class OcRecibidaController extends Controller
             'items.*.entregado' => 'required|boolean',
         ]);
 
-        DB::transaction(function () use ($validated, $ocRecibida): void {
+        DB::transaction(function () use ($request, $validated, $ocRecibida): void {
+            $this->reservarStockOc($ocRecibida->refresh()->load('items.cotizacionItem'), $request);
+
             foreach ($validated['items'] as $itemData) {
                 $ocRecibida->items()
                     ->whereKey($itemData['id'])
@@ -200,6 +213,11 @@ class OcRecibidaController extends Controller
             }
 
             $this->actualizarEstadoOc($ocRecibida->refresh()->load('items'));
+            $ocRecibida->refresh()->load('items.cotizacionItem');
+
+            if ($ocRecibida->estado === OcRecibida::ESTADO_ATENDIDO) {
+                $this->registrarSalidaAtendida($ocRecibida, $request);
+            }
         });
 
         $ocRecibida->refresh()->load('items');
@@ -224,6 +242,8 @@ class OcRecibidaController extends Controller
         $request->validate([
             'orden_compra_cliente' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
             'guia_emision' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
+            'factura_numero' => 'nullable|string|max:100',
+            'factura' => 'nullable|file|mimes:pdf,xml,doc,docx,jpg,jpeg,png|max:10240',
         ]);
 
         if ($request->hasFile('orden_compra_cliente')) {
@@ -232,6 +252,14 @@ class OcRecibidaController extends Controller
 
         if ($request->hasFile('guia_emision')) {
             $ocRecibida->guia_emision_path = $this->storeDocumento($request->file('guia_emision'), 'oc-recibidas');
+        }
+
+        if ($request->filled('factura_numero')) {
+            $ocRecibida->factura_numero = $request->string('factura_numero')->toString();
+        }
+
+        if ($request->hasFile('factura')) {
+            $ocRecibida->factura_path = $this->storeDocumento($request->file('factura'), 'oc-recibidas/facturas');
         }
 
         $ocRecibida->save();
@@ -260,6 +288,82 @@ class OcRecibidaController extends Controller
         }
 
         $ocRecibida->update(['estado' => $estado]);
+    }
+
+    private function reservarStockOc(OcRecibida $ocRecibida, Request $request): void
+    {
+        $inventarioService = app(InventarioService::class);
+        $ocRecibida->loadMissing('cotizacion');
+        $monedaId = $ocRecibida->cotizacion?->moneda_id;
+
+        foreach ($ocRecibida->items->where('seleccionado', true)->where('entregado', false) as $item) {
+            $productoId = $item->cotizacionItem?->producto_id;
+
+            if (! $productoId) {
+                continue;
+            }
+
+            $inventarioService->reservarStock(
+                productoId: (int) $productoId,
+                cantidad: (float) $item->cantidad_recibida,
+                referenciaTipo: 'oc_recibida',
+                referenciaId: $ocRecibida->id,
+                origen: 'orden_compra',
+                idempotencyKey: "oc-recibida:{$ocRecibida->id}:reserva:cotizacion-item:{$item->cotizacion_item_id}",
+                createdBy: $request->user()?->id,
+                observacion: "Reserva por OC recibida {$ocRecibida->numero}",
+                ipOrigen: $request->ip(),
+                userAgent: $request->userAgent(),
+                monedaId: $monedaId
+            );
+        }
+    }
+
+    private function registrarSalidaAtendida(OcRecibida $ocRecibida, Request $request): void
+    {
+        if (! $ocRecibida->factura_numero || ! $ocRecibida->factura_path) {
+            throw ValidationException::withMessages([
+                'factura' => 'Para atender una OC recibida debe registrar numero de factura y archivo de factura.',
+            ]);
+        }
+
+        $inventarioService = app(InventarioService::class);
+        $ocRecibida->loadMissing('cotizacion');
+        $monedaId = $ocRecibida->cotizacion?->moneda_id;
+
+        foreach ($ocRecibida->items->where('seleccionado', true) as $item) {
+            $productoId = $item->cotizacionItem?->producto_id;
+
+            if (! $productoId) {
+                throw ValidationException::withMessages([
+                    'producto_id' => "El item {$item->descripcion} no esta asociado a un producto interno de inventario.",
+                ]);
+            }
+
+            $reservaKey = "oc-recibida:{$ocRecibida->id}:reserva:cotizacion-item:{$item->cotizacion_item_id}";
+            $liberarReserva = InventarioMovimiento::query()
+                ->where('idempotency_key', $reservaKey)
+                ->exists();
+
+            $inventarioService->registrarSalidaDesdeReserva(
+                productoId: (int) $productoId,
+                cantidad: (float) $item->cantidad_recibida,
+                referenciaTipo: 'oc_recibida',
+                referenciaId: $ocRecibida->id,
+                origen: 'orden_compra',
+                idempotencyKey: "oc-recibida:{$ocRecibida->id}:salida:cotizacion-item:{$item->cotizacion_item_id}",
+                createdBy: $request->user()?->id,
+                observacion: "Salida por OC atendida {$ocRecibida->numero}",
+                ipOrigen: $request->ip(),
+                userAgent: $request->userAgent(),
+                documentoTipo: 'factura',
+                documentoNumero: $ocRecibida->factura_numero,
+                documentoPath: $ocRecibida->factura_path,
+                fechaDocumento: now()->toDateString(),
+                monedaId: $monedaId,
+                liberarReservaAsociada: $liberarReserva
+            );
+        }
     }
 
     private function actualizarEstadoCotizacion(Cotizacion $cotizacion, OcRecibida $ocRecibida): void

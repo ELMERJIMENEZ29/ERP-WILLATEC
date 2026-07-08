@@ -2,10 +2,13 @@
 
 use App\Models\InventarioMovimiento;
 use App\Models\Producto;
+use App\Models\ProductoExterno;
 use App\Models\User;
 use App\Services\InventarioService;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
@@ -179,4 +182,88 @@ test('superadmin consulta movimientos de inventario con filtros', function () {
         ->assertJsonPath('data.0.created_by.id', $superadmin->id)
         ->assertJsonPath('data.0.ip_origen', '10.0.0.15')
         ->assertJsonPath('data.0.user_agent', 'Audit-Agent/1.0');
+});
+
+test('kardex calcula costo promedio valorizado en entradas y salidas', function () {
+    $producto = Producto::create([
+        'nombre' => 'Monitor Kardex',
+        'sku' => 'KDX-001',
+        'codigo' => 'KDX-001',
+        'tipo_producto' => 'stock',
+        'controla_stock' => true,
+        'stock_actual' => 10,
+        'stock_reservado' => 0,
+        'stock_disponible' => 10,
+        'stock' => 10,
+        'costo_unitario' => 100,
+        'costo_promedio' => 100,
+        'valor_stock' => 1000,
+        'activo' => true,
+    ]);
+
+    $service = app(InventarioService::class);
+
+    $service->registrarEntrada(
+        productoId: $producto->id,
+        cantidad: 5,
+        origen: 'kardex',
+        idempotencyKey: 'kardex-entrada-1',
+        costoUnitario: 120,
+        documentoTipo: 'factura',
+        documentoNumero: 'F001-100',
+        proveedor: 'Proveedor Kardex',
+    );
+
+    expect((float) $producto->refresh()->stock_actual)->toBe(15.0)
+        ->and(round((float) $producto->costo_promedio, 2))->toBe(106.67)
+        ->and((float) $producto->valor_stock)->toBe(1600.0);
+
+    $service->registrarSalida($producto->id, 3, origen: 'erp', idempotencyKey: 'kardex-salida-1');
+
+    $salida = InventarioMovimiento::where('idempotency_key', 'kardex-salida-1')->first();
+
+    expect((float) $producto->refresh()->stock_actual)->toBe(12.0)
+        ->and(round((float) $producto->valor_stock, 2))->toBe(1280.0)
+        ->and((float) $salida->salida_cantidad)->toBe(3.0)
+        ->and(round((float) $salida->costo_unitario, 2))->toBe(106.67);
+});
+
+test('superadmin convierte producto externo a interno con entrada kardex', function () {
+    Storage::fake('public');
+    $this->seed(RoleSeeder::class);
+
+    $superadmin = User::factory()->create();
+    $superadmin->assignRole('superadmin');
+    Sanctum::actingAs($superadmin);
+
+    $externo = ProductoExterno::create([
+        'descripcion' => 'Docking externo',
+        'marca' => 'Willatec',
+        'codigo' => 'DOCK-EXT-01',
+        'unidad_medida' => 'UND',
+        'proveedor' => 'Proveedor Demo',
+        'costo_base_referencial' => 150,
+        'stock' => 0,
+        'fingerprint' => 'dock-ext-01',
+        'activo' => true,
+    ]);
+
+    $this
+        ->post("/api/productos-externos/{$externo->id}/convertir-interno", [
+            'cantidad' => 4,
+            'costo_unitario' => 150,
+            'documento_numero' => 'F001-900',
+            'factura' => UploadedFile::fake()->create('factura.pdf', 10, 'application/pdf'),
+        ])
+        ->assertOk()
+        ->assertJsonPath('producto.sku', '0001')
+        ->assertJsonPath('producto_externo.producto.sku', '0001');
+
+    $producto = Producto::where('sku', '0001')->first();
+
+    expect($producto)->not->toBeNull()
+        ->and((float) $producto->stock_actual)->toBe(4.0)
+        ->and((float) $producto->costo_promedio)->toBe(150.0)
+        ->and((int) $externo->refresh()->producto_id)->toBe((int) $producto->id)
+        ->and(InventarioMovimiento::where('producto_id', $producto->id)->where('documento_numero', 'F001-900')->exists())->toBeTrue();
 });

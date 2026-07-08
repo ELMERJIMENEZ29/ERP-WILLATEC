@@ -120,7 +120,8 @@ class OrdenCompraService
                         origen: 'orden_compra',
                         idempotencyKey: "orden_compra_item_{$ordenItem->id}_salida",
                         createdBy: $cotizacion->user_id,
-                        observacion: 'Salida generada desde orden de compra de cotizacion'
+                        observacion: 'Salida generada desde orden de compra de cotizacion',
+                        monedaId: $cotizacion->moneda_id
                     );
                 }
 

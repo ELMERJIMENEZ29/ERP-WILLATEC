@@ -21,19 +21,35 @@ class InventarioMovimiento extends Model
 
     public const TIPO_SINCRONIZACION_WOOCOMMERCE = 'sincronizacion_woocommerce';
 
+    public const TIPO_REVERSO = 'reverso';
+
     protected $table = 'inventario_movimientos';
 
     protected $fillable = [
         'producto_id',
         'tipo_movimiento',
         'cantidad',
+        'entrada_cantidad',
+        'salida_cantidad',
         'stock_antes',
         'stock_despues',
+        'saldo_cantidad',
+        'costo_unitario',
+        'moneda_id',
+        'costo_promedio_antes',
+        'costo_promedio_despues',
+        'valor_movimiento',
+        'valor_stock_despues',
         'referencia_tipo',
         'referencia_id',
         'origen',
         'idempotency_key',
         'observacion',
+        'documento_tipo',
+        'documento_numero',
+        'documento_path',
+        'fecha_documento',
+        'proveedor',
         'ip_origen',
         'user_agent',
         'created_by',
@@ -42,6 +58,11 @@ class InventarioMovimiento extends Model
     public function producto(): BelongsTo
     {
         return $this->belongsTo(Producto::class);
+    }
+
+    public function moneda(): BelongsTo
+    {
+        return $this->belongsTo(Moneda::class);
     }
 
     public function createdBy(): BelongsTo
@@ -56,8 +77,17 @@ class InventarioMovimiento extends Model
     {
         return [
             'cantidad' => 'decimal:2',
+            'entrada_cantidad' => 'decimal:2',
+            'salida_cantidad' => 'decimal:2',
             'stock_antes' => 'decimal:2',
             'stock_despues' => 'decimal:2',
+            'saldo_cantidad' => 'decimal:2',
+            'costo_unitario' => 'decimal:4',
+            'costo_promedio_antes' => 'decimal:4',
+            'costo_promedio_despues' => 'decimal:4',
+            'valor_movimiento' => 'decimal:2',
+            'valor_stock_despues' => 'decimal:2',
+            'fecha_documento' => 'date:Y-m-d',
         ];
     }
 }

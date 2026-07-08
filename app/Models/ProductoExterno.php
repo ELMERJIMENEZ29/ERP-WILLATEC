@@ -13,6 +13,7 @@ class ProductoExterno extends Model
     protected $table = 'productos_externos';
 
     protected $fillable = [
+        'producto_id',
         'descripcion',
         'marca',
         'codigo',
@@ -35,6 +36,11 @@ class ProductoExterno extends Model
     public function cotizacionItems(): HasMany
     {
         return $this->hasMany(CotizacionItem::class);
+    }
+
+    public function producto(): BelongsTo
+    {
+        return $this->belongsTo(Producto::class);
     }
 
     public function moneda(): BelongsTo
@@ -97,6 +103,7 @@ class ProductoExterno extends Model
     {
         return [
             'activo' => 'boolean',
+            'producto_id' => 'integer',
             'costo_base_referencial' => 'decimal:2',
             'moneda_id' => 'integer',
             'precio_incluye_igv' => 'boolean',
