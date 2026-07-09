@@ -34,6 +34,7 @@ class InventarioController extends Controller
         $query = InventarioMovimiento::query()
             ->with([
                 'producto:id,nombre,sku,codigo,serie',
+                'productoSerie:id,producto_id,serie,factura_numero,estado',
                 'moneda:id,codigo,simbolo',
                 'proveedorCatalogo:id,nombre,ruc',
                 'createdBy:id,nombres,apellidos,email',
@@ -63,8 +64,12 @@ class InventarioController extends Controller
         if (! empty($validated['serie'])) {
             $serie = $validated['serie'];
 
-            $query->whereHas('producto', function ($query) use ($serie): void {
-                $query->where('serie', 'like', "%{$serie}%");
+            $query->where(function ($query) use ($serie): void {
+                $query->whereHas('producto', function ($productoQuery) use ($serie): void {
+                    $productoQuery->where('serie', 'like', "%{$serie}%");
+                })->orWhereHas('productoSerie', function ($serieQuery) use ($serie): void {
+                    $serieQuery->where('serie', 'like', "%{$serie}%");
+                });
             });
         }
 
@@ -85,6 +90,10 @@ class InventarioController extends Controller
                     ->orWhere('ip_origen', 'like', "%{$search}%")
                     ->orWhere('documento_numero', 'like', "%{$search}%")
                     ->orWhere('proveedor', 'like', "%{$search}%")
+                    ->orWhereHas('productoSerie', function ($query) use ($search): void {
+                        $query->where('serie', 'like', "%{$search}%")
+                            ->orWhere('factura_numero', 'like', "%{$search}%");
+                    })
                     ->orWhereHas('producto', function ($query) use ($search): void {
                         $query->where('nombre', 'like', "%{$search}%")
                             ->orWhere('sku', 'like', "%{$search}%")

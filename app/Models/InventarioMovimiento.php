@@ -27,6 +27,7 @@ class InventarioMovimiento extends Model
 
     protected $fillable = [
         'producto_id',
+        'producto_serie_id',
         'tipo_movimiento',
         'cantidad',
         'entrada_cantidad',
@@ -59,6 +60,11 @@ class InventarioMovimiento extends Model
     public function producto(): BelongsTo
     {
         return $this->belongsTo(Producto::class);
+    }
+
+    public function productoSerie(): BelongsTo
+    {
+        return $this->belongsTo(ProductoSerie::class);
     }
 
     public function moneda(): BelongsTo

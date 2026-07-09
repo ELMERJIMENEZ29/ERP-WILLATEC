@@ -60,6 +60,11 @@ class Producto extends Model
         return $this->hasMany(InventarioMovimiento::class);
     }
 
+    public function series(): HasMany
+    {
+        return $this->hasMany(ProductoSerie::class);
+    }
+
     public function woocommerceProducto(): HasOne
     {
         return $this->hasOne(WooCommerceProducto::class);
