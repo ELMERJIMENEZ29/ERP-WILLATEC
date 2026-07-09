@@ -46,6 +46,30 @@ test('producto de stock requiere sku unico desde api', function () {
         ->assertJsonValidationErrors('sku');
 });
 
+test('logistica puede crear producto interno y verlo en el listado activo', function () {
+    $this->seed(RoleSeeder::class);
+
+    $logistica = User::factory()->create();
+    $logistica->assignRole('logistica');
+
+    Sanctum::actingAs($logistica);
+
+    $response = $this->postJson('/api/productos', [
+        'nombre' => 'Producto interno logística',
+        'sku' => 'INT-LOG-001',
+        'controla_stock' => true,
+        'stock_actual' => 3,
+        'costo_unitario' => 150,
+        'precio_venta' => 200,
+    ])->assertCreated();
+
+    $productoId = $response->json('producto.id');
+
+    $this->getJson('/api/productos?activo=true&per_page=10')
+        ->assertOk()
+        ->assertJsonFragment(['id' => $productoId]);
+});
+
 test('inventario registra entrada salida reserva liberacion e idempotencia', function () {
     $producto = Producto::create([
         'nombre' => 'Laptop Inventario',

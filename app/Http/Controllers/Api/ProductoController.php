@@ -18,10 +18,10 @@ class ProductoController extends Controller
         $query = Producto::query();
 
         if ($request->has('activo')) {
-            $query->where('activo', $request->activo);
+            $query->where('activo', $request->boolean('activo'));
         }
 
-        return response()->json($query->paginate($request->per_page ?? 10));
+        return response()->json($query->latest()->paginate($request->integer('per_page', 10)));
     }
 
     // Ver detalle
@@ -71,7 +71,7 @@ class ProductoController extends Controller
             'estado' => $request->estado ?? 'nuevo',
             'stock' => (int) round($stockActual),
             'categoria_id' => $request->categoria_id,
-            'activo' => true,
+            'activo' => $request->boolean('activo', true),
         ];
 
         if ($request->hasFile('imagen')) {
