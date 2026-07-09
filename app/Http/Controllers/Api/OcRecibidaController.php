@@ -209,7 +209,18 @@ class OcRecibidaController extends Controller
         ]);
 
         DB::transaction(function () use ($request, $validated, $ocRecibida): void {
+            $this->reservarStockOc($ocRecibida->refresh()->load('items.cotizacionItem'), $request);
+            $itemsActuales = $ocRecibida->refresh()->load('items')->items->keyBy('id');
+
             foreach ($validated['items'] as $itemData) {
+                $itemActual = $itemsActuales->get((int) $itemData['id']);
+
+                if ((bool) $itemData['entregado'] && ! (bool) $itemActual?->comprado) {
+                    throw ValidationException::withMessages([
+                        'entregado' => "El item {$itemActual?->descripcion} no puede marcarse como entregado porque aun no esta comprado.",
+                    ]);
+                }
+
                 $ocRecibida->items()
                     ->whereKey($itemData['id'])
                     ->update([
@@ -217,7 +228,6 @@ class OcRecibidaController extends Controller
                     ]);
             }
 
-            $this->reservarStockOc($ocRecibida->refresh()->load('items.cotizacionItem'), $request);
             $this->actualizarEstadoOc($ocRecibida->refresh()->load('items'));
             $ocRecibida->refresh()->load('items.cotizacionItem');
 
