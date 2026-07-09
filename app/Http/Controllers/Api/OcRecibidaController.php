@@ -104,6 +104,12 @@ class OcRecibidaController extends Controller
         ]);
 
         $cotizacion = Cotizacion::with(['items', 'cliente'])->findOrFail($validated['cotizacion_id']);
+        $this->ensureCanCreateOcForCotizacion($request, $cotizacion);
+
+        $existingOc = OcRecibida::query()->where('cotizacion_id', $cotizacion->id)->first();
+        if ($existingOc) {
+            $this->ensureCanEditOc($request, $existingOc);
+        }
 
         $selectedItems = collect($validated['items'])
             ->filter(fn (array $item): bool => (bool) $item['seleccionado'] && (int) $item['cantidad_recibida'] > 0);
@@ -131,7 +137,7 @@ class OcRecibidaController extends Controller
                 'cliente_contacto' => $cotizacion->cliente_contacto,
                 'cliente_correo' => $cotizacion->cliente_correo,
                 'cliente_id' => $cotizacion->cliente_id,
-                'user_id' => $request->user()->id,
+                'user_id' => $ocRecibida->user_id ?: $request->user()->id,
             ]);
 
             if ($request->hasFile('orden_compra_cliente')) {
@@ -193,6 +199,8 @@ class OcRecibidaController extends Controller
 
     public function updateItems(Request $request, OcRecibida $ocRecibida)
     {
+        $this->ensureCanEditOc($request, $ocRecibida);
+
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.id' => 'required|integer|exists:oc_recibida_items,id',
@@ -239,6 +247,8 @@ class OcRecibidaController extends Controller
 
     public function documentos(Request $request, OcRecibida $ocRecibida)
     {
+        $this->ensureCanEditOc($request, $ocRecibida);
+
         $request->validate([
             'orden_compra_cliente' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
             'guia_emision' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
@@ -385,6 +395,32 @@ class OcRecibidaController extends Controller
     private function generarNumero(): string
     {
         return 'OCR-'.str_pad((string) (OcRecibida::count() + 1), 6, '0', STR_PAD_LEFT);
+    }
+
+    private function ensureCanCreateOcForCotizacion(Request $request, Cotizacion $cotizacion): void
+    {
+        if ($request->user()->hasRole('superadmin')) {
+            return;
+        }
+
+        if ((int) $cotizacion->user_id === (int) $request->user()->id) {
+            return;
+        }
+
+        abort(403, 'Solo el creador de la cotizacion puede asociar la orden de compra.');
+    }
+
+    private function ensureCanEditOc(Request $request, OcRecibida $ocRecibida): void
+    {
+        if ($request->user()->hasRole('superadmin')) {
+            return;
+        }
+
+        if ((int) $ocRecibida->user_id === (int) $request->user()->id) {
+            return;
+        }
+
+        abort(403, 'Solo el usuario que registro esta orden de compra puede editarla.');
     }
 
     private function storeDocumento(UploadedFile $file, string $directory): string

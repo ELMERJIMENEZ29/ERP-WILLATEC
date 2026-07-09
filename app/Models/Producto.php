@@ -16,6 +16,8 @@ class Producto extends Model
         'modelo',
         'codigo',
         'codigo_barras',
+        'serie',
+        'factura_numero',
         'descripcion',
         'tipo_producto',
         'controla_stock',

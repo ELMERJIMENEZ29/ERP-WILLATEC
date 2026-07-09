@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\OcRecibidaController;
 use App\Http\Controllers\Api\OrdenCompraController;
 use App\Http\Controllers\Api\ProductoController;
 use App\Http\Controllers\Api\ProductoExternoController;
+use App\Http\Controllers\Api\ProveedorController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WooCommerceProductoController;
@@ -75,23 +76,33 @@ Route::middleware(['auth:sanctum'])->group(function () {
         ->middleware('role:superadmin|admin');
 
     Route::get('/inventario/movimientos', [InventarioController::class, 'indexMovimientos'])
-        ->middleware('role:superadmin');
+        ->middleware('role:superadmin|logistica');
+
+    Route::get('/proveedores', [ProveedorController::class, 'index'])
+        ->middleware('role:superadmin|admin|ventas|soporte|logistica');
+
+    Route::post('/proveedores', [ProveedorController::class, 'store'])
+        ->middleware('role:superadmin|admin|ventas|soporte|logistica');
+
+    Route::put('/proveedores/{proveedor}', [ProveedorController::class, 'update'])
+        ->middleware('role:superadmin|admin|ventas|soporte|logistica');
 });
 
 Route::prefix('productos')->middleware('auth:sanctum')->group(function () {
     // PRODUCTOS
     Route::get('/', [ProductoController::class, 'index']);
-    Route::get('/{producto}/inventario', [InventarioController::class, 'show'])->middleware('role:superadmin|admin|soporte');
-    Route::get('/{producto}/movimientos', [InventarioController::class, 'movimientos'])->middleware('role:superadmin|admin|soporte');
-    Route::post('/{producto}/ajustar-stock', [InventarioController::class, 'ajustarStock'])->middleware('role:superadmin|admin|soporte');
-    Route::post('/{producto}/registrar-entrada', [InventarioController::class, 'registrarEntrada'])->middleware('role:superadmin|admin|soporte');
+    Route::get('/{producto}/inventario', [InventarioController::class, 'show'])->middleware('role:superadmin|admin|soporte|logistica');
+    Route::get('/{producto}/movimientos', [InventarioController::class, 'movimientos'])->middleware('role:superadmin|admin|soporte|logistica');
+    Route::post('/{producto}/ajustar-stock', [InventarioController::class, 'ajustarStock'])->middleware('role:superadmin|admin|soporte|logistica');
+    Route::post('/{producto}/registrar-entrada', [InventarioController::class, 'registrarEntrada'])->middleware('role:superadmin|admin|soporte|logistica');
+    Route::post('/{producto}/registrar-salida', [InventarioController::class, 'registrarSalida'])->middleware('role:superadmin|admin|soporte|logistica');
     Route::get('/{id}', [ProductoController::class, 'show']);
 
-    Route::post('/', [ProductoController::class, 'store'])->middleware('role:superadmin|ventas|admin|soporte');
+    Route::post('/', [ProductoController::class, 'store'])->middleware('role:superadmin|ventas|admin|soporte|logistica');
 
-    Route::put('/{id}', [ProductoController::class, 'update'])->middleware('role:superadmin|ventas|admin|soporte');
+    Route::put('/{id}', [ProductoController::class, 'update'])->middleware('role:superadmin|ventas|admin|soporte|logistica');
 
-    Route::delete('/{id}', [ProductoController::class, 'destroy'])->middleware('role:superadmin|ventas|admin|soporte');
+    Route::delete('/{id}', [ProductoController::class, 'destroy'])->middleware('role:superadmin|ventas|admin|soporte|logistica');
 });
 
 Route::post('/upload-imagen', [CotizacionController::class, 'uploadImagen'])

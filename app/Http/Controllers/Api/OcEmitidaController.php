@@ -109,6 +109,7 @@ class OcEmitidaController extends Controller
         ]);
 
         $cotizacion = Cotizacion::with(['items.proveedores', 'cliente', 'moneda'])->findOrFail($validated['cotizacion_id']);
+        $this->ensureCanCreateOcForCotizacion($request, $cotizacion);
         $proveedores = $this->proveedoresDeCotizacion($cotizacion);
 
         if (! $proveedores->contains($validated['proveedor'])) {
@@ -187,6 +188,8 @@ class OcEmitidaController extends Controller
 
     public function documentos(Request $request, OcEmitida $ocEmitida)
     {
+        $this->ensureCanEditOc($request, $ocEmitida);
+
         $request->validate([
             'factura' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
             'comprobante_pago' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
@@ -305,6 +308,32 @@ class OcEmitidaController extends Controller
     private function generarNumero(): string
     {
         return 'OCE-'.str_pad((string) (OcEmitida::count() + 1), 6, '0', STR_PAD_LEFT);
+    }
+
+    private function ensureCanCreateOcForCotizacion(Request $request, Cotizacion $cotizacion): void
+    {
+        if ($request->user()->hasRole('superadmin')) {
+            return;
+        }
+
+        if ((int) $cotizacion->user_id === (int) $request->user()->id) {
+            return;
+        }
+
+        abort(403, 'Solo el creador de la cotizacion puede asociar la orden de compra.');
+    }
+
+    private function ensureCanEditOc(Request $request, OcEmitida $ocEmitida): void
+    {
+        if ($request->user()->hasRole('superadmin')) {
+            return;
+        }
+
+        if ((int) $ocEmitida->user_id === (int) $request->user()->id) {
+            return;
+        }
+
+        abort(403, 'Solo el usuario que registro esta orden de compra puede editarla.');
     }
 
     private function generarPdf(OcEmitida $ocEmitida): string

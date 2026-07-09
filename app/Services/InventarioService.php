@@ -26,6 +26,7 @@ class InventarioService
         ?string $documentoPath = null,
         ?string $fechaDocumento = null,
         ?string $proveedor = null,
+        ?int $proveedorId = null,
         ?int $monedaId = null
     ): Producto {
         return $this->moverStock(
@@ -46,6 +47,7 @@ class InventarioService
             documentoPath: $documentoPath,
             fechaDocumento: $fechaDocumento,
             proveedor: $proveedor,
+            proveedorId: $proveedorId,
             monedaId: $monedaId
         );
     }
@@ -129,6 +131,10 @@ class InventarioService
         ?string $observacion = null,
         ?string $ipOrigen = null,
         ?string $userAgent = null,
+        ?string $documentoTipo = null,
+        ?string $documentoNumero = null,
+        ?string $documentoPath = null,
+        ?string $fechaDocumento = null,
         ?int $monedaId = null
     ): Producto {
         return $this->moverStock(
@@ -143,6 +149,10 @@ class InventarioService
             observacion: $observacion,
             ipOrigen: $ipOrigen,
             userAgent: $userAgent,
+            documentoTipo: $documentoTipo,
+            documentoNumero: $documentoNumero,
+            documentoPath: $documentoPath,
+            fechaDocumento: $fechaDocumento,
             monedaId: $monedaId
         );
     }
@@ -164,6 +174,7 @@ class InventarioService
         ?string $documentoPath = null,
         ?string $fechaDocumento = null,
         ?string $proveedor = null,
+        ?int $proveedorId = null,
         ?int $monedaId = null
     ): Producto {
         return $this->moverStock(
@@ -184,6 +195,7 @@ class InventarioService
             documentoPath: $documentoPath,
             fechaDocumento: $fechaDocumento,
             proveedor: $proveedor,
+            proveedorId: $proveedorId,
             monedaId: $monedaId
         );
     }
@@ -195,8 +207,7 @@ class InventarioService
         ?int $createdBy = null,
         ?string $ipOrigen = null,
         ?string $userAgent = null
-    ): Producto
-    {
+    ): Producto {
         return DB::transaction(function () use ($productoId, $nuevoStock, $observacion, $createdBy, $ipOrigen, $userAgent): Producto {
             $producto = Producto::query()->lockForUpdate()->findOrFail($productoId);
 
@@ -263,6 +274,7 @@ class InventarioService
         ?string $documentoPath = null,
         ?string $fechaDocumento = null,
         ?string $proveedor = null,
+        ?int $proveedorId = null,
         bool $liberarReservaAsociada = false
     ): Producto {
         return DB::transaction(function () use (
@@ -284,6 +296,7 @@ class InventarioService
             $documentoPath,
             $fechaDocumento,
             $proveedor,
+            $proveedorId,
             $liberarReservaAsociada
         ): Producto {
             if ($idempotencyKey) {
@@ -342,6 +355,7 @@ class InventarioService
                 $nuevoStock = (float) $producto->stock_actual;
                 $producto->costo_promedio = $nuevoStock > 0 ? round($nuevoValorStock / $nuevoStock, 4) : 0;
                 $producto->costo_unitario = $producto->costo_promedio;
+                $producto->precio_referencial = $costoMovimiento;
                 $producto->valor_stock = round($nuevoValorStock, 2);
             } elseif ($salidaCantidad > 0) {
                 $costoMovimiento = $costoPromedioAntes;
@@ -381,6 +395,7 @@ class InventarioService
                 'documento_path' => $documentoPath,
                 'fecha_documento' => $fechaDocumento,
                 'proveedor' => $proveedor,
+                'proveedor_id' => $proveedorId,
                 'ip_origen' => $ipOrigen,
                 'user_agent' => $userAgent,
                 'created_by' => $createdBy,

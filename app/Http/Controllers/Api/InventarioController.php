@@ -4,11 +4,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AjustarStockRequest;
+use App\Models\CotizacionItem;
 use App\Models\InventarioMovimiento;
+use App\Models\OcRecibida;
 use App\Models\Producto;
+use App\Models\Proveedor;
 use App\Services\InventarioService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 
 class InventarioController extends Controller
 {
@@ -21,6 +25,7 @@ class InventarioController extends Controller
             'origen' => 'nullable|string|max:40',
             'created_by' => 'nullable|integer|exists:users,id',
             'ip_origen' => 'nullable|string|max:45',
+            'serie' => 'nullable|string|max:100',
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date|after_or_equal:date_from',
             'per_page' => 'nullable|integer|min:1|max:100',
@@ -28,8 +33,9 @@ class InventarioController extends Controller
 
         $query = InventarioMovimiento::query()
             ->with([
-                'producto:id,nombre,sku,codigo',
-                'moneda:id,codigo,simbolo,nombre',
+                'producto:id,nombre,sku,codigo,serie',
+                'moneda:id,codigo,simbolo',
+                'proveedorCatalogo:id,nombre,ruc',
                 'createdBy:id,nombres,apellidos,email',
             ])
             ->latest();
@@ -54,6 +60,14 @@ class InventarioController extends Controller
             $query->where('ip_origen', 'like', '%'.$validated['ip_origen'].'%');
         }
 
+        if (! empty($validated['serie'])) {
+            $serie = $validated['serie'];
+
+            $query->whereHas('producto', function ($query) use ($serie): void {
+                $query->where('serie', 'like', "%{$serie}%");
+            });
+        }
+
         if (! empty($validated['date_from'])) {
             $query->whereDate('created_at', '>=', $validated['date_from']);
         }
@@ -74,14 +88,80 @@ class InventarioController extends Controller
                     ->orWhereHas('producto', function ($query) use ($search): void {
                         $query->where('nombre', 'like', "%{$search}%")
                             ->orWhere('sku', 'like', "%{$search}%")
-                            ->orWhere('codigo', 'like', "%{$search}%");
+                            ->orWhere('codigo', 'like', "%{$search}%")
+                            ->orWhere('serie', 'like', "%{$search}%");
                     });
             });
         }
 
-        return response()->json(
-            $query->paginate($request->integer('per_page', 15))
-        );
+        $movimientos = $query->paginate($request->integer('per_page', 15));
+
+        $movimientos->getCollection()->transform(function (InventarioMovimiento $movimiento): InventarioMovimiento {
+            $movimiento->setAttribute('garantia_info', $this->buildGarantiaInfo($movimiento));
+
+            return $movimiento;
+        });
+
+        return response()->json($movimientos);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function buildGarantiaInfo(InventarioMovimiento $movimiento): ?array
+    {
+        if (
+            $movimiento->tipo_movimiento !== InventarioMovimiento::TIPO_SALIDA ||
+            $movimiento->referencia_tipo !== 'oc_recibida' ||
+            ! $movimiento->referencia_id
+        ) {
+            return null;
+        }
+
+        $cotizacionItemId = $this->cotizacionItemIdFromMovimiento($movimiento);
+
+        if (! $cotizacionItemId) {
+            return null;
+        }
+
+        $cotizacionItem = CotizacionItem::query()
+            ->select(['id', 'cotizacion_id', 'garantia_meses'])
+            ->with('cotizacion:id,numero,titulo')
+            ->find($cotizacionItemId);
+
+        if (! $cotizacionItem || ! $cotizacionItem->garantia_meses) {
+            return null;
+        }
+
+        $ocRecibida = OcRecibida::query()
+            ->select(['id', 'numero', 'cliente_nombre', 'cliente_ruc'])
+            ->find($movimiento->referencia_id);
+        $fechaInicio = Carbon::parse($movimiento->fecha_documento ?: $movimiento->created_at)->startOfDay();
+        $fechaFin = $fechaInicio->copy()->addMonths((int) $cotizacionItem->garantia_meses);
+        $hoy = now()->startOfDay();
+
+        return [
+            'garantia_meses' => (int) $cotizacionItem->garantia_meses,
+            'fecha_inicio' => $fechaInicio->toDateString(),
+            'fecha_vencimiento' => $fechaFin->toDateString(),
+            'vigente' => $hoy->lessThanOrEqualTo($fechaFin),
+            'dias_restantes' => $hoy->lessThanOrEqualTo($fechaFin) ? $hoy->diffInDays($fechaFin) : 0,
+            'oc_numero' => $ocRecibida?->numero,
+            'cliente_nombre' => $ocRecibida?->cliente_nombre,
+            'cliente_ruc' => $ocRecibida?->cliente_ruc,
+            'cotizacion_numero' => $cotizacionItem->cotizacion?->numero,
+        ];
+    }
+
+    private function cotizacionItemIdFromMovimiento(InventarioMovimiento $movimiento): ?int
+    {
+        if (! $movimiento->idempotency_key) {
+            return null;
+        }
+
+        preg_match('/cotizacion-item:(\d+)/', $movimiento->idempotency_key, $matches);
+
+        return isset($matches[1]) ? (int) $matches[1] : null;
     }
 
     public function show(Producto $producto)
@@ -134,6 +214,7 @@ class InventarioController extends Controller
             'cantidad' => 'required|numeric|min:0.01',
             'costo_unitario' => 'required|numeric|min:0',
             'moneda_id' => 'required|exists:monedas,id',
+            'proveedor_id' => 'nullable|exists:proveedores,id',
             'proveedor' => 'nullable|string|max:255',
             'documento_tipo' => 'nullable|string|max:40',
             'documento_numero' => 'nullable|string|max:100',
@@ -145,6 +226,10 @@ class InventarioController extends Controller
         $documentoPath = $request->hasFile('factura')
             ? $this->storeDocumento($request->file('factura'), 'inventario/facturas')
             : null;
+        $proveedorCatalogo = ! empty($validated['proveedor_id'])
+            ? Proveedor::find($validated['proveedor_id'])
+            : null;
+        $proveedorNombre = $proveedorCatalogo?->nombre ?? ($validated['proveedor'] ?? null);
 
         $productoActualizado = $inventarioService->registrarEntrada(
             productoId: $producto->id,
@@ -163,11 +248,53 @@ class InventarioController extends Controller
             documentoNumero: $validated['documento_numero'] ?? null,
             documentoPath: $documentoPath,
             fechaDocumento: $validated['fecha_documento'] ?? null,
-            proveedor: $validated['proveedor'] ?? null
+            proveedor: $proveedorNombre,
+            proveedorId: $proveedorCatalogo?->id
         );
 
         return response()->json([
             'message' => 'Entrada registrada en Kardex',
+            'producto' => $productoActualizado,
+        ]);
+    }
+
+    public function registrarSalida(Request $request, Producto $producto, InventarioService $inventarioService)
+    {
+        $validated = $request->validate([
+            'cantidad' => 'required|numeric|min:0.01',
+            'motivo' => 'required|string|max:60',
+            'moneda_id' => 'nullable|exists:monedas,id',
+            'documento_tipo' => 'nullable|string|max:40',
+            'documento_numero' => 'nullable|string|max:100',
+            'fecha_documento' => 'nullable|date',
+            'observacion' => 'nullable|string',
+            'documento' => 'nullable|file|mimes:pdf,jpg,jpeg,png,xml,doc,docx|max:10240',
+        ]);
+
+        $documentoPath = $request->hasFile('documento')
+            ? $this->storeDocumento($request->file('documento'), 'inventario/salidas')
+            : null;
+
+        $productoActualizado = $inventarioService->registrarSalida(
+            productoId: $producto->id,
+            cantidad: (float) $validated['cantidad'],
+            referenciaTipo: $validated['motivo'],
+            referenciaId: null,
+            origen: 'salida_manual',
+            idempotencyKey: null,
+            createdBy: $request->user()?->id,
+            observacion: $validated['observacion'] ?? null,
+            ipOrigen: $request->ip(),
+            userAgent: $request->userAgent(),
+            documentoTipo: $validated['documento_tipo'] ?? null,
+            documentoNumero: $validated['documento_numero'] ?? null,
+            documentoPath: $documentoPath,
+            fechaDocumento: $validated['fecha_documento'] ?? null,
+            monedaId: isset($validated['moneda_id']) ? (int) $validated['moneda_id'] : null
+        );
+
+        return response()->json([
+            'message' => 'Salida registrada en Kardex',
             'producto' => $productoActualizado,
         ]);
     }

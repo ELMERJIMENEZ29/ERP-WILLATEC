@@ -50,6 +50,7 @@ class InventarioMovimiento extends Model
         'documento_path',
         'fecha_documento',
         'proveedor',
+        'proveedor_id',
         'ip_origen',
         'user_agent',
         'created_by',
@@ -68,6 +69,11 @@ class InventarioMovimiento extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function proveedorCatalogo(): BelongsTo
+    {
+        return $this->belongsTo(Proveedor::class, 'proveedor_id');
     }
 
     /**

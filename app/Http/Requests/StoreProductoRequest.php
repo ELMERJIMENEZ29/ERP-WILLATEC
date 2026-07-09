@@ -30,6 +30,8 @@ class StoreProductoRequest extends FormRequest
             'modelo' => ['nullable', 'string', 'max:255'],
             'codigo' => ['nullable', 'string', 'max:100'],
             'codigo_barras' => ['nullable', 'string', 'max:100'],
+            'serie' => ['nullable', 'string', 'max:100'],
+            'factura_numero' => ['nullable', 'string', 'max:100'],
             'descripcion' => ['nullable', 'string'],
             'tipo_producto' => ['nullable', Rule::in(['stock', 'servicio', 'externo', 'personalizado'])],
             'controla_stock' => ['nullable', 'boolean'],
