@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\InventarioMovimiento;
 use App\Models\Producto;
+use App\Models\ProductoSerie;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -175,7 +176,8 @@ class InventarioService
         ?string $fechaDocumento = null,
         ?string $proveedor = null,
         ?int $proveedorId = null,
-        ?int $monedaId = null
+        ?int $monedaId = null,
+        ?array $series = null
     ): Producto {
         return $this->moverStock(
             productoId: $productoId,
@@ -196,7 +198,8 @@ class InventarioService
             fechaDocumento: $fechaDocumento,
             proveedor: $proveedor,
             proveedorId: $proveedorId,
-            monedaId: $monedaId
+            monedaId: $monedaId,
+            series: $series
         );
     }
 
@@ -275,7 +278,8 @@ class InventarioService
         ?string $fechaDocumento = null,
         ?string $proveedor = null,
         ?int $proveedorId = null,
-        bool $liberarReservaAsociada = false
+        bool $liberarReservaAsociada = false,
+        ?array $series = null
     ): Producto {
         return DB::transaction(function () use (
             $productoId,
@@ -297,7 +301,8 @@ class InventarioService
             $fechaDocumento,
             $proveedor,
             $proveedorId,
-            $liberarReservaAsociada
+            $liberarReservaAsociada,
+            $series
         ): Producto {
             if ($idempotencyKey) {
                 $movimientoExistente = InventarioMovimiento::query()
@@ -370,8 +375,28 @@ class InventarioService
             $this->recalcularProducto($producto);
             $producto->save();
 
-            InventarioMovimiento::create([
+            $productoSerieId = null;
+            $seriesRegistradas = $entradaCantidad > 0
+                ? $this->registrarSeriesEntrada(
+                    producto: $producto,
+                    series: $series ?? [],
+                    documentoNumero: $documentoNumero,
+                    documentoPath: $documentoPath,
+                    proveedorId: $proveedorId,
+                    costoUnitario: $costoMovimiento,
+                    monedaId: $monedaMovimientoId,
+                    fechaDocumento: $fechaDocumento,
+                    createdBy: $createdBy
+                )
+                : [];
+
+            if (count($seriesRegistradas) === 1) {
+                $productoSerieId = $seriesRegistradas[0]->id;
+            }
+
+            $movimiento = InventarioMovimiento::create([
                 'producto_id' => $producto->id,
+                'producto_serie_id' => $productoSerieId,
                 'tipo_movimiento' => $tipoMovimiento,
                 'cantidad' => $cantidad,
                 'entrada_cantidad' => $entradaCantidad,
@@ -400,6 +425,12 @@ class InventarioService
                 'user_agent' => $userAgent,
                 'created_by' => $createdBy,
             ]);
+
+            if (count($seriesRegistradas) > 0) {
+                $movimiento->productoSeries()->sync(
+                    collect($seriesRegistradas)->pluck('id')->all()
+                );
+            }
 
             return $producto->refresh();
         });
@@ -449,5 +480,61 @@ class InventarioService
         $producto->stock_disponible = max(0, $stockActual - $stockReservado);
         $producto->stock = (int) round($stockActual);
         $producto->valor_stock = round($stockActual * (float) ($producto->costo_promedio ?? 0), 2);
+    }
+
+    /**
+     * @param  array<int, string|null>  $series
+     * @return array<int, ProductoSerie>
+     */
+    private function registrarSeriesEntrada(
+        Producto $producto,
+        array $series,
+        ?string $documentoNumero,
+        ?string $documentoPath,
+        ?int $proveedorId,
+        ?float $costoUnitario,
+        ?int $monedaId,
+        ?string $fechaDocumento,
+        ?int $createdBy
+    ): array {
+        $seriesNormalizadas = collect($series)
+            ->map(fn ($serie) => trim((string) $serie))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($seriesNormalizadas->isEmpty()) {
+            return [];
+        }
+
+        return $seriesNormalizadas
+            ->map(function (string $serie) use (
+                $producto,
+                $documentoNumero,
+                $documentoPath,
+                $proveedorId,
+                $costoUnitario,
+                $monedaId,
+                $fechaDocumento,
+                $createdBy
+            ): ProductoSerie {
+                return ProductoSerie::query()->updateOrCreate(
+                    [
+                        'producto_id' => $producto->id,
+                        'serie' => $serie,
+                    ],
+                    [
+                        'factura_numero' => $documentoNumero,
+                        'documento_path' => $documentoPath,
+                        'proveedor_id' => $proveedorId,
+                        'costo_unitario' => $costoUnitario,
+                        'moneda_id' => $monedaId,
+                        'fecha_ingreso' => $fechaDocumento,
+                        'estado' => ProductoSerie::ESTADO_DISPONIBLE,
+                        'created_by' => $createdBy,
+                    ]
+                );
+            })
+            ->all();
     }
 }

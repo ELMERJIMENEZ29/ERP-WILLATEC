@@ -26,6 +26,8 @@ class InventarioController extends Controller
             'created_by' => 'nullable|integer|exists:users,id',
             'ip_origen' => 'nullable|string|max:45',
             'serie' => 'nullable|string|max:100',
+            'marca' => 'nullable|string|max:150',
+            'modelo' => 'nullable|string|max:150',
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date|after_or_equal:date_from',
             'per_page' => 'nullable|integer|min:1|max:100',
@@ -33,8 +35,9 @@ class InventarioController extends Controller
 
         $query = InventarioMovimiento::query()
             ->with([
-                'producto:id,nombre,sku,codigo,serie',
+                'producto:id,nombre,sku,codigo,serie,marca,modelo',
                 'productoSerie:id,producto_id,serie,factura_numero,estado',
+                'productoSeries:id,producto_id,serie,factura_numero,estado',
                 'moneda:id,codigo,simbolo',
                 'proveedorCatalogo:id,nombre,ruc',
                 'createdBy:id,nombres,apellidos,email',
@@ -69,8 +72,20 @@ class InventarioController extends Controller
                     $productoQuery->where('serie', 'like', "%{$serie}%");
                 })->orWhereHas('productoSerie', function ($serieQuery) use ($serie): void {
                     $serieQuery->where('serie', 'like', "%{$serie}%");
+                })->orWhereHas('productoSeries', function ($seriesQuery) use ($serie): void {
+                    $seriesQuery->where('serie', 'like', "%{$serie}%");
                 });
             });
+        }
+
+        foreach (['marca', 'modelo'] as $field) {
+            if (! empty($validated[$field])) {
+                $value = $validated[$field];
+
+                $query->whereHas('producto', function ($productoQuery) use ($field, $value): void {
+                    $productoQuery->where($field, 'like', "%{$value}%");
+                });
+            }
         }
 
         if (! empty($validated['date_from'])) {
@@ -94,10 +109,16 @@ class InventarioController extends Controller
                         $query->where('serie', 'like', "%{$search}%")
                             ->orWhere('factura_numero', 'like', "%{$search}%");
                     })
+                    ->orWhereHas('productoSeries', function ($query) use ($search): void {
+                        $query->where('serie', 'like', "%{$search}%")
+                            ->orWhere('factura_numero', 'like', "%{$search}%");
+                    })
                     ->orWhereHas('producto', function ($query) use ($search): void {
                         $query->where('nombre', 'like', "%{$search}%")
                             ->orWhere('sku', 'like', "%{$search}%")
                             ->orWhere('codigo', 'like', "%{$search}%")
+                            ->orWhere('marca', 'like', "%{$search}%")
+                            ->orWhere('modelo', 'like', "%{$search}%")
                             ->orWhere('serie', 'like', "%{$search}%");
                     });
             });
@@ -229,8 +250,26 @@ class InventarioController extends Controller
             'documento_numero' => 'nullable|string|max:100',
             'fecha_documento' => 'nullable|date',
             'observacion' => 'nullable|string',
+            'series' => 'nullable|array',
+            'series.*' => 'nullable|string|max:150|distinct',
             'factura' => 'nullable|file|mimes:pdf,jpg,jpeg,png,xml,doc,docx|max:10240',
         ]);
+
+        $series = collect($validated['series'] ?? [])
+            ->map(fn ($serie) => trim((string) $serie))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (count($series) > (float) $validated['cantidad']) {
+            return response()->json([
+                'message' => 'No puedes registrar mas series que la cantidad ingresada.',
+                'errors' => [
+                    'series' => ['No puedes registrar mas series que la cantidad ingresada.'],
+                ],
+            ], 422);
+        }
 
         $documentoPath = $request->hasFile('factura')
             ? $this->storeDocumento($request->file('factura'), 'inventario/facturas')
@@ -258,7 +297,8 @@ class InventarioController extends Controller
             documentoPath: $documentoPath,
             fechaDocumento: $validated['fecha_documento'] ?? null,
             proveedor: $proveedorNombre,
-            proveedorId: $proveedorCatalogo?->id
+            proveedorId: $proveedorCatalogo?->id,
+            series: $series
         );
 
         return response()->json([

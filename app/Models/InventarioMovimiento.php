@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class InventarioMovimiento extends Model
 {
@@ -65,6 +66,16 @@ class InventarioMovimiento extends Model
     public function productoSerie(): BelongsTo
     {
         return $this->belongsTo(ProductoSerie::class);
+    }
+
+    public function productoSeries(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ProductoSerie::class,
+            'inventario_movimiento_producto_serie',
+            'inventario_movimiento_id',
+            'producto_serie_id'
+        )->withTimestamps();
     }
 
     public function moneda(): BelongsTo

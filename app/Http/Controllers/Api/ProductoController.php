@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreProductoRequest;
 use App\Http\Requests\UpdateProductoRequest;
 use App\Models\Producto;
+use App\Models\ProductoSerie;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -15,10 +16,54 @@ class ProductoController extends Controller
     public function index(Request $request)
     {
 
-        $query = Producto::query();
+        $query = Producto::query()
+            ->with([
+                'categoria:id,nombre',
+                'series' => fn ($query) => $query
+                    ->select(['id', 'producto_id', 'serie', 'factura_numero', 'estado', 'fecha_ingreso'])
+                    ->latest(),
+            ]);
 
         if ($request->has('activo')) {
             $query->where('activo', $request->boolean('activo'));
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->string('search')->toString();
+
+            $query->where(function ($query) use ($search): void {
+                $query->where('nombre', 'like', "%{$search}%")
+                    ->orWhere('sku', 'like', "%{$search}%")
+                    ->orWhere('codigo', 'like', "%{$search}%")
+                    ->orWhere('marca', 'like', "%{$search}%")
+                    ->orWhere('modelo', 'like', "%{$search}%")
+                    ->orWhere('serie', 'like', "%{$search}%")
+                    ->orWhere('factura_numero', 'like', "%{$search}%")
+                    ->orWhereHas('categoria', function ($categoriaQuery) use ($search): void {
+                        $categoriaQuery->where('nombre', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('series', function ($seriesQuery) use ($search): void {
+                        $seriesQuery->where('serie', 'like', "%{$search}%")
+                            ->orWhere('factura_numero', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        foreach (['marca', 'modelo'] as $field) {
+            if ($request->filled($field)) {
+                $query->where($field, 'like', '%'.$request->string($field)->toString().'%');
+            }
+        }
+
+        if ($request->filled('serie')) {
+            $serie = $request->string('serie')->toString();
+
+            $query->where(function ($query) use ($serie): void {
+                $query->where('serie', 'like', "%{$serie}%")
+                    ->orWhereHas('series', function ($seriesQuery) use ($serie): void {
+                        $seriesQuery->where('serie', 'like', "%{$serie}%");
+                    });
+            });
         }
 
         return response()->json($query->latest()->paginate($request->integer('per_page', 10)));
@@ -27,7 +72,7 @@ class ProductoController extends Controller
     // Ver detalle
     public function show(int $id)
     {
-        $producto = Producto::findOrFail($id);
+        $producto = Producto::with(['categoria:id,nombre', 'series'])->findOrFail($id);
 
         if (! $producto) {
             return response()->json([
@@ -79,6 +124,8 @@ class ProductoController extends Controller
         }
 
         $producto = Producto::create($data);
+        $this->syncSeriePrincipal($producto);
+        $producto->load(['categoria:id,nombre', 'series']);
 
         return response()->json([
             'message' => 'Producto creado correctamente',
@@ -152,6 +199,8 @@ class ProductoController extends Controller
         }
 
         $producto->update($data);
+        $this->syncSeriePrincipal($producto);
+        $producto->load(['categoria:id,nombre', 'series']);
 
         return response()->json([
             'message' => 'Producto actualizado correctamente',
@@ -175,5 +224,28 @@ class ProductoController extends Controller
         return response()->json([
             'message' => 'Producto eliminado correctamente',
         ]);
+    }
+
+    private function syncSeriePrincipal(Producto $producto): void
+    {
+        $serie = trim((string) $producto->serie);
+
+        if ($serie === '') {
+            return;
+        }
+
+        ProductoSerie::query()->updateOrCreate(
+            [
+                'producto_id' => $producto->id,
+                'serie' => $serie,
+            ],
+            [
+                'factura_numero' => $producto->factura_numero,
+                'costo_unitario' => $producto->costo_unitario,
+                'moneda_id' => $producto->moneda_id,
+                'estado' => ProductoSerie::ESTADO_DISPONIBLE,
+                'created_by' => auth()->id(),
+            ]
+        );
     }
 }
