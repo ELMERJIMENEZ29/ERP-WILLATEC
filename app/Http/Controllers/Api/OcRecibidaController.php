@@ -204,22 +204,20 @@ class OcRecibidaController extends Controller
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.id' => 'required|integer|exists:oc_recibida_items,id',
-            'items.*.comprado' => 'required|boolean',
+            'items.*.comprado' => 'nullable|boolean',
             'items.*.entregado' => 'required|boolean',
         ]);
 
         DB::transaction(function () use ($request, $validated, $ocRecibida): void {
-            $this->reservarStockOc($ocRecibida->refresh()->load('items.cotizacionItem'), $request);
-
             foreach ($validated['items'] as $itemData) {
                 $ocRecibida->items()
                     ->whereKey($itemData['id'])
                     ->update([
-                        'comprado' => (bool) $itemData['comprado'],
                         'entregado' => (bool) $itemData['entregado'],
                     ]);
             }
 
+            $this->reservarStockOc($ocRecibida->refresh()->load('items.cotizacionItem'), $request);
             $this->actualizarEstadoOc($ocRecibida->refresh()->load('items'));
             $ocRecibida->refresh()->load('items.cotizacionItem');
 
@@ -306,27 +304,47 @@ class OcRecibidaController extends Controller
         $ocRecibida->loadMissing('cotizacion');
         $monedaId = $ocRecibida->cotizacion?->moneda_id;
 
-        foreach ($ocRecibida->items->where('seleccionado', true)->where('entregado', false) as $item) {
+        foreach ($ocRecibida->items->where('seleccionado', true) as $item) {
             $productoId = $item->cotizacionItem?->producto_id;
+            $idempotencyKey = "oc-recibida:{$ocRecibida->id}:reserva:cotizacion-item:{$item->cotizacion_item_id}";
 
-            if (! $productoId) {
+            if (! $productoId || $item->entregado) {
+                $item->forceFill([
+                    'comprado' => $productoId
+                        ? $this->tieneMovimientoInventario($idempotencyKey)
+                        : false,
+                ])->save();
+
                 continue;
             }
 
-            $inventarioService->reservarStock(
-                productoId: (int) $productoId,
-                cantidad: (float) $item->cantidad_recibida,
-                referenciaTipo: 'oc_recibida',
-                referenciaId: $ocRecibida->id,
-                origen: 'orden_compra',
-                idempotencyKey: "oc-recibida:{$ocRecibida->id}:reserva:cotizacion-item:{$item->cotizacion_item_id}",
-                createdBy: $request->user()?->id,
-                observacion: "Reserva por OC recibida {$ocRecibida->numero}",
-                ipOrigen: $request->ip(),
-                userAgent: $request->userAgent(),
-                monedaId: $monedaId
-            );
+            try {
+                $inventarioService->reservarStock(
+                    productoId: (int) $productoId,
+                    cantidad: (float) $item->cantidad_recibida,
+                    referenciaTipo: 'oc_recibida',
+                    referenciaId: $ocRecibida->id,
+                    origen: 'orden_compra',
+                    idempotencyKey: $idempotencyKey,
+                    createdBy: $request->user()?->id,
+                    observacion: "Reserva por OC recibida {$ocRecibida->numero}",
+                    ipOrigen: $request->ip(),
+                    userAgent: $request->userAgent(),
+                    monedaId: $monedaId
+                );
+
+                $item->forceFill(['comprado' => true])->save();
+            } catch (ValidationException) {
+                $item->forceFill(['comprado' => $this->tieneMovimientoInventario($idempotencyKey)])->save();
+            }
         }
+    }
+
+    private function tieneMovimientoInventario(string $idempotencyKey): bool
+    {
+        return InventarioMovimiento::query()
+            ->where('idempotency_key', $idempotencyKey)
+            ->exists();
     }
 
     private function registrarSalidaAtendida(OcRecibida $ocRecibida, Request $request): void

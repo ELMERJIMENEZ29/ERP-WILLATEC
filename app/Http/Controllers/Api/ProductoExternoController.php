@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ProductoExternoController extends Controller
 {
@@ -197,22 +198,30 @@ class ProductoExternoController extends Controller
             $idempotencyKey = "oc-recibida:{$ocRecibida->id}:reserva:cotizacion-item:{$item->cotizacion_item_id}";
 
             if (InventarioMovimiento::where('idempotency_key', $idempotencyKey)->exists()) {
+                $item->forceFill(['comprado' => true])->save();
+
                 continue;
             }
 
-            $inventarioService->reservarStock(
-                productoId: $producto->id,
-                cantidad: (float) $item->cantidad_recibida,
-                referenciaTipo: 'oc_recibida',
-                referenciaId: $ocRecibida->id,
-                origen: 'orden_compra',
-                idempotencyKey: $idempotencyKey,
-                createdBy: $request->user()?->id,
-                observacion: "Reserva retroactiva por conversion de producto externo para OC recibida {$ocRecibida->numero}",
-                ipOrigen: $request->ip(),
-                userAgent: $request->userAgent(),
-                monedaId: $ocRecibida->cotizacion?->moneda_id
-            );
+            try {
+                $inventarioService->reservarStock(
+                    productoId: $producto->id,
+                    cantidad: (float) $item->cantidad_recibida,
+                    referenciaTipo: 'oc_recibida',
+                    referenciaId: $ocRecibida->id,
+                    origen: 'orden_compra',
+                    idempotencyKey: $idempotencyKey,
+                    createdBy: $request->user()?->id,
+                    observacion: "Reserva retroactiva por conversion de producto externo para OC recibida {$ocRecibida->numero}",
+                    ipOrigen: $request->ip(),
+                    userAgent: $request->userAgent(),
+                    monedaId: $ocRecibida->cotizacion?->moneda_id
+                );
+
+                $item->forceFill(['comprado' => true])->save();
+            } catch (ValidationException) {
+                $item->forceFill(['comprado' => false])->save();
+            }
         }
     }
 
