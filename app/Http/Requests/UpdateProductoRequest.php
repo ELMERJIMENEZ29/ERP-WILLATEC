@@ -33,6 +33,8 @@ class UpdateProductoRequest extends FormRequest
             'codigo' => ['nullable', 'string', 'max:100'],
             'codigo_barras' => ['nullable', 'string', 'max:100'],
             'serie' => ['nullable', 'string', 'max:100'],
+            'series' => ['nullable', 'array'],
+            'series.*' => ['nullable', 'string', 'max:150', 'distinct'],
             'factura_numero' => ['nullable', 'string', 'max:100'],
             'descripcion' => ['nullable', 'string'],
             'tipo_producto' => ['nullable', Rule::in(['stock', 'servicio', 'externo', 'personalizado'])],

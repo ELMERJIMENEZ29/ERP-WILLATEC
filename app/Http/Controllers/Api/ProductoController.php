@@ -89,6 +89,8 @@ class ProductoController extends Controller
         $stockActual = (float) ($request->input('stock_actual', $request->input('stock', 0)));
         $stockReservado = (float) $request->input('stock_reservado', 0);
         $costoPromedio = (float) $request->input('costo_unitario', 0);
+        $series = $this->normalizarSeries($request->input('series', []));
+        $seriePrincipal = trim((string) ($request->serie ?: ($series[0] ?? ''))) ?: null;
 
         $data = [
             'nombre' => $request->nombre,
@@ -97,7 +99,7 @@ class ProductoController extends Controller
             'modelo' => $request->modelo,
             'codigo' => $request->codigo ?? $request->sku,
             'codigo_barras' => $request->codigo_barras,
-            'serie' => $request->serie,
+            'serie' => $seriePrincipal,
             'factura_numero' => $request->factura_numero,
             'descripcion' => $request->descripcion,
             'tipo_producto' => $request->tipo_producto ?? 'stock',
@@ -124,7 +126,7 @@ class ProductoController extends Controller
         }
 
         $producto = Producto::create($data);
-        $this->syncSeriePrincipal($producto);
+        $this->syncSeriesProducto($producto, $series);
         $producto->load(['categoria:id,nombre', 'series']);
 
         return response()->json([
@@ -138,6 +140,7 @@ class ProductoController extends Controller
     {
 
         $producto = Producto::findOrFail($id);
+        $series = $this->normalizarSeries($request->input('series', []));
 
         $data = $request->only([
             'nombre',
@@ -165,6 +168,10 @@ class ProductoController extends Controller
             'stock',
             'categoria_id',
         ]);
+
+        if (! empty($series) && empty($data['serie'])) {
+            $data['serie'] = $series[0];
+        }
 
         if ($request->has('activo')) {
             $data['activo'] = filter_var($request->activo, FILTER_VALIDATE_BOOLEAN);
@@ -199,7 +206,7 @@ class ProductoController extends Controller
         }
 
         $producto->update($data);
-        $this->syncSeriePrincipal($producto);
+        $this->syncSeriesProducto($producto, $series);
         $producto->load(['categoria:id,nombre', 'series']);
 
         return response()->json([
@@ -226,26 +233,45 @@ class ProductoController extends Controller
         ]);
     }
 
-    private function syncSeriePrincipal(Producto $producto): void
+    /**
+     * @param  array<int, string|null>  $series
+     * @return array<int, string>
+     */
+    private function normalizarSeries(array $series): array
+    {
+        return collect($series)
+            ->map(fn ($serie) => trim((string) $serie))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, string>  $series
+     */
+    private function syncSeriesProducto(Producto $producto, array $series): void
     {
         $serie = trim((string) $producto->serie);
 
-        if ($serie === '') {
-            return;
+        if ($serie !== '') {
+            array_unshift($series, $serie);
         }
 
-        ProductoSerie::query()->updateOrCreate(
-            [
-                'producto_id' => $producto->id,
-                'serie' => $serie,
-            ],
-            [
-                'factura_numero' => $producto->factura_numero,
-                'costo_unitario' => $producto->costo_unitario,
-                'moneda_id' => $producto->moneda_id,
-                'estado' => ProductoSerie::ESTADO_DISPONIBLE,
-                'created_by' => auth()->id(),
-            ]
-        );
+        foreach (array_values(array_unique(array_filter($series))) as $serieItem) {
+            ProductoSerie::query()->updateOrCreate(
+                [
+                    'producto_id' => $producto->id,
+                    'serie' => $serieItem,
+                ],
+                [
+                    'factura_numero' => $producto->factura_numero,
+                    'costo_unitario' => $producto->costo_unitario,
+                    'moneda_id' => $producto->moneda_id,
+                    'estado' => ProductoSerie::ESTADO_DISPONIBLE,
+                    'created_by' => auth()->id(),
+                ]
+            );
+        }
     }
 }
