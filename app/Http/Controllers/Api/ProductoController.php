@@ -19,6 +19,7 @@ class ProductoController extends Controller
         $query = Producto::query()
             ->with([
                 'categoria:id,nombre',
+                'moneda:id,codigo,simbolo',
                 'series' => fn ($query) => $query
                     ->select(['id', 'producto_id', 'serie', 'factura_numero', 'estado', 'fecha_ingreso'])
                     ->latest(),
@@ -72,7 +73,7 @@ class ProductoController extends Controller
     // Ver detalle
     public function show(int $id)
     {
-        $producto = Producto::with(['categoria:id,nombre', 'series'])->findOrFail($id);
+        $producto = Producto::with(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series'])->findOrFail($id);
 
         if (! $producto) {
             return response()->json([
@@ -127,7 +128,7 @@ class ProductoController extends Controller
 
         $producto = Producto::create($data);
         $this->syncSeriesProducto($producto, $series);
-        $producto->load(['categoria:id,nombre', 'series']);
+        $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series']);
 
         return response()->json([
             'message' => 'Producto creado correctamente',
@@ -207,7 +208,7 @@ class ProductoController extends Controller
 
         $producto->update($data);
         $this->syncSeriesProducto($producto, $series);
-        $producto->load(['categoria:id,nombre', 'series']);
+        $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series']);
 
         return response()->json([
             'message' => 'Producto actualizado correctamente',
