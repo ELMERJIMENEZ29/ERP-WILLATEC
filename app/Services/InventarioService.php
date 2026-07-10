@@ -69,7 +69,10 @@ class InventarioService
         ?string $documentoPath = null,
         ?string $fechaDocumento = null,
         ?int $monedaId = null,
-        bool $liberarReservaAsociada = true
+        bool $liberarReservaAsociada = true,
+        ?array $productoSerieIds = null,
+        ?int $ocRecibidaId = null,
+        ?int $cotizacionItemId = null
     ): Producto {
         return $this->moverStock(
             productoId: $productoId,
@@ -88,7 +91,11 @@ class InventarioService
             documentoPath: $documentoPath,
             fechaDocumento: $fechaDocumento,
             monedaId: $monedaId,
-            liberarReservaAsociada: $liberarReservaAsociada
+            liberarReservaAsociada: $liberarReservaAsociada,
+            productoSerieIds: $productoSerieIds,
+            salidaSerieEstado: ProductoSerie::ESTADO_VENDIDO,
+            ocRecibidaId: $ocRecibidaId,
+            cotizacionItemId: $cotizacionItemId
         );
     }
 
@@ -136,7 +143,9 @@ class InventarioService
         ?string $documentoNumero = null,
         ?string $documentoPath = null,
         ?string $fechaDocumento = null,
-        ?int $monedaId = null
+        ?int $monedaId = null,
+        ?array $productoSerieIds = null,
+        ?string $salidaSerieEstado = null
     ): Producto {
         return $this->moverStock(
             productoId: $productoId,
@@ -154,7 +163,9 @@ class InventarioService
             documentoNumero: $documentoNumero,
             documentoPath: $documentoPath,
             fechaDocumento: $fechaDocumento,
-            monedaId: $monedaId
+            monedaId: $monedaId,
+            productoSerieIds: $productoSerieIds,
+            salidaSerieEstado: $salidaSerieEstado
         );
     }
 
@@ -279,7 +290,11 @@ class InventarioService
         ?string $proveedor = null,
         ?int $proveedorId = null,
         bool $liberarReservaAsociada = false,
-        ?array $series = null
+        ?array $series = null,
+        ?array $productoSerieIds = null,
+        ?string $salidaSerieEstado = null,
+        ?int $ocRecibidaId = null,
+        ?int $cotizacionItemId = null
     ): Producto {
         return DB::transaction(function () use (
             $productoId,
@@ -302,7 +317,11 @@ class InventarioService
             $proveedor,
             $proveedorId,
             $liberarReservaAsociada,
-            $series
+            $series,
+            $productoSerieIds,
+            $salidaSerieEstado,
+            $ocRecibidaId,
+            $cotizacionItemId
         ): Producto {
             if ($idempotencyKey) {
                 $movimientoExistente = InventarioMovimiento::query()
@@ -389,9 +408,22 @@ class InventarioService
                     createdBy: $createdBy
                 )
                 : [];
+            $seriesSalida = $salidaCantidad > 0
+                ? $this->registrarSeriesSalida(
+                    producto: $producto,
+                    cantidad: $cantidad,
+                    productoSerieIds: $productoSerieIds ?? [],
+                    estadoSalida: $salidaSerieEstado ?? $referenciaTipo ?? ProductoSerie::ESTADO_VENDIDO,
+                    fechaSalida: $fechaDocumento ?? now()->toDateString(),
+                    ocRecibidaId: $ocRecibidaId,
+                    cotizacionItemId: $cotizacionItemId
+                )
+                : [];
 
             if (count($seriesRegistradas) === 1) {
                 $productoSerieId = $seriesRegistradas[0]->id;
+            } elseif (count($seriesSalida) === 1) {
+                $productoSerieId = $seriesSalida[0]->id;
             }
 
             $movimiento = InventarioMovimiento::create([
@@ -429,6 +461,10 @@ class InventarioService
             if (count($seriesRegistradas) > 0) {
                 $movimiento->productoSeries()->sync(
                     collect($seriesRegistradas)->pluck('id')->all()
+                );
+            } elseif (count($seriesSalida) > 0) {
+                $movimiento->productoSeries()->sync(
+                    collect($seriesSalida)->pluck('id')->all()
                 );
             }
 
@@ -536,5 +572,81 @@ class InventarioService
                 );
             })
             ->all();
+    }
+
+    /**
+     * @param  array<int, int|string|null>  $productoSerieIds
+     * @return array<int, ProductoSerie>
+     */
+    private function registrarSeriesSalida(
+        Producto $producto,
+        float $cantidad,
+        array $productoSerieIds,
+        string $estadoSalida,
+        string $fechaSalida,
+        ?int $ocRecibidaId,
+        ?int $cotizacionItemId
+    ): array {
+        $seriesDisponibles = ProductoSerie::query()
+            ->where('producto_id', $producto->id)
+            ->where('estado', ProductoSerie::ESTADO_DISPONIBLE)
+            ->count();
+
+        if ($seriesDisponibles === 0 && empty($productoSerieIds)) {
+            return [];
+        }
+
+        if (floor($cantidad) !== $cantidad) {
+            throw ValidationException::withMessages([
+                'producto_serie_ids' => 'Para productos seriados la cantidad de salida debe ser entera.',
+            ]);
+        }
+
+        $ids = collect($productoSerieIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->count() !== (int) $cantidad) {
+            throw ValidationException::withMessages([
+                'producto_serie_ids' => 'Selecciona una serie por cada unidad que sale.',
+            ]);
+        }
+
+        $series = ProductoSerie::query()
+            ->where('producto_id', $producto->id)
+            ->whereIn('id', $ids->all())
+            ->lockForUpdate()
+            ->get();
+
+        if ($series->count() !== $ids->count()) {
+            throw ValidationException::withMessages([
+                'producto_serie_ids' => 'Una o mas series seleccionadas no pertenecen al producto.',
+            ]);
+        }
+
+        $seriesNoDisponibles = $series
+            ->filter(fn (ProductoSerie $serie): bool => $serie->estado !== ProductoSerie::ESTADO_DISPONIBLE)
+            ->pluck('serie')
+            ->filter()
+            ->values();
+
+        if ($seriesNoDisponibles->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'producto_serie_ids' => 'Hay series seleccionadas que ya no estan disponibles: '.$seriesNoDisponibles->join(', '),
+            ]);
+        }
+
+        $series->each(function (ProductoSerie $serie) use ($estadoSalida, $fechaSalida, $ocRecibidaId, $cotizacionItemId): void {
+            $serie->forceFill([
+                'estado' => $estadoSalida,
+                'fecha_salida' => $fechaSalida,
+                'oc_recibida_id' => $ocRecibidaId,
+                'cotizacion_item_id' => $cotizacionItemId,
+            ])->save();
+        });
+
+        return $series->all();
     }
 }

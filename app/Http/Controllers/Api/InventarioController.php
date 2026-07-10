@@ -317,6 +317,8 @@ class InventarioController extends Controller
             'documento_numero' => 'nullable|string|max:100',
             'fecha_documento' => 'nullable|date',
             'observacion' => 'nullable|string',
+            'producto_serie_ids' => 'nullable|array',
+            'producto_serie_ids.*' => 'integer|exists:producto_series,id',
             'documento' => 'nullable|file|mimes:pdf,jpg,jpeg,png,xml,doc,docx|max:10240',
         ]);
 
@@ -339,7 +341,9 @@ class InventarioController extends Controller
             documentoNumero: $validated['documento_numero'] ?? null,
             documentoPath: $documentoPath,
             fechaDocumento: $validated['fecha_documento'] ?? null,
-            monedaId: isset($validated['moneda_id']) ? (int) $validated['moneda_id'] : null
+            monedaId: isset($validated['moneda_id']) ? (int) $validated['moneda_id'] : null,
+            productoSerieIds: $validated['producto_serie_ids'] ?? [],
+            salidaSerieEstado: $validated['motivo']
         );
 
         return response()->json([

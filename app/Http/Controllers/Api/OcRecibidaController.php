@@ -8,6 +8,7 @@ use App\Models\EstadoCotizacion;
 use App\Models\InventarioMovimiento;
 use App\Models\OcRecibida;
 use App\Models\OcRecibidaItem;
+use App\Models\ProductoSerie;
 use App\Models\User;
 use App\Notifications\OcRecibidaRegistradaNotification;
 use App\Services\InventarioService;
@@ -94,7 +95,15 @@ class OcRecibidaController extends Controller
         $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'));
 
         return response()->json(
-            $ocRecibida->load(['items.cotizacionItem.proveedores', 'cotizacion', 'cliente'])
+            $ocRecibida->load([
+                'items.cotizacionItem.proveedores',
+                'items.cotizacionItem.producto.series' => fn ($query) => $query
+                    ->select(['id', 'producto_id', 'serie', 'factura_numero', 'estado', 'fecha_ingreso'])
+                    ->where('estado', ProductoSerie::ESTADO_DISPONIBLE)
+                    ->latest(),
+                'cotizacion',
+                'cliente',
+            ])
         );
     }
 
@@ -219,6 +228,8 @@ class OcRecibidaController extends Controller
             'items.*.id' => 'required|integer|exists:oc_recibida_items,id',
             'items.*.comprado' => 'nullable|boolean',
             'items.*.entregado' => 'required|boolean',
+            'items.*.producto_serie_ids' => 'nullable|array',
+            'items.*.producto_serie_ids.*' => 'integer|exists:producto_series,id',
         ]);
 
         DB::transaction(function () use ($request, $validated, $ocRecibida): void {
@@ -245,7 +256,7 @@ class OcRecibidaController extends Controller
             $ocRecibida->refresh()->load('items.cotizacionItem');
 
             if ($ocRecibida->estado === OcRecibida::ESTADO_ATENDIDO) {
-                $this->registrarSalidaAtendida($ocRecibida, $request);
+                $this->registrarSalidaAtendida($ocRecibida, $request, $validated['items']);
             }
         });
 
@@ -396,7 +407,7 @@ class OcRecibidaController extends Controller
         }
     }
 
-    private function registrarSalidaAtendida(OcRecibida $ocRecibida, Request $request): void
+    private function registrarSalidaAtendida(OcRecibida $ocRecibida, Request $request, array $itemsPayload = []): void
     {
         if (! $ocRecibida->factura_numero || ! $ocRecibida->factura_path) {
             throw ValidationException::withMessages([
@@ -407,9 +418,11 @@ class OcRecibidaController extends Controller
         $inventarioService = app(InventarioService::class);
         $ocRecibida->loadMissing('cotizacion');
         $monedaId = $ocRecibida->cotizacion?->moneda_id;
+        $itemsPayloadById = collect($itemsPayload)->keyBy(fn (array $item): int => (int) $item['id']);
 
         foreach ($ocRecibida->items->where('seleccionado', true) as $item) {
             $productoId = $item->cotizacionItem?->producto_id;
+            $itemPayload = $itemsPayloadById->get((int) $item->id, []);
 
             if (! $productoId) {
                 throw ValidationException::withMessages([
@@ -438,7 +451,10 @@ class OcRecibidaController extends Controller
                 documentoPath: $ocRecibida->factura_path,
                 fechaDocumento: now()->toDateString(),
                 monedaId: $monedaId,
-                liberarReservaAsociada: $liberarReserva
+                liberarReservaAsociada: $liberarReserva,
+                productoSerieIds: $itemPayload['producto_serie_ids'] ?? [],
+                ocRecibidaId: $ocRecibida->id,
+                cotizacionItemId: $item->cotizacion_item_id
             );
         }
     }
