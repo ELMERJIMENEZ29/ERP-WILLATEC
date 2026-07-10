@@ -25,6 +25,7 @@ class CategoriaSeeder extends Seeder
             10 => 'SEGURIDAD',
             11 => 'COMPONENTES',
             12 => 'ALMACENAMIENTO',
+            13 => 'IMPRESORAS',
         ];
 
         foreach ($categorias as $id => $nombre) {
