@@ -20,7 +20,6 @@ class StoreProductoRequest extends FormRequest
         return [
             'nombre' => ['required', 'string', 'max:255'],
             'sku' => [
-                Rule::requiredIf($this->boolean('controla_stock', true)),
                 'nullable',
                 'string',
                 'max:100',

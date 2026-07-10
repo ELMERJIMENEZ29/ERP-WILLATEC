@@ -15,6 +15,14 @@ class ProductoController extends Controller
     // Listar Productos
     public function index(Request $request)
     {
+        $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'activo' => ['nullable', 'in:true,false,0,1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'marca' => ['nullable', 'string', 'max:100'],
+            'modelo' => ['nullable', 'string', 'max:100'],
+            'serie' => ['nullable', 'string', 'max:100'],
+        ]);
 
         $query = Producto::query()
             ->with([
@@ -87,18 +95,21 @@ class ProductoController extends Controller
     // Crear producto
     public function store(StoreProductoRequest $request)
     {
+        $this->ensureCanManageInternalProducts($request);
+
         $stockActual = (float) ($request->input('stock_actual', $request->input('stock', 0)));
         $stockReservado = (float) $request->input('stock_reservado', 0);
         $costoPromedio = (float) $request->input('costo_unitario', 0);
         $series = $this->normalizarSeries($request->input('series', []));
         $seriePrincipal = trim((string) ($request->serie ?: ($series[0] ?? ''))) ?: null;
+        $codigoInterno = trim((string) ($request->input('codigo') ?: $request->input('sku'))) ?: $this->buildNextInternalCode();
 
         $data = [
             'nombre' => $request->nombre,
-            'sku' => $request->sku,
+            'sku' => $codigoInterno,
             'marca' => $request->marca,
             'modelo' => $request->modelo,
-            'codigo' => $request->codigo ?? $request->sku,
+            'codigo' => $codigoInterno,
             'codigo_barras' => $request->codigo_barras,
             'serie' => $seriePrincipal,
             'factura_numero' => $request->factura_numero,
@@ -139,6 +150,7 @@ class ProductoController extends Controller
     // Actualizar producto
     public function update(UpdateProductoRequest $request, int $id)
     {
+        $this->ensureCanManageInternalProducts($request);
 
         $producto = Producto::findOrFail($id);
         $series = $this->normalizarSeries($request->input('series', []));
@@ -217,8 +229,10 @@ class ProductoController extends Controller
     }
 
     // Eliminar Producto
-    public function destroy(int $id)
+    public function destroy(Request $request, int $id)
     {
+        $this->ensureCanManageInternalProducts($request);
+
         $producto = Producto::findOrFail($id);
 
         if (! $producto) {
@@ -274,5 +288,31 @@ class ProductoController extends Controller
                 ]
             );
         }
+    }
+
+    private function ensureCanManageInternalProducts(Request $request): void
+    {
+        if ($request->user()?->hasRole('ventas')) {
+            abort(403, 'El rol ventas solo puede visualizar productos internos.');
+        }
+    }
+
+    private function buildNextInternalCode(): string
+    {
+        $max = Producto::query()
+            ->pluck('codigo')
+            ->filter(fn ($codigo): bool => is_scalar($codigo) && ctype_digit((string) $codigo))
+            ->map(fn ($codigo): int => (int) $codigo)
+            ->max() ?? 0;
+
+        do {
+            $max++;
+            $candidate = str_pad((string) $max, 4, '0', STR_PAD_LEFT);
+        } while (
+            Producto::where('codigo', $candidate)->exists()
+            || Producto::where('sku', $candidate)->exists()
+        );
+
+        return $candidate;
     }
 }

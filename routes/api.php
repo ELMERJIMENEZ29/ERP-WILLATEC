@@ -112,7 +112,7 @@ Route::prefix('productos-externos')->middleware('auth:sanctum')->group(function 
     Route::get('/', [ProductoExternoController::class, 'index'])
         ->middleware('role:superadmin|ventas');
     Route::post('/{productoExterno}/convertir-interno', [ProductoExternoController::class, 'convertirAInterno'])
-        ->middleware('role:superadmin|admin');
+        ->middleware('role:superadmin|admin|ventas');
 });
 
 Route::prefix('woocommerce')->middleware(['auth:sanctum', 'role:superadmin|admin'])->group(function () {

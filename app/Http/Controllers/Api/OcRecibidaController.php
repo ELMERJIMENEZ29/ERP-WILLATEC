@@ -73,13 +73,26 @@ class OcRecibidaController extends Controller
             });
         }
 
-        return response()->json(
-            $query->latest()->paginate($request->integer('per_page', 10))
-        );
+        $paginator = $query->latest()->paginate($request->integer('per_page', 10));
+
+        $paginator->getCollection()->each(function (OcRecibida $ocRecibida): void {
+            $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'));
+            $ocRecibida->unsetRelation('items');
+            $ocRecibida->load(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc']);
+            $ocRecibida->loadCount([
+                'items as items_total' => fn ($query) => $query->where('seleccionado', true),
+                'items as items_comprados' => fn ($query) => $query->where('seleccionado', true)->where('comprado', true),
+                'items as items_entregados' => fn ($query) => $query->where('seleccionado', true)->where('entregado', true),
+            ]);
+        });
+
+        return response()->json($paginator);
     }
 
     public function show(OcRecibida $ocRecibida)
     {
+        $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'));
+
         return response()->json(
             $ocRecibida->load(['items.cotizacionItem.proveedores', 'cotizacion', 'cliente'])
         );
@@ -355,6 +368,32 @@ class OcRecibidaController extends Controller
         return InventarioMovimiento::query()
             ->where('idempotency_key', $idempotencyKey)
             ->exists();
+    }
+
+    private function sincronizarCompradoConInventario(OcRecibida $ocRecibida): void
+    {
+        $changed = false;
+
+        foreach ($ocRecibida->items->where('seleccionado', true) as $item) {
+            $productoId = $item->cotizacionItem?->producto_id;
+            $reservaKey = "oc-recibida:{$ocRecibida->id}:reserva:cotizacion-item:{$item->cotizacion_item_id}";
+            $compradoReal = $productoId && $this->tieneMovimientoInventario($reservaKey);
+
+            if ((bool) $item->comprado === (bool) $compradoReal && ($compradoReal || ! $item->entregado)) {
+                continue;
+            }
+
+            $item->forceFill([
+                'comprado' => (bool) $compradoReal,
+                'entregado' => $compradoReal ? (bool) $item->entregado : false,
+            ])->save();
+
+            $changed = true;
+        }
+
+        if ($changed) {
+            $this->actualizarEstadoOc($ocRecibida->refresh()->load('items'));
+        }
     }
 
     private function registrarSalidaAtendida(OcRecibida $ocRecibida, Request $request): void
