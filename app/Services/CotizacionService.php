@@ -8,6 +8,24 @@ use Illuminate\Support\Facades\DB;
 
 class CotizacionService
 {
+    private function esPlantillaAlquiler(Cotizacion $cotizacion): bool
+    {
+        $descriptor = strtoupper(
+            iconv(
+                'UTF-8',
+                'ASCII//TRANSLIT//IGNORE',
+                implode(' ', array_filter([
+                    $cotizacion->plantilla?->nombre,
+                    $cotizacion->plantilla?->formato_pdf,
+                ]))
+            ) ?: ''
+        );
+
+        return str_contains($descriptor, 'ALQUILER')
+            || (str_contains($descriptor, 'GSD')
+                && (str_contains($descriptor, 'ESTADO') || str_contains($descriptor, 'PRIVADO')));
+    }
+
     public function recalcular(Cotizacion $cotizacion, string $modoDistribucion = 'POR_ITEM'): void
     {
 
@@ -28,6 +46,7 @@ class CotizacionService
         }
 
         $modoDistribucion = $cotizacion->modo_distribucion ?? $modoDistribucion;
+        $esAlquiler = $this->esPlantillaAlquiler($cotizacion);
 
         // Sumar Costos Adicionales
         $totalCostosAdicionales = $cotizacion->costosAdicionales->sum('monto');
@@ -69,9 +88,11 @@ class CotizacionService
             $costoFinal = $costoBase + $costoExtraItem;
 
             $margen = (float) ($item->margen ?? 0);
-            $precioVenta = $margen < 100
+            $periodoMeses = max(0, (int) ($item->garantia_meses ?? 0));
+            $precioVentaBase = $margen < 100
                 ? $costoFinal / (1 - ($margen / 100))
                 : $costoFinal;
+            $precioVenta = $precioVentaBase;
 
             // Redondear precio unitario antes de multiplicar
             $precioVentaRedondeado = round($precioVenta, 2);
@@ -81,7 +102,10 @@ class CotizacionService
             // ==========================
 
             // PVT (precio venta total del item)
-            $pvt = round($item->cantidad * $precioVentaRedondeado, 2);
+            $pvt = round(
+                $item->cantidad * $precioVentaRedondeado * ($esAlquiler ? $periodoMeses : 1),
+                2
+            );
 
             // PTC (precio total compra del item)
             $ptc = round($item->cantidad * $costoFinalRedondeado, 2);

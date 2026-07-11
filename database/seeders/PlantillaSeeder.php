@@ -33,15 +33,15 @@ class PlantillaSeeder extends Seeder
                 'activo' => true 
             ],
             [
-                'nombre' => 'GSD PRIVADO',
+                'nombre' => 'ALQUILER PRIVADO',
                 'incluye_igv'=> false,
-                'formato_pdf' => 'gsd-privado', 
+                'formato_pdf' => 'alquiler-privado',
                 'activo' => true 
             ],
             [
-                'nombre' => 'GSD ESTADO',
+                'nombre' => 'ALQUILER ESTADO',
                 'incluye_igv'=> true,
-                'formato_pdf' => 'gsd-estado', 
+                'formato_pdf' => 'alquiler-estado',
                 'activo' => true 
             ],
         ]);

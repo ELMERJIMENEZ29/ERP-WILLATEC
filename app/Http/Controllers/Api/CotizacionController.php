@@ -43,6 +43,7 @@ class CotizacionController extends Controller
 
     private const FORMAS_PAGO = [
         'AL CONTADO',
+        'CRÉDITO A 5 DÍAS',
         'CRÉDITO 15 DÍAS',
         'CRÉDITO 30 DÍAS',
     ];
@@ -74,8 +75,71 @@ class CotizacionController extends Controller
         return $incluyeIgv === null ? null : (bool) $incluyeIgv;
     }
 
+    private function normalizarDescriptorPlantilla(?Plantilla $plantilla): string
+    {
+        if (! $plantilla) {
+            return '';
+        }
+
+        $descriptor = implode(' ', array_filter([
+            $plantilla->nombre,
+            $plantilla->formato_pdf,
+        ]));
+
+        return strtoupper(iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $descriptor) ?: '');
+    }
+
+    private function esPlantillaAlquilerId(?int $plantillaId): bool
+    {
+        if (! $plantillaId) {
+            return false;
+        }
+
+        $descriptor = $this->normalizarDescriptorPlantilla(Plantilla::find($plantillaId));
+
+        return str_contains($descriptor, 'ALQUILER')
+            || (str_contains($descriptor, 'GSD')
+                && (str_contains($descriptor, 'ESTADO') || str_contains($descriptor, 'PRIVADO')));
+    }
+
+    private function monedaIdParaPlantilla(int $plantillaId, int $monedaIdSolicitada): int
+    {
+        if (! $this->esPlantillaAlquilerId($plantillaId)) {
+            return $monedaIdSolicitada;
+        }
+
+        return (int) (Moneda::where('codigo', 'PEN')->value('id') ?? $monedaIdSolicitada);
+    }
+
+    /**
+     * @return array{precio_venta: float, subtotal: float, costo_total: float, ganancia: float}
+     */
+    private function calcularValoresInicialesItem(
+        float $costoBase,
+        float $margen,
+        int $cantidad,
+        ?int $periodoMeses,
+        bool $esAlquiler
+    ): array {
+        $precioVentaBase = $margen < 100
+            ? $costoBase / (1 - ($margen / 100))
+            : $costoBase;
+        $precioVenta = $precioVentaBase;
+        $precioVenta = round($precioVenta, 2);
+        $costoBaseRedondeado = round($costoBase, 2);
+        $subtotal = round($cantidad * $precioVenta * ($esAlquiler ? max(0, (int) $periodoMeses) : 1), 2);
+        $costoTotal = round($cantidad * $costoBaseRedondeado, 2);
+
+        return [
+            'precio_venta' => $precioVenta,
+            'subtotal' => $subtotal,
+            'costo_total' => $costoTotal,
+            'ganancia' => round($subtotal - $costoTotal, 2),
+        ];
+    }
+
     // =========================
-    // 📄 COTIZACIONES
+    // COTIZACIONES
     // =========================
 
     public function index(Request $request)
@@ -192,6 +256,7 @@ class CotizacionController extends Controller
 
         $numero = $this->service->generarNumero();
         $cliente = Cliente::findOrFail($request->cliente_id);
+        $monedaId = $this->monedaIdParaPlantilla($request->integer('plantilla_id'), $request->integer('moneda_id'));
 
         $cotizacion = Cotizacion::create([
             'numero' => $numero,
@@ -208,7 +273,7 @@ class CotizacionController extends Controller
             'cliente_id' => $cliente->id,
             'plantilla_id' => $request->plantilla_id,
             'user_id' => $request->user()->id,
-            'moneda_id' => $request->moneda_id,
+            'moneda_id' => $monedaId,
             'delegado_id' => $request->delegado_id,
             'delegado_cotizacion_id' => $request->delegado_cotizacion_id,
 
@@ -281,6 +346,7 @@ class CotizacionController extends Controller
 
         DB::transaction(function () use ($request, $cotizacion, $delegadoId, $delegadoCotizacionId, $estadoAnterior) {
             $cliente = Cliente::findOrFail($request->cliente_id);
+            $monedaId = $this->monedaIdParaPlantilla($request->integer('plantilla_id'), $request->integer('moneda_id'));
 
             $cotizacion->update([
                 'cliente_id' => $cliente->id,
@@ -292,12 +358,12 @@ class CotizacionController extends Controller
                 'cliente_telefono' => $cliente->telefono,
                 'cliente_correo' => $cliente->correo,
                 'plantilla_id' => $request->plantilla_id,
-                'moneda_id' => $request->moneda_id,
+                'moneda_id' => $monedaId,
                 'modo_distribucion' => $request->modo_distribucion,
                 'delegado_id' => $delegadoId,
                 'delegado_cotizacion_id' => $delegadoCotizacionId,
                 'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
-                'entrega_provincia' => $request->boolean('entrega_provincia'),
+            'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
@@ -397,7 +463,7 @@ class CotizacionController extends Controller
     }
 
     // =========================
-    // 📦 ITEMS
+    // ITEMS
     // =========================
 
     public function addItem(Request $request, int $cotizacionId)
@@ -438,13 +504,13 @@ class CotizacionController extends Controller
             $costoBase = (float) $request->costo_base;
             $margen = (float) $request->margen;
             $cantidad = (int) $request->cantidad;
-
-            $precioVenta = $margen < 100
-                ? round($costoBase / (1 - $margen / 100), 2)
-                : $costoBase;
-
-            $pvt = round($cantidad * $precioVenta, 2);
-            $ptc = round($cantidad * $costoBase, 2);
+            $valoresIniciales = $this->calcularValoresInicialesItem(
+                $costoBase,
+                $margen,
+                $cantidad,
+                $request->has('garantia_meses') ? $request->integer('garantia_meses') : null,
+                $this->esPlantillaAlquilerId((int) $cotizacion->plantilla_id)
+            );
 
             $itemData = [
                 'cotizacion_id' => $cotizacionId,
@@ -470,12 +536,12 @@ class CotizacionController extends Controller
                 'plantilla_origen_id' => $cotizacion->plantilla_id,
                 'precio_incluye_igv' => $this->plantillaIncluyeIgv($cotizacion->plantilla_id),
 
-                // Valores calculados iniciales — recalcular() los refinará
+                // Valores calculados iniciales - recalcular() los refinará
                 'costo_unitario' => $costoBase,
-                'precio_venta' => $precioVenta,
-                'subtotal' => $pvt,
-                'costo_total' => $ptc,
-                'ganancia' => round($pvt - $ptc, 2),
+                'precio_venta' => $valoresIniciales['precio_venta'],
+                'subtotal' => $valoresIniciales['subtotal'],
+                'costo_total' => $valoresIniciales['costo_total'],
+                'ganancia' => $valoresIniciales['ganancia'],
                 'stock' => $request->stock ?? 0,
                 'importacion_calculo' => $request->input('importacion_calculo'),
             ];
@@ -536,13 +602,15 @@ class CotizacionController extends Controller
             $costoBase = (float) ($request->costo_base ?? $item->costo_base);
             $margen = (float) ($request->margen ?? $item->margen);
             $cantidad = (int) ($request->cantidad ?? $item->cantidad);
-
-            $precioVenta = $margen < 100
-                ? round($costoBase / (1 - $margen / 100), 2)
-                : $costoBase;
-
-            $pvt = round($cantidad * $precioVenta, 2);
-            $ptc = round($cantidad * $costoBase, 2);
+            $valoresIniciales = $this->calcularValoresInicialesItem(
+                $costoBase,
+                $margen,
+                $cantidad,
+                $request->has('garantia_meses')
+                    ? $request->integer('garantia_meses')
+                    : (int) ($item->garantia_meses ?? 0),
+                $this->esPlantillaAlquilerId((int) $item->cotizacion->plantilla_id)
+            );
 
             $itemData = [
                 ...$request->only([
@@ -567,10 +635,10 @@ class CotizacionController extends Controller
                     'importacion_calculo',
                 ]),
                 'costo_unitario' => $costoBase,
-                'precio_venta' => $precioVenta,
-                'subtotal' => $pvt,
-                'costo_total' => $ptc,
-                'ganancia' => round($pvt - $ptc, 2),
+                'precio_venta' => $valoresIniciales['precio_venta'],
+                'subtotal' => $valoresIniciales['subtotal'],
+                'costo_total' => $valoresIniciales['costo_total'],
+                'ganancia' => $valoresIniciales['ganancia'],
                 'tipo' => $request->tipo ?? $item->tipo,
             ];
 
@@ -680,7 +748,7 @@ class CotizacionController extends Controller
     }
 
     // =========================
-    // 💰 COSTOS ADICIONALES
+    // COSTOS ADICIONALES
     // =========================
 
     public function addCosto(Request $request, int $cotizacionId)
@@ -727,7 +795,7 @@ class CotizacionController extends Controller
     }
 
     // =========================
-    // 🔥 ACCIONES
+    // ACCIONES
     // =========================
 
     public function recalcular(Request $request, int $id)
@@ -759,7 +827,7 @@ class CotizacionController extends Controller
     }
 
     // =========================
-    // 🔥 EXPORTACION PDF
+    // EXPORTACION PDF
     // =========================
     public function versiones(Request $request, Cotizacion $cotizacion)
     {
@@ -1023,8 +1091,8 @@ class CotizacionController extends Controller
             ->setPaper('A4', 'portrait')
             ->setOptions([
                 'isRemoteEnabled' => false,
-                'isLocalEnabled' => true,  // ← agrega esto
-                'chroot' => public_path(), // ← restringe acceso a public/
+                'isLocalEnabled' => true,  // <- agrega esto
+                'chroot' => public_path(), // <- restringe acceso a public/
 
             ]); // Permitir cargar imágenes remotas
 
@@ -1036,7 +1104,7 @@ class CotizacionController extends Controller
     }
 
     // =========================
-    // 📄 PLANTILLAS
+    // PLANTILLAS
     // =========================
 
     public function indexPlantillas(Request $request)
@@ -1051,7 +1119,7 @@ class CotizacionController extends Controller
     }
 
     // =========================
-    // 📄 PLANTAFORMAS
+    // PLANTAFORMAS
     // =========================
 
     public function indexPlataformas(Request $request)
@@ -1065,7 +1133,7 @@ class CotizacionController extends Controller
     }
 
     // =========================
-    // 📄 ESTADO COTIZACION
+    // ESTADO COTIZACION
     // =========================
 
     public function indexEstadoCotizacion(Request $request)
@@ -1076,7 +1144,7 @@ class CotizacionController extends Controller
     }
 
     // =========================
-    // 📄 ESTADO COTIZACION ITEM
+    // ESTADO COTIZACION ITEM
     // =========================
 
     public function indexEstadoCotizacionItem(Request $request)
@@ -1087,7 +1155,7 @@ class CotizacionController extends Controller
     }
 
     // =========================
-    // 📄 MONEDA
+    // MONEDA
     // =========================
 
     public function indexMonedas(Request $request)
@@ -1155,6 +1223,8 @@ class CotizacionController extends Controller
         DB::transaction(function () use ($request, &$cotizacion) {
             $numero = $this->service->generarNumero();
             $cliente = Cliente::findOrFail($request->cliente_id);
+            $monedaId = $this->monedaIdParaPlantilla($request->integer('plantilla_id'), $request->integer('moneda_id'));
+            $esAlquiler = $this->esPlantillaAlquilerId($request->integer('plantilla_id'));
 
             $cotizacion = Cotizacion::create([
                 'numero' => $numero,
@@ -1163,7 +1233,7 @@ class CotizacionController extends Controller
                 'tipo_cambio' => 1, // luego lo conectamos a API
                 'validez_dias' => $request->integer('validez_dias') ?: 10,
                 'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
-                'entrega_provincia' => $request->boolean('entrega_provincia'),
+            'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
@@ -1172,7 +1242,7 @@ class CotizacionController extends Controller
                 'plantilla_id' => $request->plantilla_id,
                 'plataforma_id' => $request->plataforma_id,
                 'user_id' => $request->user()->id,
-                'moneda_id' => $request->moneda_id,
+                'moneda_id' => $monedaId,
                 'delegado_id' => $request->delegado_id,
                 'delegado_cotizacion_id' => $request->delegado_cotizacion_id,
 
@@ -1198,11 +1268,13 @@ class CotizacionController extends Controller
                 $costoBase = (float) ($item['costo_base'] ?? 0);
                 $margen = min((float) ($item['margen'] ?? 0), 99.99);
                 $cantidad = (int) ($item['cantidad'] ?? 1);
-
-                $factorMargen = $margen < 100 ? 1 - ($margen / 100) : 0.0001;
-                $precioVenta = round($costoBase / $factorMargen, 2);
-                $pvt = round($cantidad * $precioVenta, 2);
-                $ptc = round($cantidad * $costoBase, 2);
+                $valoresIniciales = $this->calcularValoresInicialesItem(
+                    $costoBase,
+                    $margen,
+                    $cantidad,
+                    isset($item['garantia_meses']) ? (int) $item['garantia_meses'] : null,
+                    $esAlquiler
+                );
                 $itemData = [
                     'cotizacion_id' => $cotizacion->id,
                     'descripcion' => $item['descripcion'],
@@ -1223,17 +1295,17 @@ class CotizacionController extends Controller
                     'producto_id' => $item['producto_id'] ?? null,
                     'tipo' => $item['tipo'] ?? 'personalizado',
                     'imagen' => $this->resolveCotizacionItemImagen($request, $index, $item),
-                    'moneda_id' => $request->moneda_id,
+                    'moneda_id' => $monedaId,
                     'plantilla_origen_id' => $request->plantilla_id,
                     'precio_incluye_igv' => $this->plantillaIncluyeIgv($request->integer('plantilla_id')),
                     'importacion_calculo' => $item['importacion_calculo'] ?? null,
 
-                    // Valores calculados iniciales — recalcular() los refinará con costos adicionales
+                    // Valores calculados iniciales - recalcular() los refinará con costos adicionales
                     'costo_unitario' => $costoBase,
-                    'precio_venta' => $precioVenta,
-                    'subtotal' => $pvt,
-                    'costo_total' => $ptc,
-                    'ganancia' => round($pvt - $ptc, 2),
+                    'precio_venta' => $valoresIniciales['precio_venta'],
+                    'subtotal' => $valoresIniciales['subtotal'],
+                    'costo_total' => $valoresIniciales['costo_total'],
+                    'ganancia' => $valoresIniciales['ganancia'],
                     'stock' => 0,
                     'delegado_id' => $cotizacion->delegado_id,
                 ];
@@ -1352,6 +1424,9 @@ class CotizacionController extends Controller
         $estadoAnterior = (int) $cotizacion->estado_cotizacion_id;
 
         DB::transaction(function () use ($request, $cotizacion, $cliente, $delegadoId, $delegadoCotizacionId, $estadoAnterior) {
+            $monedaId = $this->monedaIdParaPlantilla($request->integer('plantilla_id'), $request->integer('moneda_id'));
+            $esAlquiler = $this->esPlantillaAlquilerId($request->integer('plantilla_id'));
+
             // UPDATE HEADER
             $cotizacion->update([
                 'cliente_id' => $cliente->id,
@@ -1364,7 +1439,7 @@ class CotizacionController extends Controller
                 'cliente_correo' => $cliente->correo,
                 'plantilla_id' => $request->plantilla_id,
                 'plataforma_id' => $request->plataforma_id,
-                'moneda_id' => $request->moneda_id,
+                'moneda_id' => $monedaId,
                 'modo_distribucion' => $request->modo_distribucion,
                 'titulo' => $request->titulo,
                 'validez_dias' => $request->integer('validez_dias') ?: $cotizacion->validez_dias,
@@ -1375,7 +1450,7 @@ class CotizacionController extends Controller
                 'delegado_id' => $delegadoId,
                 'delegado_cotizacion_id' => $delegadoCotizacionId,
                 'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
-                'entrega_provincia' => $request->boolean('entrega_provincia'),
+            'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
@@ -1390,11 +1465,13 @@ class CotizacionController extends Controller
                 $costoBase = (float) ($item['costo_base'] ?? 0);
                 $margen = min((float) ($item['margen'] ?? 0), 99.99);
                 $cantidad = (int) ($item['cantidad'] ?? 1);
-
-                $factorMargen = $margen < 100 ? 1 - ($margen / 100) : 0.0001;
-                $precioVenta = round($costoBase / $factorMargen, 2);
-                $pvt = round($cantidad * $precioVenta, 2);
-                $ptc = round($cantidad * $costoBase, 2);
+                $valoresIniciales = $this->calcularValoresInicialesItem(
+                    $costoBase,
+                    $margen,
+                    $cantidad,
+                    isset($item['garantia_meses']) ? (int) $item['garantia_meses'] : null,
+                    $esAlquiler
+                );
                 $itemData = [
                     'cotizacion_id' => $cotizacion->id,
                     'descripcion' => $item['descripcion'],
@@ -1415,16 +1492,16 @@ class CotizacionController extends Controller
                     'producto_id' => $item['producto_id'] ?? null,
                     'tipo' => $item['tipo'] ?? 'personalizado',
                     'imagen' => $this->resolveCotizacionItemImagen($request, $index, $item),
-                    'moneda_id' => $request->moneda_id,
+                    'moneda_id' => $monedaId,
                     'plantilla_origen_id' => $request->plantilla_id,
                     'precio_incluye_igv' => $this->plantillaIncluyeIgv($request->integer('plantilla_id')),
 
-                    // Valores calculados iniciales — recalcular() los refinará con costos adicionales
+                    // Valores calculados iniciales - recalcular() los refinará con costos adicionales
                     'costo_unitario' => $costoBase,
-                    'precio_venta' => $precioVenta,
-                    'subtotal' => $pvt,
-                    'costo_total' => $ptc,
-                    'ganancia' => round($pvt - $ptc, 2),
+                    'precio_venta' => $valoresIniciales['precio_venta'],
+                    'subtotal' => $valoresIniciales['subtotal'],
+                    'costo_total' => $valoresIniciales['costo_total'],
+                    'ganancia' => $valoresIniciales['ganancia'],
                     'stock' => 0,
                     'importacion_calculo' => $item['importacion_calculo'] ?? null,
                 ];
@@ -1637,6 +1714,9 @@ class CotizacionController extends Controller
         $cliente = Cliente::findOrFail($payload['cliente_id']);
         $delegadoId = $payload['delegado_id'] ?? $cotizacion->delegado_id;
         $delegadoCotizacionId = $payload['delegado_cotizacion_id'] ?? $cotizacion->delegado_cotizacion_id;
+        $plantillaId = (int) $payload['plantilla_id'];
+        $monedaId = $this->monedaIdParaPlantilla($plantillaId, (int) $payload['moneda_id']);
+        $esAlquiler = $this->esPlantillaAlquilerId($plantillaId);
 
         $this->ensureSalesUser($delegadoId ? (int) $delegadoId : null);
         $this->ensureSalesOrSuperadminUser($delegadoCotizacionId ? (int) $delegadoCotizacionId : null);
@@ -1648,9 +1728,9 @@ class CotizacionController extends Controller
             'cliente_contacto' => $payload['cliente_contacto'] ?? $cotizacion->cliente_contacto,
             'cliente_telefono' => $cliente->telefono,
             'cliente_correo' => $cliente->correo,
-            'plantilla_id' => $payload['plantilla_id'],
+            'plantilla_id' => $plantillaId,
             'plataforma_id' => $payload['plataforma_id'],
-            'moneda_id' => $payload['moneda_id'],
+            'moneda_id' => $monedaId,
             'modo_distribucion' => $payload['modo_distribucion'] ?? $cotizacion->modo_distribucion,
             'titulo' => $payload['titulo'],
             'validez_dias' => (int) ($payload['validez_dias'] ?? $cotizacion->validez_dias),
@@ -1674,11 +1754,13 @@ class CotizacionController extends Controller
             $costoBase = (float) ($item['costo_base'] ?? 0);
             $margen = min((float) ($item['margen'] ?? 0), 99.99);
             $cantidad = (int) ($item['cantidad'] ?? 1);
-
-            $factorMargen = $margen < 100 ? 1 - ($margen / 100) : 0.0001;
-            $precioVenta = round($costoBase / $factorMargen, 2);
-            $pvt = round($cantidad * $precioVenta, 2);
-            $ptc = round($cantidad * $costoBase, 2);
+            $valoresIniciales = $this->calcularValoresInicialesItem(
+                $costoBase,
+                $margen,
+                $cantidad,
+                isset($item['garantia_meses']) ? (int) $item['garantia_meses'] : null,
+                $esAlquiler
+            );
 
             $itemData = [
                 'cotizacion_id' => $cotizacion->id,
@@ -1700,15 +1782,15 @@ class CotizacionController extends Controller
                 'producto_id' => $item['producto_id'] ?? null,
                 'tipo' => $item['tipo'] ?? 'personalizado',
                 'imagen' => $this->resolveCotizacionItemImagenFromPayload($item),
-                'moneda_id' => $payload['moneda_id'],
-                'plantilla_origen_id' => $payload['plantilla_id'],
-                'precio_incluye_igv' => $this->plantillaIncluyeIgv((int) $payload['plantilla_id']),
+                'moneda_id' => $monedaId,
+                'plantilla_origen_id' => $plantillaId,
+                'precio_incluye_igv' => $this->plantillaIncluyeIgv($plantillaId),
                 'importacion_calculo' => $item['importacion_calculo'] ?? null,
                 'costo_unitario' => $costoBase,
-                'precio_venta' => $precioVenta,
-                'subtotal' => $pvt,
-                'costo_total' => $ptc,
-                'ganancia' => round($pvt - $ptc, 2),
+                'precio_venta' => $valoresIniciales['precio_venta'],
+                'subtotal' => $valoresIniciales['subtotal'],
+                'costo_total' => $valoresIniciales['costo_total'],
+                'ganancia' => $valoresIniciales['ganancia'],
                 'stock' => $item['stock'] ?? 0,
             ];
 
@@ -1826,6 +1908,11 @@ class CotizacionController extends Controller
     {
         $fallback = 'pdfs.cotizaciones.willatec-dolares';
         $formatoPdf = trim($formatoPdf);
+        $formatoPdf = match ($formatoPdf) {
+            'gsd-privado' => 'alquiler-privado',
+            'gsd-estado' => 'alquiler-estado',
+            default => $formatoPdf,
+        };
 
         if (! preg_match('/^[A-Za-z0-9_-]+$/', $formatoPdf)) {
             return $fallback;
@@ -2265,7 +2352,7 @@ class CotizacionController extends Controller
     }
 
     // =========================
-    // ✅ APROBAR COTIZACIÓN
+    // APROBAR COTIZACION
     // =========================
     private function authorizeApprovalOrRejection(Request $request, Cotizacion $cotizacion): void
     {
@@ -2333,7 +2420,7 @@ class CotizacionController extends Controller
     }
 
     // =========================
-    // ❌ RECHAZAR COTIZACIÓN
+    // RECHAZAR COTIZACION
     // =========================
     public function rechazar(Request $request, Cotizacion $cotizacion)
     {

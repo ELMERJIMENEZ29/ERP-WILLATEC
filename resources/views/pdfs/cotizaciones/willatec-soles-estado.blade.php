@@ -996,7 +996,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                     <td>
                         <span class="strong">{{ $item->descripcion }}</span><br>
                         @if(!empty($item->nota))
-                        <span class="muted">Nota: {{ $item->nota }}</span><br>
+                        <span class="muted">Nota: {!! nl2br(e($item->nota)) !!}</span><br>
                         @endif
                         @if($item->marca)
                         <span class="muted">Marca: {{ $item->marca }}</span><br>
