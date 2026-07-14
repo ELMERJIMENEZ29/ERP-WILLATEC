@@ -29,7 +29,7 @@ class ProductoController extends Controller
                 'categoria:id,nombre',
                 'moneda:id,codigo,simbolo',
                 'series' => fn ($query) => $query
-                    ->select(['id', 'producto_id', 'serie', 'factura_numero', 'estado', 'fecha_ingreso', 'fecha_salida', 'oc_recibida_id', 'cotizacion_item_id'])
+                    ->select(['id', 'producto_id', 'serie', 'factura_numero', 'documento_path', 'estado', 'fecha_ingreso', 'fecha_salida', 'oc_recibida_id', 'cotizacion_item_id'])
                     ->latest(),
             ]);
 
