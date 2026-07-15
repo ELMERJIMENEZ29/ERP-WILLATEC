@@ -8,6 +8,7 @@ use App\Models\CotizacionItem;
 use App\Models\InventarioMovimiento;
 use App\Models\OcRecibida;
 use App\Models\Producto;
+use App\Models\ProductoSerie;
 use App\Models\Proveedor;
 use App\Services\InventarioService;
 use Illuminate\Http\Request;
@@ -347,7 +348,7 @@ class InventarioController extends Controller
             fechaDocumento: $validated['fecha_documento'] ?? null,
             monedaId: isset($validated['moneda_id']) ? (int) $validated['moneda_id'] : null,
             productoSerieIds: $validated['producto_serie_ids'] ?? [],
-            salidaSerieEstado: $validated['motivo']
+            salidaSerieEstado: $this->resolveSalidaSerieEstado($validated['motivo'])
         );
 
         return response()->json([
@@ -359,5 +360,16 @@ class InventarioController extends Controller
     private function storeDocumento(UploadedFile $file, string $directory): string
     {
         return $file->store($directory, 'public');
+    }
+
+    private function resolveSalidaSerieEstado(string $motivo): string
+    {
+        return match ($motivo) {
+            'uso_interno' => ProductoSerie::ESTADO_EN_USO,
+            'prestamo' => ProductoSerie::ESTADO_PRESTADO,
+            'garantia' => ProductoSerie::ESTADO_GARANTIA,
+            'merma' => ProductoSerie::ESTADO_BAJA,
+            default => ProductoSerie::ESTADO_NO_DISPONIBLE,
+        };
     }
 }

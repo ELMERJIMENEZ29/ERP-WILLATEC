@@ -15,6 +15,16 @@ class ProductoSerie extends Model
 
     public const ESTADO_DEVUELTO = 'devuelto';
 
+    public const ESTADO_EN_USO = 'en_uso';
+
+    public const ESTADO_PRESTADO = 'prestado';
+
+    public const ESTADO_GARANTIA = 'garantia';
+
+    public const ESTADO_BAJA = 'baja';
+
+    public const ESTADO_NO_DISPONIBLE = 'no_disponible';
+
     protected $table = 'producto_series';
 
     protected $fillable = [
