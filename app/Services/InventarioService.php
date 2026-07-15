@@ -188,11 +188,18 @@ class InventarioService
         ?string $proveedor = null,
         ?int $proveedorId = null,
         ?int $monedaId = null,
-        ?array $series = null
+        ?array $series = null,
+        string $tipoMovimiento = InventarioMovimiento::TIPO_ENTRADA
     ): Producto {
+        if (! in_array($tipoMovimiento, [InventarioMovimiento::TIPO_ENTRADA, InventarioMovimiento::TIPO_DEVOLUCION], true)) {
+            throw ValidationException::withMessages([
+                'tipo_movimiento' => 'Tipo de entrada de inventario no soportado.',
+            ]);
+        }
+
         return $this->moverStock(
             productoId: $productoId,
-            tipoMovimiento: InventarioMovimiento::TIPO_ENTRADA,
+            tipoMovimiento: $tipoMovimiento,
             cantidad: $cantidad,
             referenciaTipo: $referenciaTipo,
             referenciaId: $referenciaId,
@@ -589,7 +596,14 @@ class InventarioService
     ): array {
         $seriesDisponibles = ProductoSerie::query()
             ->where('producto_id', $producto->id)
-            ->where('estado', ProductoSerie::ESTADO_DISPONIBLE)
+            ->where(function ($query) use ($ocRecibidaId, $cotizacionItemId): void {
+                $query->where('estado', ProductoSerie::ESTADO_DISPONIBLE)
+                    ->orWhere(function ($reservadaQuery) use ($ocRecibidaId, $cotizacionItemId): void {
+                        $reservadaQuery->where('estado', ProductoSerie::ESTADO_RESERVADO)
+                            ->where('oc_recibida_id', $ocRecibidaId)
+                            ->where('cotizacion_item_id', $cotizacionItemId);
+                    });
+            })
             ->count();
 
         if ($seriesDisponibles === 0 && empty($productoSerieIds)) {
@@ -627,7 +641,14 @@ class InventarioService
         }
 
         $seriesNoDisponibles = $series
-            ->filter(fn (ProductoSerie $serie): bool => $serie->estado !== ProductoSerie::ESTADO_DISPONIBLE)
+            ->filter(fn (ProductoSerie $serie): bool => ! (
+                $serie->estado === ProductoSerie::ESTADO_DISPONIBLE ||
+                (
+                    $serie->estado === ProductoSerie::ESTADO_RESERVADO &&
+                    (int) $serie->oc_recibida_id === (int) $ocRecibidaId &&
+                    (int) $serie->cotizacion_item_id === (int) $cotizacionItemId
+                )
+            ))
             ->pluck('serie')
             ->filter()
             ->values();

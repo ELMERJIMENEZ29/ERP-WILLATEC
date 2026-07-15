@@ -242,6 +242,7 @@ class InventarioController extends Controller
     {
         $validated = $request->validate([
             'cantidad' => 'required|numeric|min:0.01',
+            'tipo_movimiento' => 'nullable|in:entrada,devolucion',
             'costo_unitario' => 'required|numeric|min:0',
             'moneda_id' => 'required|exists:monedas,id',
             'proveedor_id' => 'nullable|exists:proveedores,id',
@@ -298,11 +299,14 @@ class InventarioController extends Controller
             fechaDocumento: $validated['fecha_documento'] ?? null,
             proveedor: $proveedorNombre,
             proveedorId: $proveedorCatalogo?->id,
-            series: $series
+            series: $series,
+            tipoMovimiento: $validated['tipo_movimiento'] ?? InventarioMovimiento::TIPO_ENTRADA
         );
 
         return response()->json([
-            'message' => 'Entrada registrada en Kardex',
+            'message' => ($validated['tipo_movimiento'] ?? InventarioMovimiento::TIPO_ENTRADA) === InventarioMovimiento::TIPO_DEVOLUCION
+                ? 'Devolucion registrada en Kardex'
+                : 'Entrada registrada en Kardex',
             'producto' => $productoActualizado,
         ]);
     }

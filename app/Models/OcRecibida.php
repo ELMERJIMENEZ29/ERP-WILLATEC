@@ -16,6 +16,8 @@ class OcRecibida extends Model
 
     public const ESTADO_ATENDIDO = 'atendido';
 
+    public const ESTADO_CANCELADO = 'cancelado';
+
     protected $fillable = [
         'numero',
         'fecha_recepcion',

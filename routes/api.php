@@ -28,7 +28,7 @@ Route::post('/woocommerce/webhook/orders', [WooCommerceWebhookController::class,
 Route::post('/two-factor/challenge', [AuthController::class, 'twoFactorChallenge'])
     ->middleware('throttle:5,1');
 
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
 
     Route::post('/two-factor/enable', [TwoFactorController::class, 'enable']);
     Route::get('/two-factor/qr', [TwoFactorController::class, 'qr']);
@@ -88,7 +88,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         ->middleware('role:superadmin|admin|ventas|soporte|logistica');
 });
 
-Route::prefix('productos')->middleware('auth:sanctum')->group(function () {
+Route::prefix('productos')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     // PRODUCTOS
     Route::get('/', [ProductoController::class, 'index']);
     Route::get('/{producto}/inventario', [InventarioController::class, 'show'])->middleware('role:superadmin|admin|soporte|logistica');
@@ -106,22 +106,22 @@ Route::prefix('productos')->middleware('auth:sanctum')->group(function () {
 });
 
 Route::post('/upload-imagen', [CotizacionController::class, 'uploadImagen'])
-    ->middleware(['auth:sanctum']);
+    ->middleware(['auth:sanctum', 'token.idle']);
 
-Route::prefix('productos-externos')->middleware('auth:sanctum')->group(function () {
+Route::prefix('productos-externos')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [ProductoExternoController::class, 'index'])
         ->middleware('role:superadmin|ventas');
     Route::post('/{productoExterno}/convertir-interno', [ProductoExternoController::class, 'convertirAInterno'])
         ->middleware('role:superadmin|admin|ventas');
 });
 
-Route::prefix('woocommerce')->middleware(['auth:sanctum', 'role:superadmin|admin'])->group(function () {
+Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin'])->group(function () {
     Route::post('/productos/mapear', [WooCommerceProductoController::class, 'mapear']);
     Route::post('/productos/{producto}/sync-stock', [WooCommerceProductoController::class, 'sincronizarStock']);
     Route::get('/sync-logs', [WooCommerceProductoController::class, 'logs']);
 });
 
-Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
+Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     // ── RUTAS ESTÁTICAS PRIMERO ──────────────────────────────
     Route::get('/', [CotizacionController::class, 'index'])
         ->middleware('role:superadmin|ventas');
@@ -228,15 +228,16 @@ Route::prefix('cotizaciones')->middleware('auth:sanctum')->group(function () {
         ->middleware('role:superadmin|ventas');
 });
 
-Route::prefix('oc-recibidas')->middleware('auth:sanctum')->group(function () {
+Route::prefix('oc-recibidas')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [OcRecibidaController::class, 'index'])->middleware('role:superadmin|ventas');
     Route::post('/', [OcRecibidaController::class, 'store'])->middleware('role:superadmin|ventas');
     Route::get('/{ocRecibida}', [OcRecibidaController::class, 'show'])->middleware('role:superadmin|ventas');
     Route::patch('/{ocRecibida}/items', [OcRecibidaController::class, 'updateItems'])->middleware('role:superadmin|ventas');
+    Route::patch('/{ocRecibida}/cancelar', [OcRecibidaController::class, 'cancelar'])->middleware('role:superadmin|ventas');
     Route::post('/{ocRecibida}/documentos', [OcRecibidaController::class, 'documentos'])->middleware('role:superadmin|ventas');
 });
 
-Route::prefix('oc-emitidas')->middleware('auth:sanctum')->group(function () {
+Route::prefix('oc-emitidas')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [OcEmitidaController::class, 'index'])->middleware('role:superadmin|ventas');
     Route::post('/', [OcEmitidaController::class, 'store'])->middleware('role:superadmin|ventas');
     Route::get('/{ocEmitida}', [OcEmitidaController::class, 'show'])->middleware('role:superadmin|ventas');
@@ -244,7 +245,7 @@ Route::prefix('oc-emitidas')->middleware('auth:sanctum')->group(function () {
     Route::get('/{ocEmitida}/pdf', [OcEmitidaController::class, 'pdf'])->middleware('role:superadmin|ventas');
 });
 
-Route::prefix('ordencompra')->middleware('auth:sanctum')->group(function () {
+Route::prefix('ordencompra')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
 
     Route::get('/', [OrdenCompraController::class, 'index'])->middleware('role:superadmin|ventas');
 
@@ -263,7 +264,7 @@ Route::prefix('ordencompra')->middleware('auth:sanctum')->group(function () {
     );
 });
 
-Route::prefix('clientes')->middleware('auth:sanctum')->group(function () {
+Route::prefix('clientes')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [ClienteController::class, 'index'])->middleware('role:superadmin|ventas');
     Route::post('/', [ClienteController::class, 'store'])->middleware('role:superadmin|ventas');
     Route::get('/{id}', [ClienteController::class, 'show'])->middleware('role:superadmin|ventas');

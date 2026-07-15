@@ -49,7 +49,7 @@ class OcRecibidaController extends Controller
     {
         $request->validate([
             'search' => 'nullable|string|max:255',
-            'estado' => 'nullable|in:pendiente,en_proceso,por_entrega,atendido',
+            'estado' => 'nullable|in:pendiente,en_proceso,por_entrega,atendido,cancelado',
             'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
@@ -98,8 +98,11 @@ class OcRecibidaController extends Controller
             $ocRecibida->load([
                 'items.cotizacionItem.proveedores',
                 'items.cotizacionItem.producto.series' => fn ($query) => $query
-                    ->select(['id', 'producto_id', 'serie', 'factura_numero', 'estado', 'fecha_ingreso'])
-                    ->where('estado', ProductoSerie::ESTADO_DISPONIBLE)
+                    ->select(['id', 'producto_id', 'serie', 'factura_numero', 'estado', 'fecha_ingreso', 'fecha_salida', 'oc_recibida_id', 'cotizacion_item_id'])
+                    ->where(function ($seriesQuery) use ($ocRecibida): void {
+                        $seriesQuery->where('estado', ProductoSerie::ESTADO_DISPONIBLE)
+                            ->orWhere('oc_recibida_id', $ocRecibida->id);
+                    })
                     ->latest(),
                 'cotizacion',
                 'cliente',
@@ -223,6 +226,12 @@ class OcRecibidaController extends Controller
     {
         $this->ensureCanEditOc($request, $ocRecibida);
 
+        if ($ocRecibida->estado === OcRecibida::ESTADO_CANCELADO) {
+            return response()->json([
+                'message' => 'No se pueden actualizar items de una OC cancelada.',
+            ], 422);
+        }
+
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.id' => 'required|integer|exists:oc_recibida_items,id',
@@ -234,7 +243,7 @@ class OcRecibidaController extends Controller
 
         DB::transaction(function () use ($request, $validated, $ocRecibida): void {
             $this->reservarStockOc($ocRecibida->refresh()->load('items.cotizacionItem'), $request);
-            $itemsActuales = $ocRecibida->refresh()->load('items')->items->keyBy('id');
+            $itemsActuales = $ocRecibida->refresh()->load('items.cotizacionItem')->items->keyBy('id');
 
             foreach ($validated['items'] as $itemData) {
                 $itemActual = $itemsActuales->get((int) $itemData['id']);
@@ -243,6 +252,10 @@ class OcRecibidaController extends Controller
                     throw ValidationException::withMessages([
                         'entregado' => "El item {$itemActual?->descripcion} no puede marcarse como entregado porque aun no esta comprado.",
                     ]);
+                }
+
+                if ($itemActual) {
+                    $this->sincronizarSeriesItemEntrega($ocRecibida, $itemActual, $itemData);
                 }
 
                 $ocRecibida->items()
@@ -274,6 +287,100 @@ class OcRecibidaController extends Controller
                 ->where('entregado', false)
                 ->pluck('id')
                 ->values(),
+        ]);
+    }
+
+    public function cancelar(Request $request, OcRecibida $ocRecibida)
+    {
+        $this->ensureCanEditOc($request, $ocRecibida);
+
+        if ($ocRecibida->estado === OcRecibida::ESTADO_ATENDIDO) {
+            return response()->json([
+                'message' => 'No se puede cancelar una OC atendida porque ya registro salida de inventario.',
+            ], 422);
+        }
+
+        if ($ocRecibida->estado === OcRecibida::ESTADO_CANCELADO) {
+            return response()->json([
+                'message' => 'La OC ya se encuentra cancelada.',
+                'estado' => $ocRecibida->estado,
+            ]);
+        }
+
+        DB::transaction(function () use ($request, $ocRecibida): void {
+            $ocRecibida->loadMissing('items.cotizacionItem', 'cotizacion');
+
+            $inventarioService = app(InventarioService::class);
+            $monedaId = $ocRecibida->cotizacion?->moneda_id;
+
+            foreach ($ocRecibida->items->where('seleccionado', true) as $item) {
+                $productoId = $item->cotizacionItem?->producto_id;
+
+                if (! $productoId) {
+                    $item->forceFill([
+                        'comprado' => false,
+                        'entregado' => false,
+                    ])->save();
+
+                    continue;
+                }
+
+                $salidaKey = "oc-recibida:{$ocRecibida->id}:salida:cotizacion-item:{$item->cotizacion_item_id}";
+                if (InventarioMovimiento::query()->where('idempotency_key', $salidaKey)->exists()) {
+                    throw ValidationException::withMessages([
+                        'oc_recibida' => "No se puede cancelar la OC porque el item {$item->descripcion} ya registro salida de inventario.",
+                    ]);
+                }
+
+                $reservaKey = "oc-recibida:{$ocRecibida->id}:reserva:cotizacion-item:{$item->cotizacion_item_id}";
+                $liberacionKey = "oc-recibida:{$ocRecibida->id}:liberacion-reserva:cotizacion-item:{$item->cotizacion_item_id}";
+
+                if (
+                    InventarioMovimiento::query()->where('idempotency_key', $reservaKey)->exists() &&
+                    ! InventarioMovimiento::query()->where('idempotency_key', $liberacionKey)->exists()
+                ) {
+                    $inventarioService->liberarReserva(
+                        productoId: (int) $productoId,
+                        cantidad: (float) $item->cantidad_recibida,
+                        referenciaTipo: 'oc_recibida_cancelada',
+                        referenciaId: $ocRecibida->id,
+                        origen: 'orden_compra',
+                        idempotencyKey: $liberacionKey,
+                        createdBy: $request->user()?->id,
+                        observacion: "Liberacion de reserva por cancelacion de OC {$ocRecibida->numero}",
+                        ipOrigen: $request->ip(),
+                        userAgent: $request->userAgent(),
+                        monedaId: $monedaId
+                    );
+                }
+
+                ProductoSerie::query()
+                    ->where('producto_id', $productoId)
+                    ->where('estado', ProductoSerie::ESTADO_RESERVADO)
+                    ->where('oc_recibida_id', $ocRecibida->id)
+                    ->where('cotizacion_item_id', $item->cotizacion_item_id)
+                    ->update([
+                        'estado' => ProductoSerie::ESTADO_DISPONIBLE,
+                        'oc_recibida_id' => null,
+                        'cotizacion_item_id' => null,
+                        'fecha_salida' => null,
+                    ]);
+
+                $item->forceFill([
+                    'comprado' => false,
+                    'entregado' => false,
+                ])->save();
+            }
+
+            $ocRecibida->forceFill([
+                'estado' => OcRecibida::ESTADO_CANCELADO,
+            ])->save();
+        });
+
+        return response()->json([
+            'message' => 'OC cancelada y reservas liberadas.',
+            'estado' => $ocRecibida->refresh()->estado,
+            'oc_recibida' => $ocRecibida->load(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc']),
         ]);
     }
 
@@ -317,6 +424,10 @@ class OcRecibidaController extends Controller
 
     private function actualizarEstadoOc(OcRecibida $ocRecibida): void
     {
+        if ($ocRecibida->estado === OcRecibida::ESTADO_CANCELADO) {
+            return;
+        }
+
         $items = $ocRecibida->items->where('seleccionado', true);
 
         if ($items->isEmpty() || $items->where('comprado', true)->isEmpty()) {
@@ -334,6 +445,10 @@ class OcRecibidaController extends Controller
 
     private function reservarStockOc(OcRecibida $ocRecibida, Request $request): void
     {
+        if ($ocRecibida->estado === OcRecibida::ESTADO_CANCELADO) {
+            return;
+        }
+
         $inventarioService = app(InventarioService::class);
         $ocRecibida->loadMissing('cotizacion');
         $monedaId = $ocRecibida->cotizacion?->moneda_id;
@@ -383,6 +498,10 @@ class OcRecibidaController extends Controller
 
     private function sincronizarCompradoConInventario(OcRecibida $ocRecibida): void
     {
+        if ($ocRecibida->estado === OcRecibida::ESTADO_CANCELADO) {
+            return;
+        }
+
         $changed = false;
 
         foreach ($ocRecibida->items->where('seleccionado', true) as $item) {
@@ -423,11 +542,16 @@ class OcRecibidaController extends Controller
         foreach ($ocRecibida->items->where('seleccionado', true) as $item) {
             $productoId = $item->cotizacionItem?->producto_id;
             $itemPayload = $itemsPayloadById->get((int) $item->id, []);
+            $productoSerieIds = $itemPayload['producto_serie_ids'] ?? [];
 
             if (! $productoId) {
                 throw ValidationException::withMessages([
                     'producto_id' => "El item {$item->descripcion} no esta asociado a un producto interno de inventario.",
                 ]);
+            }
+
+            if (empty($productoSerieIds)) {
+                $productoSerieIds = $this->seriesReservadasParaItem($ocRecibida, $item);
             }
 
             $reservaKey = "oc-recibida:{$ocRecibida->id}:reserva:cotizacion-item:{$item->cotizacion_item_id}";
@@ -452,11 +576,152 @@ class OcRecibidaController extends Controller
                 fechaDocumento: now()->toDateString(),
                 monedaId: $monedaId,
                 liberarReservaAsociada: $liberarReserva,
-                productoSerieIds: $itemPayload['producto_serie_ids'] ?? [],
+                productoSerieIds: $productoSerieIds,
                 ocRecibidaId: $ocRecibida->id,
                 cotizacionItemId: $item->cotizacion_item_id
             );
         }
+    }
+
+    private function sincronizarSeriesItemEntrega(OcRecibida $ocRecibida, OcRecibidaItem $item, array $itemData): void
+    {
+        $productoId = $item->cotizacionItem?->producto_id;
+
+        if (! $productoId) {
+            return;
+        }
+
+        $seriesProductoCount = ProductoSerie::query()
+            ->where('producto_id', $productoId)
+            ->count();
+
+        if ($seriesProductoCount === 0) {
+            return;
+        }
+
+        $entregado = (bool) $itemData['entregado'];
+        $cantidad = (float) $item->cantidad_recibida;
+        $ids = collect($itemData['producto_serie_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if (! $entregado) {
+            $seriesVendidas = ProductoSerie::query()
+                ->where('producto_id', $productoId)
+                ->where('estado', ProductoSerie::ESTADO_VENDIDO)
+                ->where('oc_recibida_id', $ocRecibida->id)
+                ->where('cotizacion_item_id', $item->cotizacion_item_id)
+                ->exists();
+
+            if ($seriesVendidas) {
+                throw ValidationException::withMessages([
+                    'entregado' => 'No puedes desmarcar un item que ya registro salida de series vendidas.',
+                ]);
+            }
+
+            ProductoSerie::query()
+                ->where('producto_id', $productoId)
+                ->where('estado', ProductoSerie::ESTADO_RESERVADO)
+                ->where('oc_recibida_id', $ocRecibida->id)
+                ->where('cotizacion_item_id', $item->cotizacion_item_id)
+                ->update([
+                    'estado' => ProductoSerie::ESTADO_DISPONIBLE,
+                    'oc_recibida_id' => null,
+                    'cotizacion_item_id' => null,
+                    'fecha_salida' => null,
+                ]);
+
+            return;
+        }
+
+        if (floor($cantidad) !== $cantidad) {
+            throw ValidationException::withMessages([
+                'producto_serie_ids' => 'Para productos seriados la cantidad entregada debe ser entera.',
+            ]);
+        }
+
+        if ($ids->count() !== (int) $cantidad) {
+            throw ValidationException::withMessages([
+                'producto_serie_ids' => 'Selecciona una serie por cada unidad entregada.',
+            ]);
+        }
+
+        $series = ProductoSerie::query()
+            ->where('producto_id', $productoId)
+            ->whereIn('id', $ids->all())
+            ->lockForUpdate()
+            ->get();
+
+        if ($series->count() !== $ids->count()) {
+            throw ValidationException::withMessages([
+                'producto_serie_ids' => 'Una o mas series seleccionadas no pertenecen al producto.',
+            ]);
+        }
+
+        $seriesNoValidas = $series
+            ->filter(fn (ProductoSerie $serie): bool => ! (
+                $serie->estado === ProductoSerie::ESTADO_DISPONIBLE ||
+                (
+                    in_array($serie->estado, [ProductoSerie::ESTADO_RESERVADO, ProductoSerie::ESTADO_VENDIDO], true) &&
+                    (int) $serie->oc_recibida_id === (int) $ocRecibida->id &&
+                    (int) $serie->cotizacion_item_id === (int) $item->cotizacion_item_id
+                )
+            ))
+            ->pluck('serie')
+            ->filter()
+            ->values();
+
+        if ($seriesNoValidas->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'producto_serie_ids' => 'Hay series seleccionadas que ya no estan disponibles: '.$seriesNoValidas->join(', '),
+            ]);
+        }
+
+        ProductoSerie::query()
+            ->where('producto_id', $productoId)
+            ->where('estado', ProductoSerie::ESTADO_RESERVADO)
+            ->where('oc_recibida_id', $ocRecibida->id)
+            ->where('cotizacion_item_id', $item->cotizacion_item_id)
+            ->whereNotIn('id', $ids->all())
+            ->update([
+                'estado' => ProductoSerie::ESTADO_DISPONIBLE,
+                'oc_recibida_id' => null,
+                'cotizacion_item_id' => null,
+                'fecha_salida' => null,
+            ]);
+
+        $series
+            ->filter(fn (ProductoSerie $serie): bool => $serie->estado !== ProductoSerie::ESTADO_VENDIDO)
+            ->each(function (ProductoSerie $serie) use ($ocRecibida, $item): void {
+                $serie->forceFill([
+                    'estado' => ProductoSerie::ESTADO_RESERVADO,
+                    'oc_recibida_id' => $ocRecibida->id,
+                    'cotizacion_item_id' => $item->cotizacion_item_id,
+                    'fecha_salida' => null,
+                ])->save();
+            });
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function seriesReservadasParaItem(OcRecibida $ocRecibida, OcRecibidaItem $item): array
+    {
+        $productoId = $item->cotizacionItem?->producto_id;
+
+        if (! $productoId) {
+            return [];
+        }
+
+        return ProductoSerie::query()
+            ->where('producto_id', $productoId)
+            ->where('oc_recibida_id', $ocRecibida->id)
+            ->where('cotizacion_item_id', $item->cotizacion_item_id)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
     }
 
     private function actualizarEstadoCotizacion(Cotizacion $cotizacion, OcRecibida $ocRecibida): void
