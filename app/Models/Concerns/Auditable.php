@@ -8,12 +8,17 @@ trait Auditable
 {
     public function getActivitylogOptions(): LogOptions
     {
-        return LogOptions::defaults()
+        $options = LogOptions::defaults()
             ->useLogName('auditoria')
-            ->logFillable()
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn (string $eventName): string => $this->auditDescription($eventName));
+
+        if (property_exists($this, 'auditOnly') && is_array($this->auditOnly)) {
+            return $options->logOnly($this->auditOnly);
+        }
+
+        return $options->logFillable();
     }
 
     protected function auditDescription(string $eventName): string

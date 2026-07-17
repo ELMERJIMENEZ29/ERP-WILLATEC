@@ -11,6 +11,20 @@ class CotizacionModificacion extends Model
 {
     use Auditable, LogsActivity;
 
+    protected array $auditOnly = [
+        'cotizacion_id',
+        'original_version_id',
+        'version_number',
+        'estado',
+        'motivo',
+        'requested_by',
+        'reviewed_by',
+        'comentario_revision',
+        'comentario_reenvio_revision',
+        'submitted_at',
+        'reviewed_at',
+    ];
+
     public const ESTADO_BORRADOR = 'borrador';
 
     public const ESTADO_EN_REVISION = 'en_revision';

@@ -2,12 +2,43 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class InventarioMovimiento extends Model
 {
+    use Auditable, LogsActivity;
+
+    protected array $auditOnly = [
+        'producto_id',
+        'producto_serie_id',
+        'tipo_movimiento',
+        'cantidad',
+        'entrada_cantidad',
+        'salida_cantidad',
+        'stock_antes',
+        'stock_despues',
+        'saldo_cantidad',
+        'costo_unitario',
+        'moneda_id',
+        'valor_movimiento',
+        'valor_stock_despues',
+        'referencia_tipo',
+        'referencia_id',
+        'origen',
+        'observacion',
+        'documento_tipo',
+        'documento_numero',
+        'documento_path',
+        'fecha_documento',
+        'proveedor',
+        'proveedor_id',
+        'created_by',
+    ];
+
     public const TIPO_ENTRADA = 'entrada';
 
     public const TIPO_SALIDA = 'salida';

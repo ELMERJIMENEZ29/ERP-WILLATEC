@@ -124,7 +124,7 @@ Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle', 'role:su
 Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     // ── RUTAS ESTÁTICAS PRIMERO ──────────────────────────────
     Route::get('/', [CotizacionController::class, 'index'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|admin');
 
     Route::post('/', [CotizacionController::class, 'store'])
         ->middleware('role:superadmin|ventas');
@@ -143,6 +143,9 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
     Route::get('/monedas', [CotizacionController::class, 'indexMonedas'])
         ->middleware('role:superadmin|ventas');
 
+    Route::get('/resumen-pendientes-revision', [CotizacionController::class, 'resumenPendientesRevision'])
+        ->middleware('role:superadmin|admin');
+
     Route::get('/modificaciones/{modificacion}', [CotizacionController::class, 'showModificacion'])
         ->middleware('role:superadmin|ventas');
 
@@ -160,7 +163,7 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
 
     // ── RUTAS DINÁMICAS DESPUÉS ──────────────────────────────
     Route::get('/{id}', [CotizacionController::class, 'show'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|admin');
 
     Route::delete('/{cotizacion}', [CotizacionController::class, 'destroy'])
         ->middleware('role:superadmin|ventas');
@@ -229,20 +232,24 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
 });
 
 Route::prefix('oc-recibidas')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
-    Route::get('/', [OcRecibidaController::class, 'index'])->middleware('role:superadmin|ventas');
+    Route::get('/', [OcRecibidaController::class, 'index'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::post('/', [OcRecibidaController::class, 'store'])->middleware('role:superadmin|ventas');
-    Route::get('/{ocRecibida}', [OcRecibidaController::class, 'show'])->middleware('role:superadmin|ventas');
+    Route::get('/{ocRecibida}', [OcRecibidaController::class, 'show'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::patch('/{ocRecibida}/items', [OcRecibidaController::class, 'updateItems'])->middleware('role:superadmin|ventas');
     Route::patch('/{ocRecibida}/cancelar', [OcRecibidaController::class, 'cancelar'])->middleware('role:superadmin|ventas');
-    Route::post('/{ocRecibida}/documentos', [OcRecibidaController::class, 'documentos'])->middleware('role:superadmin|ventas');
+    Route::post('/{ocRecibida}/documentos', [OcRecibidaController::class, 'documentos'])->middleware('role:superadmin|ventas|admin|contabilidad');
+    Route::delete('/{ocRecibida}/documentos/{tipo}', [OcRecibidaController::class, 'eliminarDocumento'])->middleware('role:superadmin|ventas|admin|contabilidad');
+    Route::delete('/{ocRecibida}/documentos-adicionales/{documento}', [OcRecibidaController::class, 'eliminarDocumentoAdicional'])->middleware('role:superadmin|ventas|admin|contabilidad');
 });
 
 Route::prefix('oc-emitidas')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
-    Route::get('/', [OcEmitidaController::class, 'index'])->middleware('role:superadmin|ventas');
+    Route::get('/', [OcEmitidaController::class, 'index'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::post('/', [OcEmitidaController::class, 'store'])->middleware('role:superadmin|ventas');
-    Route::get('/{ocEmitida}', [OcEmitidaController::class, 'show'])->middleware('role:superadmin|ventas');
-    Route::post('/{ocEmitida}/documentos', [OcEmitidaController::class, 'documentos'])->middleware('role:superadmin|ventas');
-    Route::get('/{ocEmitida}/pdf', [OcEmitidaController::class, 'pdf'])->middleware('role:superadmin|ventas');
+    Route::get('/{ocEmitida}', [OcEmitidaController::class, 'show'])->middleware('role:superadmin|ventas|admin|contabilidad');
+    Route::post('/{ocEmitida}/documentos', [OcEmitidaController::class, 'documentos'])->middleware('role:superadmin|ventas|admin|contabilidad');
+    Route::delete('/{ocEmitida}/documentos/{tipo}', [OcEmitidaController::class, 'eliminarDocumento'])->middleware('role:superadmin|ventas|admin|contabilidad');
+    Route::delete('/{ocEmitida}/documentos-adicionales/{documento}', [OcEmitidaController::class, 'eliminarDocumentoAdicional'])->middleware('role:superadmin|ventas|admin|contabilidad');
+    Route::get('/{ocEmitida}/pdf', [OcEmitidaController::class, 'pdf'])->middleware('role:superadmin|ventas|admin|contabilidad');
 });
 
 Route::prefix('ordencompra')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
@@ -265,9 +272,9 @@ Route::prefix('ordencompra')->middleware(['auth:sanctum', 'token.idle'])->group(
 });
 
 Route::prefix('clientes')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
-    Route::get('/', [ClienteController::class, 'index'])->middleware('role:superadmin|ventas');
-    Route::post('/', [ClienteController::class, 'store'])->middleware('role:superadmin|ventas');
-    Route::get('/{id}', [ClienteController::class, 'show'])->middleware('role:superadmin|ventas');
-    Route::put('/{id}', [ClienteController::class, 'update'])->middleware('role:superadmin|ventas');
-    Route::delete('/{id}', [ClienteController::class, 'destroy'])->middleware('role:superadmin|ventas');
+    Route::get('/', [ClienteController::class, 'index'])->middleware('role:superadmin|ventas|admin');
+    Route::post('/', [ClienteController::class, 'store'])->middleware('role:superadmin|ventas|admin');
+    Route::get('/{id}', [ClienteController::class, 'show'])->middleware('role:superadmin|ventas|admin');
+    Route::put('/{id}', [ClienteController::class, 'update'])->middleware('role:superadmin|ventas|admin');
+    Route::delete('/{id}', [ClienteController::class, 'destroy'])->middleware('role:superadmin|ventas|admin');
 });

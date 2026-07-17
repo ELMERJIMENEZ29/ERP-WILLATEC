@@ -2,12 +2,16 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class OcEmitida extends Model
 {
+    use Auditable, LogsActivity;
+
     public const ESTADO_EMITIDA = 'emitida';
 
     protected $fillable = [
@@ -17,7 +21,9 @@ class OcEmitida extends Model
         'proveedor',
         'observaciones',
         'factura_path',
+        'factura_uploaded_by',
         'comprobante_pago_path',
+        'comprobante_pago_uploaded_by',
         'pdf_path',
         'moneda',
         'subtotal',
@@ -40,6 +46,11 @@ class OcEmitida extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OcEmitidaItem::class);
+    }
+
+    public function documentosAdicionales(): HasMany
+    {
+        return $this->hasMany(OcDocumentoAdicional::class);
     }
 
     public function cotizacion(): BelongsTo

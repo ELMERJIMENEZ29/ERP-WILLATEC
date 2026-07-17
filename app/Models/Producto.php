@@ -2,13 +2,40 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Producto extends Model
 {
+    use Auditable, LogsActivity;
+
+    protected array $auditOnly = [
+        'nombre',
+        'sku',
+        'marca',
+        'modelo',
+        'codigo',
+        'codigo_barras',
+        'descripcion',
+        'tipo_producto',
+        'controla_stock',
+        'stock_minimo',
+        'costo_unitario',
+        'costo_promedio',
+        'precio_venta',
+        'moneda_id',
+        'precio_referencial',
+        'unidad_medida',
+        'imagen',
+        'activo',
+        'estado',
+        'categoria_id',
+    ];
+
     protected $fillable = [
         'nombre',
         'sku',

@@ -11,6 +11,16 @@ class CotizacionVersion extends Model
 {
     use Auditable, LogsActivity;
 
+    protected array $auditOnly = [
+        'cotizacion_id',
+        'version_number',
+        'numero_version',
+        'created_by',
+        'approved_by',
+        'approved_at',
+        'notas',
+    ];
+
     protected $table = 'cotizacion_versiones';
 
     protected $fillable = [

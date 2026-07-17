@@ -2,12 +2,16 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class OcRecibida extends Model
 {
+    use Auditable, LogsActivity;
+
     public const ESTADO_PENDIENTE = 'pendiente';
 
     public const ESTADO_EN_PROCESO = 'en_proceso';
@@ -24,9 +28,12 @@ class OcRecibida extends Model
         'estado',
         'observaciones',
         'orden_compra_cliente_path',
+        'orden_compra_cliente_uploaded_by',
         'guia_emision_path',
+        'guia_emision_uploaded_by',
         'factura_numero',
         'factura_path',
+        'factura_uploaded_by',
         'cliente_nombre',
         'cliente_ruc',
         'cliente_contacto',
@@ -44,6 +51,11 @@ class OcRecibida extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OcRecibidaItem::class);
+    }
+
+    public function documentosAdicionales(): HasMany
+    {
+        return $this->hasMany(OcDocumentoAdicional::class);
     }
 
     public function cotizacion(): BelongsTo

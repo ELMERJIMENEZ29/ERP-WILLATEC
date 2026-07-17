@@ -360,7 +360,7 @@ class AuthController extends Controller
 
         $role = Role::findOrFail($request->role);
 
-        if (! $request->user()->hasRole('superadmin') && in_array($role->name, ['superadmin', 'admin'], true)) {
+        if (! $request->user()->hasRole('superadmin') && in_array($role->name, ['superadmin', 'admin', 'contabilidad'], true)) {
             abort(403, 'Solo superadmin puede crear usuarios administradores.');
         }
 

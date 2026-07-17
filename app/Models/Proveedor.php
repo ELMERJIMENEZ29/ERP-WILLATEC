@@ -2,10 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Proveedor extends Model
 {
+    use Auditable, LogsActivity;
+
     protected $table = 'proveedores';
 
     protected $fillable = [

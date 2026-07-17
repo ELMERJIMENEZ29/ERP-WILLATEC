@@ -2,11 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class OcRecibidaItem extends Model
 {
+    use Auditable, LogsActivity;
+
     protected $fillable = [
         'oc_recibida_id',
         'cotizacion_item_id',

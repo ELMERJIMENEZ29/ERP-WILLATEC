@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Cotizacion;
 use App\Models\EstadoCotizacion;
 use App\Models\InventarioMovimiento;
+use App\Models\OcDocumentoAdicional;
 use App\Models\OcRecibida;
 use App\Models\OcRecibidaItem;
 use App\Models\ProductoSerie;
@@ -15,6 +16,7 @@ use App\Services\InventarioService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class OcRecibidaController extends Controller
@@ -54,7 +56,7 @@ class OcRecibidaController extends Controller
         ]);
 
         $query = OcRecibida::query()
-            ->with(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc'])
+            ->with(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc', 'documentosAdicionales'])
             ->withCount([
                 'items as items_total' => fn ($query) => $query->where('seleccionado', true),
                 'items as items_comprados' => fn ($query) => $query->where('seleccionado', true)->where('comprado', true),
@@ -80,6 +82,7 @@ class OcRecibidaController extends Controller
             $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'));
             $ocRecibida->unsetRelation('items');
             $ocRecibida->load(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc']);
+            $ocRecibida->load('documentosAdicionales');
             $ocRecibida->loadCount([
                 'items as items_total' => fn ($query) => $query->where('seleccionado', true),
                 'items as items_comprados' => fn ($query) => $query->where('seleccionado', true)->where('comprado', true),
@@ -97,6 +100,7 @@ class OcRecibidaController extends Controller
         return response()->json(
             $ocRecibida->load([
                 'items.cotizacionItem.proveedores',
+                'documentosAdicionales',
                 'items.cotizacionItem.producto.series' => fn ($query) => $query
                     ->select(['id', 'producto_id', 'serie', 'factura_numero', 'estado', 'fecha_ingreso', 'fecha_salida', 'oc_recibida_id', 'cotizacion_item_id'])
                     ->where(function ($seriesQuery) use ($ocRecibida): void {
@@ -167,14 +171,17 @@ class OcRecibidaController extends Controller
 
             if ($request->hasFile('orden_compra_cliente')) {
                 $ocRecibida->orden_compra_cliente_path = $this->storeDocumento($request->file('orden_compra_cliente'), 'oc-recibidas');
+                $ocRecibida->orden_compra_cliente_uploaded_by = $request->user()?->id;
             }
 
             if ($request->hasFile('guia_emision')) {
                 $ocRecibida->guia_emision_path = $this->storeDocumento($request->file('guia_emision'), 'oc-recibidas');
+                $ocRecibida->guia_emision_uploaded_by = $request->user()?->id;
             }
 
             if ($request->hasFile('factura')) {
                 $ocRecibida->factura_path = $this->storeDocumento($request->file('factura'), 'oc-recibidas/facturas');
+                $ocRecibida->factura_uploaded_by = $request->user()?->id;
             }
 
             $ocRecibida->save();
@@ -386,21 +393,25 @@ class OcRecibidaController extends Controller
 
     public function documentos(Request $request, OcRecibida $ocRecibida)
     {
-        $this->ensureCanEditOc($request, $ocRecibida);
+        $this->ensureCanUploadDocuments($request, $ocRecibida);
 
         $request->validate([
             'orden_compra_cliente' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
             'guia_emision' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
             'factura_numero' => 'nullable|string|max:100',
             'factura' => 'nullable|file|mimes:pdf,xml,doc,docx,jpg,jpeg,png|max:10240',
+            'documentos_adicionales' => 'nullable|array',
+            'documentos_adicionales.*' => 'file|mimes:pdf,xml,doc,docx,jpg,jpeg,png,xls,xlsx|max:10240',
         ]);
 
         if ($request->hasFile('orden_compra_cliente')) {
             $ocRecibida->orden_compra_cliente_path = $this->storeDocumento($request->file('orden_compra_cliente'), 'oc-recibidas');
+            $ocRecibida->orden_compra_cliente_uploaded_by = $request->user()?->id;
         }
 
         if ($request->hasFile('guia_emision')) {
             $ocRecibida->guia_emision_path = $this->storeDocumento($request->file('guia_emision'), 'oc-recibidas');
+            $ocRecibida->guia_emision_uploaded_by = $request->user()?->id;
         }
 
         if ($request->filled('factura_numero')) {
@@ -409,9 +420,11 @@ class OcRecibidaController extends Controller
 
         if ($request->hasFile('factura')) {
             $ocRecibida->factura_path = $this->storeDocumento($request->file('factura'), 'oc-recibidas/facturas');
+            $ocRecibida->factura_uploaded_by = $request->user()?->id;
         }
 
         $ocRecibida->save();
+        $this->storeDocumentosAdicionales($request, $ocRecibida);
         $this->actualizarEstadoOc($ocRecibida->refresh()->load('items'));
 
         return response()->json([
@@ -419,6 +432,58 @@ class OcRecibidaController extends Controller
             'estado' => $ocRecibida->refresh()->estado,
             'documentos_completos' => $ocRecibida->documentos_completos,
             'faltantes' => $ocRecibida->documentos_faltantes,
+            'oc_recibida' => $ocRecibida->refresh()->load('documentosAdicionales'),
+        ]);
+    }
+
+    public function eliminarDocumento(Request $request, OcRecibida $ocRecibida, string $tipo)
+    {
+        $column = match ($tipo) {
+            'orden_compra_cliente' => 'orden_compra_cliente_path',
+            'guia_emision' => 'guia_emision_path',
+            'factura' => 'factura_path',
+            default => null,
+        };
+        $uploaderColumn = match ($tipo) {
+            'orden_compra_cliente' => 'orden_compra_cliente_uploaded_by',
+            'guia_emision' => 'guia_emision_uploaded_by',
+            'factura' => 'factura_uploaded_by',
+            default => null,
+        };
+
+        if (! $column || ! $uploaderColumn) {
+            return response()->json(['message' => 'Tipo de documento no valido.'], 422);
+        }
+
+        $this->ensureCanDeleteDocumento($request, $ocRecibida, $ocRecibida->{$uploaderColumn});
+
+        if ($ocRecibida->{$column}) {
+            Storage::disk('public')->delete($ocRecibida->{$column});
+        }
+
+        $ocRecibida->forceFill([$column => null, $uploaderColumn => null])->save();
+        $this->actualizarEstadoOc($ocRecibida->refresh()->load('items'));
+
+        return response()->json([
+            'message' => 'Documento eliminado',
+            'oc_recibida' => $ocRecibida->refresh()->load('documentosAdicionales'),
+        ]);
+    }
+
+    public function eliminarDocumentoAdicional(Request $request, OcRecibida $ocRecibida, OcDocumentoAdicional $documento)
+    {
+        $this->ensureCanDeleteDocumento($request, $ocRecibida, $documento->created_by);
+
+        if ((int) $documento->oc_recibida_id !== (int) $ocRecibida->id) {
+            abort(404);
+        }
+
+        Storage::disk('public')->delete($documento->path);
+        $documento->delete();
+
+        return response()->json([
+            'message' => 'Documento adicional eliminado',
+            'oc_recibida' => $ocRecibida->refresh()->load('documentosAdicionales'),
         ]);
     }
 
@@ -771,9 +836,67 @@ class OcRecibidaController extends Controller
         abort(403, 'Solo el usuario que registro esta orden de compra puede editarla.');
     }
 
+    private function ensureCanUploadDocuments(Request $request, OcRecibida $ocRecibida): void
+    {
+        if ($request->user()->hasAnyRole(['superadmin', 'admin', 'contabilidad'])) {
+            return;
+        }
+
+        if ((int) $ocRecibida->user_id === (int) $request->user()->id) {
+            return;
+        }
+
+        abort(403, 'No tienes permisos para subir documentos a esta orden de compra.');
+    }
+
+    private function ensureCanDeleteDocumento(Request $request, OcRecibida $ocRecibida, mixed $uploadedBy): void
+    {
+        if ($request->user()->hasRole('superadmin')) {
+            return;
+        }
+
+        if (
+            $request->user()->hasRole('ventas') &&
+            (int) $ocRecibida->user_id === (int) $request->user()->id
+        ) {
+            return;
+        }
+
+        if (
+            $request->user()->hasAnyRole(['admin', 'contabilidad']) &&
+            $uploadedBy &&
+            (int) $uploadedBy === (int) $request->user()->id
+        ) {
+            return;
+        }
+
+        abort(403, 'Solo puedes eliminar documentos que hayas subido.');
+    }
+
     private function storeDocumento(UploadedFile $file, string $directory): string
     {
         return $file->store($directory, 'public');
+    }
+
+    private function storeDocumentosAdicionales(Request $request, OcRecibida $ocRecibida): void
+    {
+        if (! $request->hasFile('documentos_adicionales')) {
+            return;
+        }
+
+        foreach ($request->file('documentos_adicionales', []) as $file) {
+            if (! $file instanceof UploadedFile) {
+                continue;
+            }
+
+            $ocRecibida->documentosAdicionales()->create([
+                'nombre_original' => $file->getClientOriginalName(),
+                'path' => $this->storeDocumento($file, 'oc-recibidas/adicionales'),
+                'mime_type' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+                'created_by' => $request->user()?->id,
+            ]);
+        }
     }
 
     private function normalizeBooleanItemFields(Request $request, array $fields): void

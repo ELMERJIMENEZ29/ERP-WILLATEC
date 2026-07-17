@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Cotizacion;
+use App\Models\OcDocumentoAdicional;
 use App\Models\OcEmitida;
 use App\Models\OcEmitidaItem;
 use App\Models\User;
@@ -62,7 +63,7 @@ class OcEmitidaController extends Controller
         ]);
 
         $query = OcEmitida::query()
-            ->with(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc'])
+            ->with(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc', 'documentosAdicionales'])
             ->withCount('items');
 
         if ($request->filled('proveedor')) {
@@ -91,7 +92,7 @@ class OcEmitidaController extends Controller
     public function show(OcEmitida $ocEmitida)
     {
         return response()->json(
-            $ocEmitida->load(['items.cotizacionItem.proveedores', 'cotizacion', 'cliente'])
+            $ocEmitida->load(['items.cotizacionItem.proveedores', 'cotizacion', 'cliente', 'documentosAdicionales'])
         );
     }
 
@@ -188,27 +189,81 @@ class OcEmitidaController extends Controller
 
     public function documentos(Request $request, OcEmitida $ocEmitida)
     {
-        $this->ensureCanEditOc($request, $ocEmitida);
+        $this->ensureCanUploadDocuments($request, $ocEmitida);
 
         $request->validate([
             'factura' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
             'comprobante_pago' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
+            'documentos_adicionales' => 'nullable|array',
+            'documentos_adicionales.*' => 'file|mimes:pdf,xml,doc,docx,jpg,jpeg,png,xls,xlsx|max:10240',
         ]);
 
         if ($request->hasFile('factura')) {
             $ocEmitida->factura_path = $this->storeDocumento($request->file('factura'), 'oc-emitidas/documentos');
+            $ocEmitida->factura_uploaded_by = $request->user()?->id;
         }
 
         if ($request->hasFile('comprobante_pago')) {
             $ocEmitida->comprobante_pago_path = $this->storeDocumento($request->file('comprobante_pago'), 'oc-emitidas/documentos');
+            $ocEmitida->comprobante_pago_uploaded_by = $request->user()?->id;
         }
 
         $ocEmitida->save();
+        $this->storeDocumentosAdicionales($request, $ocEmitida);
 
         return response()->json([
             'message' => 'Documentos actualizados',
             'documentos_completos' => $ocEmitida->documentos_completos,
             'faltantes' => $ocEmitida->documentos_faltantes,
+            'oc_emitida' => $ocEmitida->refresh()->load('documentosAdicionales'),
+        ]);
+    }
+
+    public function eliminarDocumento(Request $request, OcEmitida $ocEmitida, string $tipo)
+    {
+        $column = match ($tipo) {
+            'factura' => 'factura_path',
+            'comprobante_pago' => 'comprobante_pago_path',
+            default => null,
+        };
+        $uploaderColumn = match ($tipo) {
+            'factura' => 'factura_uploaded_by',
+            'comprobante_pago' => 'comprobante_pago_uploaded_by',
+            default => null,
+        };
+
+        if (! $column || ! $uploaderColumn) {
+            return response()->json(['message' => 'Tipo de documento no valido.'], 422);
+        }
+
+        $this->ensureCanDeleteDocumento($request, $ocEmitida, $ocEmitida->{$uploaderColumn});
+
+        if ($ocEmitida->{$column}) {
+            Storage::disk('public')->delete($ocEmitida->{$column});
+        }
+
+        $ocEmitida->forceFill([$column => null, $uploaderColumn => null])->save();
+
+        return response()->json([
+            'message' => 'Documento eliminado',
+            'oc_emitida' => $ocEmitida->refresh()->load('documentosAdicionales'),
+        ]);
+    }
+
+    public function eliminarDocumentoAdicional(Request $request, OcEmitida $ocEmitida, OcDocumentoAdicional $documento)
+    {
+        $this->ensureCanDeleteDocumento($request, $ocEmitida, $documento->created_by);
+
+        if ((int) $documento->oc_emitida_id !== (int) $ocEmitida->id) {
+            abort(404);
+        }
+
+        Storage::disk('public')->delete($documento->path);
+        $documento->delete();
+
+        return response()->json([
+            'message' => 'Documento adicional eliminado',
+            'oc_emitida' => $ocEmitida->refresh()->load('documentosAdicionales'),
         ]);
     }
 
@@ -336,6 +391,43 @@ class OcEmitidaController extends Controller
         abort(403, 'Solo el usuario que registro esta orden de compra puede editarla.');
     }
 
+    private function ensureCanUploadDocuments(Request $request, OcEmitida $ocEmitida): void
+    {
+        if ($request->user()->hasAnyRole(['superadmin', 'admin', 'contabilidad'])) {
+            return;
+        }
+
+        if ((int) $ocEmitida->user_id === (int) $request->user()->id) {
+            return;
+        }
+
+        abort(403, 'No tienes permisos para subir documentos a esta orden de compra.');
+    }
+
+    private function ensureCanDeleteDocumento(Request $request, OcEmitida $ocEmitida, mixed $uploadedBy): void
+    {
+        if ($request->user()->hasRole('superadmin')) {
+            return;
+        }
+
+        if (
+            $request->user()->hasRole('ventas') &&
+            (int) $ocEmitida->user_id === (int) $request->user()->id
+        ) {
+            return;
+        }
+
+        if (
+            $request->user()->hasAnyRole(['admin', 'contabilidad']) &&
+            $uploadedBy &&
+            (int) $uploadedBy === (int) $request->user()->id
+        ) {
+            return;
+        }
+
+        abort(403, 'Solo puedes eliminar documentos que hayas subido.');
+    }
+
     private function generarPdf(OcEmitida $ocEmitida): string
     {
         $path = "oc-emitidas/pdfs/{$ocEmitida->numero}.pdf";
@@ -355,6 +447,27 @@ class OcEmitidaController extends Controller
     private function storeDocumento(UploadedFile $file, string $directory): string
     {
         return $file->store($directory, 'public');
+    }
+
+    private function storeDocumentosAdicionales(Request $request, OcEmitida $ocEmitida): void
+    {
+        if (! $request->hasFile('documentos_adicionales')) {
+            return;
+        }
+
+        foreach ($request->file('documentos_adicionales', []) as $file) {
+            if (! $file instanceof UploadedFile) {
+                continue;
+            }
+
+            $ocEmitida->documentosAdicionales()->create([
+                'nombre_original' => $file->getClientOriginalName(),
+                'path' => $this->storeDocumento($file, 'oc-emitidas/adicionales'),
+                'mime_type' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+                'created_by' => $request->user()?->id,
+            ]);
+        }
     }
 
     private function notifyAdministrators(object $notification): void

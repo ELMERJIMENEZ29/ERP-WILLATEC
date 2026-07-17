@@ -149,6 +149,7 @@ class CotizacionController extends Controller
             'per_page' => 'nullable|integer|min:1|max:100',
             'fecha_desde' => 'nullable|date',
             'fecha_hasta' => 'nullable|date|after_or_equal:fecha_desde',
+            'pendiente_revision' => 'nullable|boolean',
         ]);
 
         $query = Cotizacion::with([
@@ -181,7 +182,14 @@ class CotizacionController extends Controller
             });
         }
 
-        if ($request->filled('estado_cotizacion_id')) {
+        if ($request->boolean('pendiente_revision')) {
+            $query->where(function ($pendingQuery) {
+                $pendingQuery->where('estado_cotizacion_id', 2)
+                    ->orWhereHas('modificaciones', function ($modificacionQuery) {
+                        $modificacionQuery->where('estado', CotizacionModificacion::ESTADO_EN_REVISION);
+                    });
+            });
+        } elseif ($request->filled('estado_cotizacion_id')) {
             $query->where('estado_cotizacion_id', $request->estado_cotizacion_id);
         }
 
@@ -202,6 +210,54 @@ class CotizacionController extends Controller
                 ->latest()
                 ->paginate($request->integer('per_page', 10))
         );
+    }
+
+    public function resumenPendientesRevision(Request $request)
+    {
+        $request->validate([
+            'user_id' => 'nullable|integer|exists:users,id',
+            'fecha_desde' => 'nullable|date',
+            'fecha_hasta' => 'nullable|date|after_or_equal:fecha_desde',
+        ]);
+
+        $cotizacionesQuery = Cotizacion::query();
+
+        if ($request->filled('cliente_id')) {
+            $cotizacionesQuery->where('cliente_id', $request->cliente_id);
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+
+            $cotizacionesQuery->where(function ($q) use ($search) {
+                $q->where('numero', 'like', "%{$search}%")
+                    ->orWhere('titulo', 'like', "%{$search}%")
+                    ->orWhereHas('cliente', function ($clienteQuery) use ($search) {
+                        $clienteQuery->where('nombre', 'like', "%{$search}%")
+                            ->orWhere('ruc', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($request->filled('fecha_desde')) {
+            $cotizacionesQuery->whereDate('fecha', '>=', $request->date('fecha_desde')->toDateString());
+        }
+
+        if ($request->filled('fecha_hasta')) {
+            $cotizacionesQuery->whereDate('fecha', '<=', $request->date('fecha_hasta')->toDateString());
+        }
+
+        if ($request->filled('user_id')) {
+            $cotizacionesQuery->where('user_id', $request->integer('user_id'));
+        }
+
+        $modificacionesPendientes = CotizacionModificacion::where('estado', CotizacionModificacion::ESTADO_EN_REVISION)
+            ->whereIn('cotizacion_id', $cotizacionesQuery->select('id'))
+            ->count();
+
+        return response()->json([
+            'modificaciones_pendientes' => $modificacionesPendientes,
+        ]);
     }
 
     public function show($id)
@@ -363,7 +419,7 @@ class CotizacionController extends Controller
                 'delegado_id' => $delegadoId,
                 'delegado_cotizacion_id' => $delegadoCotizacionId,
                 'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
-            'entrega_provincia' => $request->boolean('entrega_provincia'),
+                'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
@@ -923,19 +979,14 @@ class CotizacionController extends Controller
         $payload = $this->buildCotizacionProposalPayload($request, $modificacion->cotizacion);
 
         $modificacion->update([
-            'estado' => CotizacionModificacion::ESTADO_EN_REVISION,
+            'estado' => CotizacionModificacion::ESTADO_BORRADOR,
             'propuesta' => $payload,
-            'comentario_reenvio_revision' => $request->filled('comentario_reenvio_revision')
-                ? $request->string('comentario_reenvio_revision')->toString()
-                : null,
-            'submitted_at' => now(),
+            'comentario_reenvio_revision' => null,
+            'submitted_at' => null,
         ]);
 
-        $modificacion->refresh()->load('cotizacion');
-        $this->notifySuperadmins(new CotizacionModificacionEnRevisionNotification($modificacion, $request->user()));
-
         return response()->json([
-            'message' => 'Modificacion guardada y enviada a revision',
+            'message' => 'Modificacion guardada como borrador',
             'modificacion' => $modificacion->refresh()->load(['cotizacion', 'solicitante']),
         ]);
     }
@@ -1233,7 +1284,7 @@ class CotizacionController extends Controller
                 'tipo_cambio' => 1, // luego lo conectamos a API
                 'validez_dias' => $request->integer('validez_dias') ?: 10,
                 'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
-            'entrega_provincia' => $request->boolean('entrega_provincia'),
+                'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
@@ -1450,7 +1501,7 @@ class CotizacionController extends Controller
                 'delegado_id' => $delegadoId,
                 'delegado_cotizacion_id' => $delegadoCotizacionId,
                 'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
-            'entrega_provincia' => $request->boolean('entrega_provincia'),
+                'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
@@ -1695,7 +1746,7 @@ class CotizacionController extends Controller
             'modo_distribucion' => $header['modo_distribucion'],
             'moneda_id' => $header['moneda_id'],
             'delegado_id' => $header['delegado_id'],
-            'delegado_cotizacion_id' => $header['delegado_cotizacion_id'],
+            'delegado_cotizacion_id' => null,
             'validez_dias' => $header['validez_dias'],
             'forma_pago' => $header['forma_pago'],
             'entrega_provincia' => $header['entrega_provincia'] ?? false,
@@ -1713,7 +1764,9 @@ class CotizacionController extends Controller
     {
         $cliente = Cliente::findOrFail($payload['cliente_id']);
         $delegadoId = $payload['delegado_id'] ?? $cotizacion->delegado_id;
-        $delegadoCotizacionId = $payload['delegado_cotizacion_id'] ?? $cotizacion->delegado_cotizacion_id;
+        $delegadoCotizacionId = array_key_exists('delegado_cotizacion_id', $payload)
+            ? $payload['delegado_cotizacion_id']
+            : $cotizacion->delegado_cotizacion_id;
         $plantillaId = (int) $payload['plantilla_id'];
         $monedaId = $this->monedaIdParaPlantilla($plantillaId, (int) $payload['moneda_id']);
         $esAlquiler = $this->esPlantillaAlquilerId($plantillaId);
@@ -1722,6 +1775,7 @@ class CotizacionController extends Controller
         $this->ensureSalesOrSuperadminUser($delegadoCotizacionId ? (int) $delegadoCotizacionId : null);
 
         $cotizacion->update([
+            'fecha' => $this->todayBusinessDate(),
             'cliente_id' => $cliente->id,
             'cliente_nombre' => $cliente->nombre,
             'cliente_ruc' => $cliente->ruc,
@@ -2259,6 +2313,7 @@ class CotizacionController extends Controller
             (int) $modificacion->requested_by === $userId
             || (int) $cotizacion->user_id === $userId
             || ($cotizacion->delegado_cotizacion_id && (int) $cotizacion->delegado_cotizacion_id === $userId)
+            || $this->isModificationProposalEditDelegate($modificacion, $userId)
         ) {
             return;
         }
@@ -2283,7 +2338,18 @@ class CotizacionController extends Controller
             return;
         }
 
+        if ($this->isModificationProposalEditDelegate($modificacion, (int) $request->user()->id)) {
+            return;
+        }
+
         abort(403, 'No autorizado para editar esta modificacion.');
+    }
+
+    private function isModificationProposalEditDelegate(CotizacionModificacion $modificacion, int $userId): bool
+    {
+        $delegateId = data_get($modificacion->propuesta, 'delegado_cotizacion_id');
+
+        return $delegateId !== null && (int) $delegateId === $userId;
     }
 
     private function ensureCanReviewModification(Request $request): void
@@ -2477,7 +2543,22 @@ class CotizacionController extends Controller
             'imagen' => 'required|image|max:2048',
         ]);
 
-        $path = $request->file('imagen')->store('cotizacion-items', 'public');
+        $file = $request->file('imagen');
+        $path = $file->store('cotizacion-items', 'public');
+
+        activity('auditoria')
+            ->causedBy($request->user())
+            ->event('uploaded')
+            ->withProperties([
+                'attributes' => [
+                    'tipo' => 'imagen_cotizacion_item',
+                    'nombre_original' => $file->getClientOriginalName(),
+                    'path' => $path,
+                    'mime_type' => $file->getClientMimeType(),
+                    'size' => $file->getSize(),
+                ],
+            ])
+            ->log('Imagen de item de cotizacion subida');
 
         return response()->json([
             'path' => $path,
