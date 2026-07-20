@@ -531,7 +531,7 @@ class CotizacionController extends Controller
             'costo_base' => 'required|numeric|min:0',
             'margen' => 'required|numeric|min:0',
             'nota' => 'nullable|string',
-            'garantia_meses' => 'nullable|integer|min:0|max:60',
+            'garantia_meses' => 'nullable|integer|min:0|max:255',
             'disponibilidad_tipo' => 'required|in:stock,importacion',
             'disponibilidad_dias' => 'required|integer|min:1|max:50',
             'producto_id' => 'nullable|exists:productos,id',
@@ -636,7 +636,7 @@ class CotizacionController extends Controller
             'margen' => 'nullable|numeric|min:0',
             'nota' => 'nullable|string',
             'stock' => 'nullable|integer|min:0',
-            'garantia_meses' => 'nullable|integer|min:0|max:60',
+            'garantia_meses' => 'nullable|integer|min:0|max:255',
             'disponibilidad_tipo' => 'nullable|in:stock,importacion',
             'disponibilidad_dias' => 'nullable|integer|min:1|max:50',
             'producto_id' => 'nullable|exists:productos,id',
@@ -1895,7 +1895,7 @@ class CotizacionController extends Controller
             'items.*.marca' => 'nullable|string|max:255',
             'items.*.codigo' => 'nullable|string|max:255',
             'items.*.unidad_medida' => 'nullable|string|max:50',
-            'items.*.garantia_meses' => 'nullable|integer|min:0|max:60',
+            'items.*.garantia_meses' => 'nullable|integer|min:0|max:255',
             'items.*.disponibilidad_tipo' => 'nullable|in:stock,importacion',
             'items.*.disponibilidad_dias' => 'nullable|integer|min:1|max:50',
             'items.*.proveedor' => 'nullable|string|max:255',
@@ -2454,6 +2454,7 @@ class CotizacionController extends Controller
 
         DB::transaction(function () use ($request, $cotizacion, $estadoAprobada, $estadoAnterior) {
             $cotizacion->update([
+                'fecha' => $this->todayBusinessDate(),
                 'estado_cotizacion_id' => $estadoAprobada->id,
             ]);
 
