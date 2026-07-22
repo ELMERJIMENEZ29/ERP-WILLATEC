@@ -32,6 +32,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class CotizacionController extends Controller
 {
@@ -1150,8 +1151,11 @@ class CotizacionController extends Controller
         // Vista previa en el navegador
         $filename = $this->buildCotizacionPdfFilename($cotizacion);
 
-        return $pdf->download($filename)
-            ->header('X-Suggested-Filename', $filename);
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => $this->buildUtf8AttachmentDisposition($filename),
+            'X-Suggested-Filename' => rawurlencode($filename),
+        ]);
     }
 
     // =========================
@@ -1948,6 +1952,20 @@ class CotizacionController extends Controller
         $titulo = $this->sanitizePdfFilenamePart($cotizacion->titulo ?? 'Cotizacion');
 
         return "{$fecha} COT. N-{$cotizacion->numero} - {$cliente} - {$titulo}.pdf";
+    }
+
+    private function buildUtf8AttachmentDisposition(string $filename): string
+    {
+        $fallback = Str::ascii($filename);
+        $fallback = preg_replace('/[^\x20-\x7E]+/', '', $fallback) ?? $fallback;
+        $fallback = str_replace(['\\', '"'], ['_', "'"], $fallback);
+        $fallback = trim($fallback) ?: 'cotizacion.pdf';
+
+        return sprintf(
+            'attachment; filename="%s"; filename*=UTF-8\'\'%s',
+            $fallback,
+            rawurlencode($filename)
+        );
     }
 
     private function sanitizePdfFilenamePart(string $value): string
