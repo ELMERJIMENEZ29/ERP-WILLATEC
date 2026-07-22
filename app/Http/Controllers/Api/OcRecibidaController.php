@@ -78,8 +78,8 @@ class OcRecibidaController extends Controller
 
         $paginator = $query->latest()->paginate($request->integer('per_page', 10));
 
-        $paginator->getCollection()->each(function (OcRecibida $ocRecibida): void {
-            $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'));
+        $paginator->getCollection()->each(function (OcRecibida $ocRecibida) use ($request): void {
+            $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'), $request);
             $ocRecibida->unsetRelation('items');
             $ocRecibida->load(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc']);
             $ocRecibida->load('documentosAdicionales');
@@ -93,9 +93,9 @@ class OcRecibidaController extends Controller
         return response()->json($paginator);
     }
 
-    public function show(OcRecibida $ocRecibida)
+    public function show(Request $request, OcRecibida $ocRecibida)
     {
-        $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'));
+        $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'), $request);
 
         return response()->json(
             $ocRecibida->load([
@@ -561,18 +561,42 @@ class OcRecibidaController extends Controller
             ->exists();
     }
 
-    private function sincronizarCompradoConInventario(OcRecibida $ocRecibida): void
+    private function sincronizarCompradoConInventario(OcRecibida $ocRecibida, ?Request $request = null): void
     {
         if ($ocRecibida->estado === OcRecibida::ESTADO_CANCELADO) {
             return;
         }
 
+        $inventarioService = app(InventarioService::class);
+        $ocRecibida->loadMissing('cotizacion');
         $changed = false;
 
         foreach ($ocRecibida->items->where('seleccionado', true) as $item) {
             $productoId = $item->cotizacionItem?->producto_id;
             $reservaKey = "oc-recibida:{$ocRecibida->id}:reserva:cotizacion-item:{$item->cotizacion_item_id}";
             $compradoReal = $productoId && $this->tieneMovimientoInventario($reservaKey);
+
+            if ($productoId && ! $compradoReal && ! $item->entregado) {
+                try {
+                    $inventarioService->reservarStock(
+                        productoId: (int) $productoId,
+                        cantidad: (float) $item->cantidad_recibida,
+                        referenciaTipo: 'oc_recibida',
+                        referenciaId: $ocRecibida->id,
+                        origen: 'orden_compra',
+                        idempotencyKey: $reservaKey,
+                        createdBy: $request?->user()?->id,
+                        observacion: "Reserva automatica por stock disponible para OC recibida {$ocRecibida->numero}",
+                        ipOrigen: $request?->ip(),
+                        userAgent: $request?->userAgent(),
+                        monedaId: $ocRecibida->cotizacion?->moneda_id
+                    );
+
+                    $compradoReal = true;
+                } catch (ValidationException) {
+                    $compradoReal = false;
+                }
+            }
 
             if ((bool) $item->comprado === (bool) $compradoReal && ($compradoReal || ! $item->entregado)) {
                 continue;
