@@ -1154,7 +1154,7 @@ class CotizacionController extends Controller
         return response($pdf->output(), 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => $this->buildUtf8AttachmentDisposition($filename),
-            'X-Suggested-Filename' => rawurlencode($filename),
+            'X-Suggested-Filename' => $this->buildAsciiPdfFilenameFallback($filename),
         ]);
     }
 
@@ -1956,16 +1956,22 @@ class CotizacionController extends Controller
 
     private function buildUtf8AttachmentDisposition(string $filename): string
     {
-        $fallback = Str::ascii($filename);
-        $fallback = preg_replace('/[^\x20-\x7E]+/', '', $fallback) ?? $fallback;
-        $fallback = str_replace(['\\', '"'], ['_', "'"], $fallback);
-        $fallback = trim($fallback) ?: 'cotizacion.pdf';
+        $fallback = $this->buildAsciiPdfFilenameFallback($filename);
 
         return sprintf(
             'attachment; filename="%s"; filename*=UTF-8\'\'%s',
             $fallback,
             rawurlencode($filename)
         );
+    }
+
+    private function buildAsciiPdfFilenameFallback(string $filename): string
+    {
+        $fallback = Str::ascii($filename);
+        $fallback = preg_replace('/[^\x20-\x7E]+/', '', $fallback) ?? $fallback;
+        $fallback = str_replace(['\\', '"'], ['_', "'"], $fallback);
+
+        return trim($fallback) ?: 'cotizacion.pdf';
     }
 
     private function sanitizePdfFilenamePart(string $value): string
