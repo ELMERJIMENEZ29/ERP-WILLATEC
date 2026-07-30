@@ -11,6 +11,7 @@ use App\Models\CotizacionItem;
 use App\Models\CotizacionItemProveedor;
 use App\Models\CotizacionModificacion;
 use App\Models\CotizacionVersion;
+use App\Models\EmpresaConfiguracion;
 use App\Models\EstadoCotizacion;
 use App\Models\EstadoCotizacionItem;
 use App\Models\Moneda;
@@ -1137,9 +1138,10 @@ class CotizacionController extends Controller
         }
 
         $vista = $this->resolveCotizacionPdfView((string) $cotizacion->plantilla->formato_pdf);
+        $empresaConfiguracion = EmpresaConfiguracion::current();
 
         // Generar PDF usando la vista dinámica
-        $pdf = Pdf::loadView($vista, compact('cotizacion'))
+        $pdf = Pdf::loadView($vista, compact('cotizacion', 'empresaConfiguracion'))
             ->setPaper('A4', 'portrait')
             ->setOptions([
                 'isRemoteEnabled' => false,

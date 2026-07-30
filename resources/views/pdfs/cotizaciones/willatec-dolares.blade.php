@@ -21,6 +21,9 @@ $formaPagoCalendario = in_array($formaPago, ['CRÉDITO 15 DÍAS', 'CRÉDITO 30 D
 $destinoEntrega = $cotizacion->entrega_provincia && filled($cotizacion->entrega_destino)
 ? $cotizacion->entrega_destino
 : 'Lima Metropolitana';
+$direccionEmpresaConfigurada = trim((string) data_get($empresaConfiguracion ?? null, 'direccion', ''));
+$direccionEmpresaDetalle = $direccionEmpresaConfigurada !== '' ? $direccionEmpresaConfigurada : 'Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña - Lima';
+$direccionEmpresaFooter = $direccionEmpresaConfigurada !== '' ? $direccionEmpresaConfigurada : 'Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña';
 $logoBancoNacion = public_path('img/banco-nacion-logo.png');
 $logoWillatec = public_path('img/logoWILLATEC-black.png');
 $logoHomologado = public_path('img/logo-homologado.png');
@@ -914,7 +917,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                         RUC: <b>20602503331</b><br>
                         WhatsApp: <b>{{ $whatsappEmisor }}</b> &nbsp; Teléfono: <b>(01) 757-1253</b><br>
                         Correo: <b>ventas@willatec.com</b> &nbsp; Web: <b>www.willatec.com</b><br>
-                        Dirección: <b>Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña - Lima</b>
+                        Dirección: <b>{{ $direccionEmpresaDetalle }}</b>
                     </div>
                 </td>
             </tr>
@@ -1176,7 +1179,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
             @endif
             <span class="footer-text">
                 <span class="footer-label">Dirección:</span>
-                <span class="footer-value">Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña</span>
+                <span class="footer-value">{{ $direccionEmpresaFooter }}</span>
             </span>
         </td>
     </tr>

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuditoriaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\CotizacionController;
+use App\Http\Controllers\Api\EmpresaConfiguracionController;
 use App\Http\Controllers\Api\HostingController;
 use App\Http\Controllers\Api\InventarioController;
 use App\Http\Controllers\Api\LicenciaController;
@@ -58,6 +59,10 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::patch('/notifications/{id}/read', [AuthController::class, 'markNotificationAsRead']);
 
     Route::get('/users', [UserController::class, 'index']);
+
+    Route::get('/empresa-configuracion', [EmpresaConfiguracionController::class, 'show']);
+    Route::put('/empresa-configuracion', [EmpresaConfiguracionController::class, 'update'])
+        ->middleware('role:superadmin|admin');
 
     Route::get('/users/{id}', [UserController::class, 'show'])->middleware('role:superadmin|admin');
 
