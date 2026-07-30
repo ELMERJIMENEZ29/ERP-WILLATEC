@@ -13,7 +13,7 @@ class EnsureAccessTokenIsNotIdle
         $user = $request->user();
         $token = $user?->currentAccessToken();
 
-        if (! $user || ! $token) {
+        if (! $user || ! is_object($token)) {
             return $next($request);
         }
 
@@ -33,9 +33,12 @@ class EnsureAccessTokenIsNotIdle
 
         $response = $next($request);
 
-        $token->forceFill([
-            'last_used_at' => now(),
-        ])->save();
+        if (method_exists($token, 'forceFill') && method_exists($token, 'save')) {
+            $token->forceFill([
+                'last_used_at' => now(),
+            ]);
+            $token->save();
+        }
 
         return $response;
     }

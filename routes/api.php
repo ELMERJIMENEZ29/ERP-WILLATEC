@@ -4,7 +4,9 @@ use App\Http\Controllers\Api\AuditoriaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\CotizacionController;
+use App\Http\Controllers\Api\HostingController;
 use App\Http\Controllers\Api\InventarioController;
+use App\Http\Controllers\Api\LicenciaController;
 use App\Http\Controllers\Api\OcEmitidaController;
 use App\Http\Controllers\Api\OcRecibidaController;
 use App\Http\Controllers\Api\OrdenCompraController;
@@ -277,4 +279,20 @@ Route::prefix('clientes')->middleware(['auth:sanctum', 'token.idle'])->group(fun
     Route::get('/{id}', [ClienteController::class, 'show'])->middleware('role:superadmin|ventas|admin');
     Route::put('/{id}', [ClienteController::class, 'update'])->middleware('role:superadmin|ventas|admin');
     Route::delete('/{id}', [ClienteController::class, 'destroy'])->middleware('role:superadmin|ventas|admin');
+});
+
+Route::prefix('licencias')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin'])->group(function () {
+    Route::get('/', [LicenciaController::class, 'index']);
+    Route::post('/', [LicenciaController::class, 'store']);
+    Route::get('/{licencia}', [LicenciaController::class, 'show']);
+    Route::put('/{licencia}', [LicenciaController::class, 'update']);
+    Route::delete('/{licencia}', [LicenciaController::class, 'destroy']);
+});
+
+Route::prefix('hostings')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin'])->group(function () {
+    Route::get('/', [HostingController::class, 'index']);
+    Route::post('/', [HostingController::class, 'store']);
+    Route::get('/{hosting}', [HostingController::class, 'show']);
+    Route::put('/{hosting}', [HostingController::class, 'update']);
+    Route::delete('/{hosting}', [HostingController::class, 'destroy']);
 });
