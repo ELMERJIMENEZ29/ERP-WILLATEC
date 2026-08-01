@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Cliente;
 use App\Models\Licencia;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
 class LicenciaController extends Controller
@@ -19,7 +21,12 @@ class LicenciaController extends Controller
             'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
-        $query = Licencia::with('cliente:id,nombre,ruc,correo')
+        $query = Licencia::with([
+            'cliente:id,nombre,ruc,correo',
+            'alertasEnviadas' => fn ($query) => $query->latest('sent_at'),
+        ])
+            ->withCount('alertasEnviadas')
+            ->withMax('alertasEnviadas', 'sent_at')
             ->orderBy('fecha_renovacion')
             ->orderBy('empresa');
 
@@ -71,14 +78,14 @@ class LicenciaController extends Controller
 
         return response()->json([
             'message' => 'Licencia registrada correctamente',
-            'licencia' => $licencia->load('cliente:id,nombre,ruc,correo'),
+            'licencia' => $this->loadLicenciaRelations($licencia),
         ], 201);
     }
 
     public function show(Licencia $licencia)
     {
         return response()->json(
-            $licencia->load('cliente:id,nombre,ruc,correo')
+            $this->loadLicenciaRelations($licencia)
         );
     }
 
@@ -94,7 +101,7 @@ class LicenciaController extends Controller
 
         return response()->json([
             'message' => 'Licencia actualizada correctamente',
-            'licencia' => $licencia->refresh()->load('cliente:id,nombre,ruc,correo'),
+            'licencia' => $this->loadLicenciaRelations($licencia->refresh()),
         ]);
     }
 
@@ -105,6 +112,47 @@ class LicenciaController extends Controller
         return response()->json([
             'message' => 'Licencia eliminada correctamente',
         ]);
+    }
+
+    public function previewImport(Request $request)
+    {
+        $validated = $request->validate([
+            'rows' => 'required|array|min:1|max:1000',
+            'rows.*' => 'array',
+        ]);
+
+        return response()->json($this->buildImportPreview($validated['rows']));
+    }
+
+    public function confirmImport(Request $request)
+    {
+        $validated = $request->validate([
+            'rows' => 'required|array|min:1|max:1000',
+            'rows.*' => 'array',
+        ]);
+
+        $preview = $this->buildImportPreview($validated['rows']);
+        $invalidRows = collect($preview['rows'])->where('valid', false)->values();
+
+        if ($invalidRows->isNotEmpty()) {
+            return response()->json([
+                'message' => 'El archivo tiene filas con errores. Corrige o elimina esas filas antes de importar.',
+                'summary' => $preview['summary'],
+                'rows' => $preview['rows'],
+            ], 422);
+        }
+
+        $created = [];
+
+        foreach ($preview['rows'] as $row) {
+            $created[] = $this->loadLicenciaRelations(Licencia::create($row['data']));
+        }
+
+        return response()->json([
+            'message' => count($created).' licencia(s) importada(s) correctamente',
+            'created' => count($created),
+            'licencias' => $created,
+        ], 201);
     }
 
     /**
@@ -129,6 +177,17 @@ class LicenciaController extends Controller
         ]);
     }
 
+    private function loadLicenciaRelations(Licencia $licencia): Licencia
+    {
+        return $licencia
+            ->load([
+                'cliente:id,nombre,ruc,correo',
+                'alertasEnviadas' => fn ($query) => $query->latest('sent_at'),
+            ])
+            ->loadCount('alertasEnviadas')
+            ->loadMax('alertasEnviadas', 'sent_at');
+    }
+
     private function nullableTrim(mixed $value): ?string
     {
         if (! is_string($value)) {
@@ -146,5 +205,142 @@ class LicenciaController extends Controller
             ->addMonthsNoOverflow($meses)
             ->subDay()
             ->toDateString();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<string, mixed>
+     */
+    private function buildImportPreview(array $rows): array
+    {
+        $seen = [];
+        $previewRows = [];
+
+        foreach ($rows as $index => $rawRow) {
+            $rowNumber = $index + 2;
+            $normalized = $this->normalizeImportRow($rawRow);
+            $errors = [];
+            $warnings = [];
+
+            $validator = Validator::make($normalized, [
+                'cliente_id' => 'nullable|integer|exists:clientes,id',
+                'empresa' => 'required|string|max:255',
+                'producto' => 'required|string|max:255',
+                'cantidad' => 'required|integer|min:1|max:100000',
+                'suscripcion_meses' => 'required|integer|min:1|max:240',
+                'correo_licencia' => 'nullable|email|max:255',
+                'fecha_inicio' => 'required|date_format:Y-m-d',
+            ], [], [
+                'cliente_id' => 'cliente',
+                'empresa' => 'empresa',
+                'producto' => 'producto',
+                'cantidad' => 'cantidad',
+                'suscripcion_meses' => 'suscripcion en meses',
+                'correo_licencia' => 'correo licencia',
+                'fecha_inicio' => 'fecha inicio',
+            ]);
+
+            if ($validator->fails()) {
+                $errors = $validator->errors()->all();
+            }
+
+            if (empty($normalized['cliente_id']) && ! empty($normalized['empresa'])) {
+                $cliente = Cliente::query()
+                    ->whereRaw('LOWER(nombre) = ?', [mb_strtolower($normalized['empresa'])])
+                    ->first(['id', 'nombre', 'correo']);
+
+                if ($cliente) {
+                    $normalized['cliente_id'] = $cliente->id;
+                    $normalized['empresa'] = $cliente->nombre;
+                    $normalized['correo_licencia'] = $normalized['correo_licencia'] ?: $cliente->correo;
+                } else {
+                    $warnings[] = 'No se encontro un cliente registrado con ese nombre. Se importara como empresa escrita.';
+                }
+            }
+
+            if (empty($errors)) {
+                $normalized['fecha_renovacion'] = $this->calculateFechaRenovacion(
+                    $normalized['fecha_inicio'],
+                    (int) $normalized['suscripcion_meses']
+                );
+
+                $key = mb_strtolower($normalized['empresa'].'|'.$normalized['producto'].'|'.$normalized['fecha_inicio']);
+
+                if (isset($seen[$key])) {
+                    $warnings[] = 'Posible duplicado dentro del archivo con la fila '.$seen[$key].'.';
+                } else {
+                    $seen[$key] = $rowNumber;
+                }
+
+                $exists = Licencia::query()
+                    ->where('empresa', $normalized['empresa'])
+                    ->where('producto', $normalized['producto'])
+                    ->whereDate('fecha_inicio', $normalized['fecha_inicio'])
+                    ->exists();
+
+                if ($exists) {
+                    $warnings[] = 'Ya existe una licencia similar en el sistema.';
+                }
+            }
+
+            $previewRows[] = [
+                'row' => $rowNumber,
+                'valid' => empty($errors),
+                'errors' => $errors,
+                'warnings' => $warnings,
+                'data' => $normalized,
+            ];
+        }
+
+        return [
+            'summary' => [
+                'total' => count($previewRows),
+                'valid' => collect($previewRows)->where('valid', true)->count(),
+                'invalid' => collect($previewRows)->where('valid', false)->count(),
+                'warnings' => collect($previewRows)->filter(fn ($row) => count($row['warnings']) > 0)->count(),
+            ],
+            'rows' => $previewRows,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function normalizeImportRow(array $row): array
+    {
+        $fechaInicio = $this->normalizeImportDate($row['fecha_inicio'] ?? null);
+
+        return [
+            'cliente_id' => $this->nullableInteger($row['cliente_id'] ?? null),
+            'empresa' => trim((string) ($row['empresa'] ?? '')),
+            'producto' => trim((string) ($row['producto'] ?? '')),
+            'cantidad' => $this->nullableInteger($row['cantidad'] ?? null),
+            'suscripcion_meses' => $this->nullableInteger($row['suscripcion_meses'] ?? null),
+            'correo_licencia' => $this->nullableTrim($row['correo_licencia'] ?? null),
+            'fecha_inicio' => $fechaInicio,
+        ];
+    }
+
+    private function nullableInteger(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    private function normalizeImportDate(mixed $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse(trim($value))->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

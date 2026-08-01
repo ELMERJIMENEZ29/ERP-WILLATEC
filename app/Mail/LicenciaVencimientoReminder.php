@@ -5,6 +5,7 @@ namespace App\Mail;
 use App\Models\Licencia;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -22,10 +23,14 @@ class LicenciaVencimientoReminder extends Mailable
     {
         $subjectPrefix = $this->diasRestantes === 0
             ? 'Licencia vence hoy'
-            : "Recordatorio de renovacion de licencia ({$this->diasRestantes} dias)";
+            : "Recordatorio de renovación de licencia (Vence en: {$this->diasRestantes} días)";
 
         return new Envelope(
-            subject: "{$subjectPrefix} - {$this->licencia->producto}",
+            from: new Address(
+                config('mail.from.address'),
+                'LICENCIAS - WILLATEC S.A.C',
+            ),
+            subject: "NO RESPONDER | {$subjectPrefix} - {$this->licencia->producto}",
         );
     }
 

@@ -289,6 +289,8 @@ Route::prefix('clientes')->middleware(['auth:sanctum', 'token.idle'])->group(fun
 Route::prefix('licencias')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin'])->group(function () {
     Route::get('/', [LicenciaController::class, 'index']);
     Route::post('/', [LicenciaController::class, 'store']);
+    Route::post('/import/preview', [LicenciaController::class, 'previewImport']);
+    Route::post('/import/confirm', [LicenciaController::class, 'confirmImport']);
     Route::get('/{licencia}', [LicenciaController::class, 'show']);
     Route::put('/{licencia}', [LicenciaController::class, 'update']);
     Route::delete('/{licencia}', [LicenciaController::class, 'destroy']);
