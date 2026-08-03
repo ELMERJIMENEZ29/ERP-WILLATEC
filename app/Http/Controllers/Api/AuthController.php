@@ -19,6 +19,8 @@ use Spatie\Permission\Models\Role;
 
 class AuthController extends Controller
 {
+    private const MAX_LOGIN_ATTEMPTS = 5;
+
     private const SUPERADMIN_SECURITY_QUESTIONS = [
         '¿Cual es el nombre de tu primera mascota?',
         '¿Cual fue tu apodo en la universidad?',
@@ -31,19 +33,46 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
+        $email = mb_strtolower(trim((string) $request->email));
+
+        if ($this->loginAttempts($email) >= self::MAX_LOGIN_ATTEMPTS) {
+            return response()->json([
+                'message' => 'Tus intentos se acabaron. Debes iniciar el proceso de recuperacion de contrasena.',
+                'attempts_remaining' => 0,
+                'must_recover_password' => true,
+            ], 423);
+        }
+
         if (! Auth::attempt([
-            'email' => $request->email,
+            'email' => $email,
             'password' => $request->password,
             'activo' => true,
         ])) {
+            $attempts = $this->incrementLoginAttempts($email);
+            $remaining = max(0, self::MAX_LOGIN_ATTEMPTS - $attempts);
+
+            if ($remaining <= 0) {
+                return response()->json([
+                    'message' => 'Tus intentos se acabaron. Debes iniciar el proceso de recuperacion de contrasena.',
+                    'attempts_remaining' => 0,
+                    'must_recover_password' => true,
+                ], 423);
+            }
+
             return response()->json([
-                'message' => 'Credenciales incorrectas o usuario inactivo',
+                'message' => $remaining === 1
+                    ? 'Credenciales incorrectas. Te queda 1 intento antes de recuperar tu contrasena.'
+                    : "Credenciales incorrectas. Te quedan {$remaining} intentos.",
+                'attempts_remaining' => $remaining,
+                'must_recover_password' => false,
             ], 401);
         }
 
         /** @var User $user */
         $user = Auth::user();
         abort_if(! $user, 401);
+
+        $this->clearLoginAttempts($user->email);
 
         $user->forceFill([
             'last_login_at' => now('America/Lima'),
@@ -241,6 +270,7 @@ class AuthController extends Controller
 
         DB::table('password_reset_tokens')->where('email', $user->email)->delete();
         $user->tokens()->delete();
+        $this->clearLoginAttempts($user->email);
         $user->notify(new PasswordChangedNotification($user));
 
         return response()->json([
@@ -261,6 +291,7 @@ class AuthController extends Controller
 
         DB::table('password_reset_tokens')->where('email', $user->email)->delete();
         $user->tokens()->delete();
+        $this->clearLoginAttempts($user->email);
 
         return response()->json([
             'message' => 'Contraseña temporal generada correctamente. El usuario debe cambiarla en su próximo ingreso.',
@@ -497,5 +528,29 @@ class AuthController extends Controller
     private function normalizeSecurityAnswer(string $answer): string
     {
         return Str::lower(preg_replace('/\s+/', ' ', trim($answer)) ?? '');
+    }
+
+    private function loginAttempts(string $email): int
+    {
+        return (int) cache()->get($this->loginAttemptsKey($email), 0);
+    }
+
+    private function incrementLoginAttempts(string $email): int
+    {
+        $attempts = $this->loginAttempts($email) + 1;
+
+        cache()->forever($this->loginAttemptsKey($email), $attempts);
+
+        return $attempts;
+    }
+
+    private function clearLoginAttempts(string $email): void
+    {
+        cache()->forget($this->loginAttemptsKey($email));
+    }
+
+    private function loginAttemptsKey(string $email): string
+    {
+        return 'login_attempts:'.sha1(mb_strtolower(trim($email)));
     }
 }

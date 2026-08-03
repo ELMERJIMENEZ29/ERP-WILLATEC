@@ -21,7 +21,7 @@ use App\Http\Controllers\Api\WooCommerceWebhookController;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
 
-Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:20,1');
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:3,1');
 Route::post('/superadmin/security-question-reset', [AuthController::class, 'resetPasswordWithSecurityQuestions'])
     ->middleware('throttle:3,1');
