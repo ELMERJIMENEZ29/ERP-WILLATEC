@@ -137,11 +137,13 @@
                         <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                             <tr>
                                 <td style="font-size:11px;color:#6b82a8;line-height:1.6;">
-                                    <strong style="display:block;color:#0A3B87;margin-bottom:2px;">¿Necesitas ayuda en tu renovación?</strong>
-                                    Escríbenos al correo:
-                                    <a href="mailto:ventas@willatec.com" style="color:#0A3B87;font-weight:700;text-decoration:none;">ventas@willatec.com</a>
-                                    &nbsp;o comunicáte al WhatsApp &nbsp;
-                                    <a href="https://wa.me/51934577815" style="color:#0A3B87;font-weight:700;text-decoration:none;">934 577 815</a>
+                                    <strong style="display:block;color:#0A3B87;margin-bottom:4px;">¿Necesitas ayuda en tu renovación?</strong>
+                                    <div>
+                                        Escríbenos al correo:
+                                        <a href="mailto:ventas@willatec.com" style="color:#0A3B87;font-weight:700;text-decoration:none;">ventas@willatec.com</a>
+                                        &nbsp;o comunícate al WhatsApp&nbsp;
+                                        <a href="https://wa.me/51934577815" style="color:#0A3B87;font-weight:700;text-decoration:none;">934 577 815</a>
+                                    </div>
                                 </td>
                             </tr>
                         </table>
