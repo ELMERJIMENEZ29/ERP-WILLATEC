@@ -83,7 +83,10 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
         ->middleware('role:superadmin|admin');
 
     Route::get('/inventario/movimientos', [InventarioController::class, 'indexMovimientos'])
-        ->middleware('role:superadmin|logistica');
+        ->middleware('role:superadmin|logistica|admin|contabilidad');
+
+    Route::post('/inventario/movimientos/{movimiento}/documento', [InventarioController::class, 'actualizarDocumento'])
+        ->middleware('role:superadmin|logistica|admin|contabilidad');
 
     Route::get('/proveedores', [ProveedorController::class, 'index'])
         ->middleware('role:superadmin|admin|ventas|soporte|logistica');
@@ -206,6 +209,9 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
         ->middleware('role:superadmin|ventas');
 
     Route::get('/{cotizacion}/exportar-pdf', [CotizacionController::class, 'exportarPdf'])
+        ->middleware('role:superadmin|ventas');
+
+    Route::patch('/{id}/items/orden', [CotizacionController::class, 'reorderItems'])
         ->middleware('role:superadmin|ventas');
 
     Route::get('/{cotizacion}/oc-recibida/preview', [OcRecibidaController::class, 'preview'])

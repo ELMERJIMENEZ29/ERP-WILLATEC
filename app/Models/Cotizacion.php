@@ -66,7 +66,7 @@ class Cotizacion extends Model
 
     public function items(): HasMany
     {
-        return $this->hasMany(CotizacionItem::class);
+        return $this->hasMany(CotizacionItem::class)->orderBy('orden')->orderBy('id');
     }
 
     public function plataforma(): BelongsTo

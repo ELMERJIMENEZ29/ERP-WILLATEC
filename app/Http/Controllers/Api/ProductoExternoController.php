@@ -124,6 +124,10 @@ class ProductoExternoController extends Controller
 
             $productoExterno->forceFill(['producto_id' => $producto->id])->save();
 
+            $producto->forceFill([
+                'factura_numero' => $validated['documento_numero'],
+            ])->save();
+
             CotizacionItem::query()
                 ->where('producto_externo_id', $productoExterno->id)
                 ->whereNull('producto_id')

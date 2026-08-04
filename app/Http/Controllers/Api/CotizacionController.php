@@ -733,6 +733,56 @@ class CotizacionController extends Controller
         return response()->json(['message' => 'Item actualizado']);
     }
 
+    public function reorderItems(Request $request, int $id)
+    {
+        $request->validate([
+            'item_ids' => 'required|array|min:1',
+            'item_ids.*' => 'required|integer|distinct|exists:cotizacion_items,id',
+        ]);
+
+        $cotizacion = Cotizacion::findOrFail($id);
+        $this->ensureCanEditCotizacion($request, $cotizacion);
+
+        $itemIds = collect($request->input('item_ids'))
+            ->map(fn ($itemId): int => (int) $itemId)
+            ->values();
+
+        $existingIds = $cotizacion->items()
+            ->whereIn('id', $itemIds)
+            ->pluck('id')
+            ->map(fn ($itemId): int => (int) $itemId)
+            ->sort()
+            ->values();
+
+        $expectedIds = $cotizacion->items()
+            ->pluck('id')
+            ->map(fn ($itemId): int => (int) $itemId)
+            ->sort()
+            ->values();
+
+        if ($existingIds->count() !== $itemIds->count() || $existingIds->all() !== $expectedIds->all()) {
+            return response()->json([
+                'message' => 'El orden debe incluir todos los items de la cotizacion.',
+                'errors' => [
+                    'item_ids' => ['El orden enviado no coincide con los items de la cotizacion.'],
+                ],
+            ], 422);
+        }
+
+        DB::transaction(function () use ($itemIds): void {
+            foreach ($itemIds as $index => $itemId) {
+                CotizacionItem::whereKey($itemId)->update([
+                    'orden' => $index + 1,
+                ]);
+            }
+        });
+
+        return response()->json([
+            'message' => 'Orden de items actualizado',
+            'items' => $cotizacion->refresh()->items()->with(['producto', 'productoExterno', 'proveedores'])->get(),
+        ]);
+    }
+
     public function deleteItem(Request $request, int $id)
     {
         $item = CotizacionItem::findOrFail($id);

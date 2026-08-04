@@ -87,6 +87,14 @@ class Producto extends Model
         return $this->hasMany(InventarioMovimiento::class);
     }
 
+    public function ultimaEntradaConFactura(): HasOne
+    {
+        return $this->hasOne(InventarioMovimiento::class)
+            ->where('tipo_movimiento', InventarioMovimiento::TIPO_ENTRADA)
+            ->whereNotNull('documento_numero')
+            ->latestOfMany();
+    }
+
     public function series(): HasMany
     {
         return $this->hasMany(ProductoSerie::class);

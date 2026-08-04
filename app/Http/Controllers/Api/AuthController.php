@@ -36,7 +36,7 @@ class AuthController extends Controller
         $email = mb_strtolower(trim((string) $request->email));
 
         if ($this->loginAttempts($email) >= self::MAX_LOGIN_ATTEMPTS) {
-            return response()->json([
+            return $this->safeJson([
                 'message' => 'Tus intentos se acabaron. Debes iniciar el proceso de recuperacion de contrasena.',
                 'attempts_remaining' => 0,
                 'must_recover_password' => true,
@@ -52,14 +52,14 @@ class AuthController extends Controller
             $remaining = max(0, self::MAX_LOGIN_ATTEMPTS - $attempts);
 
             if ($remaining <= 0) {
-                return response()->json([
+                return $this->safeJson([
                     'message' => 'Tus intentos se acabaron. Debes iniciar el proceso de recuperacion de contrasena.',
                     'attempts_remaining' => 0,
                     'must_recover_password' => true,
                 ], 423);
             }
 
-            return response()->json([
+            return $this->safeJson([
                 'message' => $remaining === 1
                     ? 'Credenciales incorrectas. Te queda 1 intento antes de recuperar tu contrasena.'
                     : "Credenciales incorrectas. Te quedan {$remaining} intentos.",
@@ -87,7 +87,7 @@ class AuthController extends Controller
                 now()->addMinutes(5)
             );
 
-            return response()->json([
+            return $this->safeJson([
                 'requires_2fa' => true,
                 'login_token' => $loginToken,
                 'message' => 'Se requiere código 2FA',
@@ -98,7 +98,7 @@ class AuthController extends Controller
 
         $token = $user->createToken('api-token')->plainTextToken;
 
-        return response()->json([
+        return $this->safeJson([
             'user' => $user->load('profile', 'roles'),
             'token' => $token,
             'requires_password_change' => $user->requires_password_change,
@@ -293,7 +293,7 @@ class AuthController extends Controller
         $user->tokens()->delete();
         $this->clearLoginAttempts($user->email);
 
-        return response()->json([
+        return $this->safeJson([
             'message' => 'Contraseña temporal generada correctamente. El usuario debe cambiarla en su próximo ingreso.',
             'temporary_password' => $temporaryPassword,
             'user' => $user,
@@ -336,7 +336,7 @@ class AuthController extends Controller
 
         $user->notify(new PasswordChangedNotification($user));
 
-        return response()->json([
+        return $this->safeJson([
             'message' => 'Contraseña cambiada correctamente',
             'user' => $user->load('profile', 'roles'),
             'token' => $token,
@@ -364,7 +364,7 @@ class AuthController extends Controller
 
     public function user(Request $request)
     {
-        return response()->json([
+        return $this->safeJson([
             'user' => $request->user()->load('profile', 'roles'),
         ]);
     }
@@ -411,7 +411,7 @@ class AuthController extends Controller
             'cargo' => $request->cargo ?? null,
         ]);
 
-        return response()->json([
+        return $this->safeJson([
             'message' => 'Usuario creado correctamente',
             'user' => $user->loadMissing('profile', 'roles'),
         ]);
@@ -440,7 +440,7 @@ class AuthController extends Controller
         $userId = cache()->get('2fa_login_'.$request->login_token);
 
         if (! $userId) {
-            return response()->json(['message' => 'Token temporal expirado'], 422);
+            return $this->safeJson(['message' => 'Token temporal expirado'], 422);
         }
 
         $user = User::with('profile', 'roles')->findOrFail($userId);
@@ -471,7 +471,7 @@ class AuthController extends Controller
         }
 
         if (! $valid) {
-            return response()->json(['message' => 'Código inválido'], 422);
+            return $this->safeJson(['message' => 'Codigo invalido'], 422);
         }
 
         cache()->forget('2fa_login_'.$request->login_token);
@@ -484,11 +484,22 @@ class AuthController extends Controller
 
         $token = $user->createToken('api-token')->plainTextToken;
 
-        return response()->json([
+        return $this->safeJson([
             'user' => $user,
             'token' => $token,
             'requires_password_change' => $user->requires_password_change,
         ]);
+    }
+
+    private function safeJson(array $data, int $status = 200)
+    {
+        $json = json_encode(
+            $data,
+            JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR
+        );
+
+        return response($json === false ? '{"message":"Respuesta generada correctamente"}' : $json, $status)
+            ->header('Content-Type', 'application/json');
     }
 
     private function publicSecurityQuestions(User $user): array

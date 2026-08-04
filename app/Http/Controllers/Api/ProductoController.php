@@ -31,6 +31,7 @@ class ProductoController extends Controller
                 'series' => fn ($query) => $query
                     ->select(['id', 'producto_id', 'serie', 'factura_numero', 'documento_path', 'estado', 'fecha_ingreso', 'fecha_salida', 'oc_recibida_id', 'cotizacion_item_id'])
                     ->latest(),
+                'ultimaEntradaConFactura',
             ]);
 
         if ($request->has('activo')) {
@@ -75,13 +76,17 @@ class ProductoController extends Controller
             });
         }
 
-        return response()->json($query->latest()->paginate($request->integer('per_page', 10)));
+        $productos = $query->latest()->paginate($request->integer('per_page', 10));
+        $productos->getCollection()->transform(fn (Producto $producto): Producto => $this->applyFacturaFallback($producto));
+
+        return response()->json($productos);
     }
 
     // Ver detalle
     public function show(int $id)
     {
-        $producto = Producto::with(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series'])->findOrFail($id);
+        $producto = Producto::with(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'ultimaEntradaConFactura'])->findOrFail($id);
+        $producto = $this->applyFacturaFallback($producto);
 
         if (! $producto) {
             return response()->json([
@@ -90,6 +95,15 @@ class ProductoController extends Controller
         }
 
         return response()->json($producto);
+    }
+
+    private function applyFacturaFallback(Producto $producto): Producto
+    {
+        if (! $producto->factura_numero && $producto->ultimaEntradaConFactura?->documento_numero) {
+            $producto->factura_numero = $producto->ultimaEntradaConFactura->documento_numero;
+        }
+
+        return $producto;
     }
 
     // Crear producto

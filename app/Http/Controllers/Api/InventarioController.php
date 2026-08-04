@@ -14,6 +14,7 @@ use App\Services\InventarioService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 
 class InventarioController extends Controller
 {
@@ -354,6 +355,69 @@ class InventarioController extends Controller
         return response()->json([
             'message' => 'Salida registrada en Kardex',
             'producto' => $productoActualizado,
+        ]);
+    }
+
+    public function actualizarDocumento(Request $request, InventarioMovimiento $movimiento)
+    {
+        if (! in_array($movimiento->tipo_movimiento, [
+            InventarioMovimiento::TIPO_ENTRADA,
+            InventarioMovimiento::TIPO_DEVOLUCION,
+        ], true)) {
+            return response()->json([
+                'message' => 'Solo se puede adjuntar factura a movimientos de entrada o devolucion.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'documento_numero' => 'nullable|string|max:100',
+            'fecha_documento' => 'nullable|date',
+            'factura' => 'nullable|file|mimes:pdf,jpg,jpeg,png,xml,doc,docx|max:10240',
+        ]);
+
+        $documentoPath = $movimiento->documento_path;
+        if ($request->hasFile('factura')) {
+            if ($documentoPath) {
+                Storage::disk('public')->delete($documentoPath);
+            }
+
+            $documentoPath = $this->storeDocumento($request->file('factura'), 'inventario/facturas');
+        }
+
+        $movimiento->update([
+            'documento_tipo' => 'factura',
+            'documento_numero' => $validated['documento_numero'] ?? $movimiento->documento_numero,
+            'documento_path' => $documentoPath,
+            'fecha_documento' => $validated['fecha_documento'] ?? $movimiento->fecha_documento,
+        ]);
+
+        $seriesUpdate = [
+            'factura_numero' => $movimiento->documento_numero,
+            'documento_path' => $movimiento->documento_path,
+        ];
+
+        if ($movimiento->producto_serie_id) {
+            ProductoSerie::whereKey($movimiento->producto_serie_id)->update($seriesUpdate);
+        }
+
+        $serieIds = $movimiento->productoSeries()->pluck('producto_series.id');
+        if ($serieIds->isNotEmpty()) {
+            ProductoSerie::whereIn('id', $serieIds)->update($seriesUpdate);
+        }
+
+        $movimiento->load([
+            'producto:id,nombre,sku,codigo,serie,marca,modelo',
+            'productoSerie:id,producto_id,serie,factura_numero,estado',
+            'productoSeries:id,producto_id,serie,factura_numero,estado',
+            'moneda:id,codigo,simbolo',
+            'proveedorCatalogo:id,nombre,ruc',
+            'createdBy:id,nombres,apellidos,email',
+        ]);
+        $movimiento->setAttribute('garantia_info', $this->buildGarantiaInfo($movimiento));
+
+        return response()->json([
+            'message' => 'Factura del movimiento actualizada',
+            'movimiento' => $movimiento,
         ]);
     }
 
