@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Cotizacion;
 use App\Models\EstadoCotizacion;
+use App\Models\Licitacion;
 use App\Models\OrdenCompra;
 use App\Models\OrdenCompraItem;
 use Illuminate\Support\Facades\DB;
@@ -151,9 +152,28 @@ class OrdenCompraService
 
             if ($estado) {
                 $cotizacion->update(['estado_cotizacion_id' => $estado->id]);
+                $this->marcarOportunidadesComoGanadas($cotizacion);
             }
 
             return $orden->load('items');
         });
+    }
+
+    private function marcarOportunidadesComoGanadas(Cotizacion $cotizacion): void
+    {
+        Licitacion::whereHas('cotizaciones', function ($query) use ($cotizacion): void {
+            $query->where('cotizacion_id', $cotizacion->id);
+        })
+            ->whereNotIn('estado', ['ganada', 'perdida', 'no_se_realizara', 'vencida'])
+            ->get()
+            ->each(function (Licitacion $licitacion): void {
+                $licitacion->update(['estado' => 'ganada']);
+                $licitacion->historial()->create([
+                    'fecha' => now(),
+                    'usuario' => 'Sistema',
+                    'tipo' => 'estado',
+                    'descripcion' => 'Oportunidad marcada como ganada por OC registrada en la cotizacion vinculada.',
+                ]);
+            });
     }
 }

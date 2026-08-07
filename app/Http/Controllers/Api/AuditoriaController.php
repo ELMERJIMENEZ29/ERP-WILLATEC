@@ -12,6 +12,11 @@ use App\Models\CotizacionItemProveedor;
 use App\Models\CotizacionModificacion;
 use App\Models\CotizacionVersion;
 use App\Models\InventarioMovimiento;
+use App\Models\Licitacion;
+use App\Models\LicitacionArchivo;
+use App\Models\LicitacionComentario;
+use App\Models\LicitacionCotizacion;
+use App\Models\LicitacionHistorial;
 use App\Models\OcDocumentoAdicional;
 use App\Models\OcEmitida;
 use App\Models\OcEmitidaItem;
@@ -36,7 +41,7 @@ class AuditoriaController extends Controller
         $request->validate([
             'per_page' => 'nullable|integer|min:1|max:100',
             'event' => 'nullable|in:created,updated,deleted,uploaded',
-            'tipo' => 'nullable|in:cliente,cotizacion,cotizacion_item,cotizacion_costo,cotizacion_item_proveedor,cotizacion_historial,cotizacion_modificacion,cotizacion_version,producto,producto_externo,producto_serie,inventario_movimiento,proveedor,oc_recibida,oc_recibida_item,oc_emitida,oc_emitida_item,oc_documento_adicional',
+            'tipo' => 'nullable|in:cliente,cotizacion,cotizacion_item,cotizacion_costo,cotizacion_item_proveedor,cotizacion_historial,cotizacion_modificacion,cotizacion_version,producto,producto_externo,producto_serie,inventario_movimiento,proveedor,oc_recibida,oc_recibida_item,oc_emitida,oc_emitida_item,oc_documento_adicional,licitacion,licitacion_archivo,licitacion_comentario,licitacion_historial,licitacion_cotizacion',
             'subject_id' => 'nullable|integer|min:1',
             'causer_id' => 'nullable|integer|min:1',
             'search' => 'nullable|string|max:100',
@@ -132,6 +137,11 @@ class AuditoriaController extends Controller
             'oc_emitida' => OcEmitida::class,
             'oc_emitida_item' => OcEmitidaItem::class,
             'oc_documento_adicional' => OcDocumentoAdicional::class,
+            'licitacion' => Licitacion::class,
+            'licitacion_archivo' => LicitacionArchivo::class,
+            'licitacion_comentario' => LicitacionComentario::class,
+            'licitacion_historial' => LicitacionHistorial::class,
+            'licitacion_cotizacion' => LicitacionCotizacion::class,
         ];
     }
 
@@ -217,6 +227,29 @@ class AuditoriaController extends Controller
             OcDocumentoAdicional::class => $query->where('nombre_original', 'like', "%{$search}%")
                 ->orWhereHas('ocRecibida', fn ($ocQuery) => $ocQuery->where('numero', 'like', "%{$search}%"))
                 ->orWhereHas('ocEmitida', fn ($ocQuery) => $ocQuery->where('numero', 'like', "%{$search}%")),
+            Licitacion::class => $query->where('empresa', 'like', "%{$search}%")
+                ->orWhere('requerimiento', 'like', "%{$search}%")
+                ->orWhere('tipo', 'like', "%{$search}%")
+                ->orWhere('estado', 'like', "%{$search}%"),
+            LicitacionArchivo::class => $query->where('nombre', 'like', "%{$search}%")
+                ->orWhereHas('licitacion', fn ($licitacionQuery) => $licitacionQuery
+                    ->where('empresa', 'like', "%{$search}%")
+                    ->orWhere('requerimiento', 'like', "%{$search}%")),
+            LicitacionComentario::class => $query->where('comentario', 'like', "%{$search}%")
+                ->orWhereHas('licitacion', fn ($licitacionQuery) => $licitacionQuery
+                    ->where('empresa', 'like', "%{$search}%")
+                    ->orWhere('requerimiento', 'like', "%{$search}%")),
+            LicitacionHistorial::class => $query->where('descripcion', 'like', "%{$search}%")
+                ->orWhereHas('licitacion', fn ($licitacionQuery) => $licitacionQuery
+                    ->where('empresa', 'like', "%{$search}%")
+                    ->orWhere('requerimiento', 'like', "%{$search}%")),
+            LicitacionCotizacion::class => $query->where('numero', 'like', "%{$search}%")
+                ->orWhereHas('licitacion', fn ($licitacionQuery) => $licitacionQuery
+                    ->where('empresa', 'like', "%{$search}%")
+                    ->orWhere('requerimiento', 'like', "%{$search}%"))
+                ->orWhereHas('cotizacion', fn ($cotizacionQuery) => $cotizacionQuery
+                    ->where('numero', 'like', "%{$search}%")
+                    ->orWhere('titulo', 'like', "%{$search}%")),
             default => null,
         };
     }
@@ -270,6 +303,11 @@ class AuditoriaController extends Controller
             OcEmitida::class => 'oc_emitida',
             OcEmitidaItem::class => 'oc_emitida_item',
             OcDocumentoAdicional::class => 'oc_documento_adicional',
+            Licitacion::class => 'licitacion',
+            LicitacionArchivo::class => 'licitacion_archivo',
+            LicitacionComentario::class => 'licitacion_comentario',
+            LicitacionHistorial::class => 'licitacion_historial',
+            LicitacionCotizacion::class => 'licitacion_cotizacion',
             default => class_basename($subjectType ?? 'sistema'),
         };
     }
@@ -300,6 +338,11 @@ class AuditoriaController extends Controller
             OcEmitida::class => $subject?->numero ?? $values['numero'] ?? null,
             OcEmitidaItem::class => $subject?->descripcion ?? $values['descripcion'] ?? null,
             OcDocumentoAdicional::class => $subject?->nombre_original ?? $values['nombre_original'] ?? null,
+            Licitacion::class => $subject?->requerimiento ?? $values['requerimiento'] ?? null,
+            LicitacionArchivo::class => $subject?->nombre ?? $values['nombre'] ?? null,
+            LicitacionComentario::class => $subject?->licitacion?->requerimiento ?? $values['licitacion_id'] ?? null,
+            LicitacionHistorial::class => $subject?->licitacion?->requerimiento ?? $values['licitacion_id'] ?? null,
+            LicitacionCotizacion::class => $subject?->numero ?? $values['numero'] ?? $values['cotizacion_id'] ?? null,
             default => null,
         };
     }

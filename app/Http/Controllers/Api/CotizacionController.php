@@ -14,6 +14,7 @@ use App\Models\CotizacionVersion;
 use App\Models\EmpresaConfiguracion;
 use App\Models\EstadoCotizacion;
 use App\Models\EstadoCotizacionItem;
+use App\Models\Licitacion;
 use App\Models\Moneda;
 use App\Models\Plantilla;
 use App\Models\Plataforma;
@@ -27,6 +28,7 @@ use App\Notifications\CotizacionModificacionEnRevisionNotification;
 use App\Notifications\CotizacionModificacionRechazadaNotification;
 use App\Notifications\CotizacionModificacionSolicitadaNotification;
 use App\Notifications\CotizacionRechazadaNotification;
+use App\Notifications\LicitacionCotizacionListaNotification;
 use App\Services\CotizacionService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
@@ -60,6 +62,23 @@ class CotizacionController extends Controller
     private function notifySuperadmins(object $notification): void
     {
         User::role('superadmin')->get()->each->notify($notification);
+    }
+
+    private function notifyLicitacionUsersIfLinked(Cotizacion $cotizacion): void
+    {
+        $licitaciones = Licitacion::whereHas('cotizaciones', function ($query) use ($cotizacion): void {
+            $query->where('cotizacion_id', $cotizacion->id);
+        })->get();
+
+        if ($licitaciones->isEmpty()) {
+            return;
+        }
+
+        $users = User::role('licitacion')->get();
+
+        foreach ($licitaciones as $licitacion) {
+            $users->each->notify(new LicitacionCotizacionListaNotification($licitacion, $cotizacion));
+        }
     }
 
     private function plantillaIncluyeIgv(?int $plantillaId): ?bool
@@ -1119,6 +1138,8 @@ class CotizacionController extends Controller
         if ($modificacion->solicitante) {
             $modificacion->solicitante->notify(new CotizacionModificacionAprobadaNotification($modificacion, $request->user()));
         }
+
+        $this->notifyLicitacionUsersIfLinked($modificacion->cotizacion->refresh()->load('estadoCotizacion'));
 
         return response()->json([
             'message' => 'Modificacion aprobada y aplicada como nueva version vigente',
@@ -2555,6 +2576,8 @@ class CotizacionController extends Controller
         if ($cotizacion->user) {
             $cotizacion->user->notify(new CotizacionAprobadaNotification($cotizacion, $request->user()));
         }
+
+        $this->notifyLicitacionUsersIfLinked($cotizacion);
 
         return response()->json([
             'message' => 'Cotización aprobada correctamente',

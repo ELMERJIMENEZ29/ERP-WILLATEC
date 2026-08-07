@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\EmpresaConfiguracionController;
 use App\Http\Controllers\Api\HostingController;
 use App\Http\Controllers\Api\InventarioController;
 use App\Http\Controllers\Api\LicenciaController;
+use App\Http\Controllers\Api\LicitacionController;
 use App\Http\Controllers\Api\OcEmitidaController;
 use App\Http\Controllers\Api\OcRecibidaController;
 use App\Http\Controllers\Api\OrdenCompraController;
@@ -125,6 +126,18 @@ Route::prefix('productos-externos')->middleware(['auth:sanctum', 'token.idle'])-
         ->middleware('role:superadmin|admin|ventas');
 });
 
+Route::prefix('licitaciones')
+    ->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin|ventas|licitacion'])
+    ->group(function () {
+        Route::get('/', [LicitacionController::class, 'index']);
+        Route::post('/', [LicitacionController::class, 'store']);
+        Route::get('/{licitacion}', [LicitacionController::class, 'show']);
+        Route::put('/{licitacion}', [LicitacionController::class, 'update']);
+        Route::delete('/{licitacion}', [LicitacionController::class, 'destroy']);
+        Route::post('/{licitacion}/comentarios', [LicitacionController::class, 'addComentario']);
+        Route::post('/{licitacion}/cotizaciones', [LicitacionController::class, 'addCotizacion']);
+    });
+
 Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin'])->group(function () {
     Route::post('/productos/mapear', [WooCommerceProductoController::class, 'mapear']);
     Route::post('/productos/{producto}/sync-stock', [WooCommerceProductoController::class, 'sincronizarStock']);
@@ -134,7 +147,7 @@ Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle', 'role:su
 Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     // ── RUTAS ESTÁTICAS PRIMERO ──────────────────────────────
     Route::get('/', [CotizacionController::class, 'index'])
-        ->middleware('role:superadmin|ventas|admin');
+        ->middleware('role:superadmin|ventas|admin|licitacion');
 
     Route::post('/', [CotizacionController::class, 'store'])
         ->middleware('role:superadmin|ventas');
@@ -209,7 +222,7 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
         ->middleware('role:superadmin|ventas');
 
     Route::get('/{cotizacion}/exportar-pdf', [CotizacionController::class, 'exportarPdf'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|licitacion');
 
     Route::patch('/{id}/items/orden', [CotizacionController::class, 'reorderItems'])
         ->middleware('role:superadmin|ventas');

@@ -49,6 +49,7 @@ class ProductoController extends Controller
                     ->orWhere('modelo', 'like', "%{$search}%")
                     ->orWhere('serie', 'like', "%{$search}%")
                     ->orWhere('factura_numero', 'like', "%{$search}%")
+                    ->orWhere('ubicacion_almacen', 'like', "%{$search}%")
                     ->orWhereHas('categoria', function ($categoriaQuery) use ($search): void {
                         $categoriaQuery->where('nombre', 'like', "%{$search}%");
                     })
@@ -127,6 +128,7 @@ class ProductoController extends Controller
             'codigo_barras' => $request->codigo_barras,
             'serie' => $seriePrincipal,
             'factura_numero' => $request->factura_numero,
+            'ubicacion_almacen' => $request->ubicacion_almacen,
             'descripcion' => $request->descripcion,
             'tipo_producto' => $request->tipo_producto ?? 'stock',
             'controla_stock' => $request->boolean('controla_stock', true),
@@ -178,6 +180,7 @@ class ProductoController extends Controller
             'codigo_barras',
             'serie',
             'factura_numero',
+            'ubicacion_almacen',
             'descripcion',
             'tipo_producto',
             'controla_stock',

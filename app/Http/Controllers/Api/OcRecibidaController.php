@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Cotizacion;
 use App\Models\EstadoCotizacion;
 use App\Models\InventarioMovimiento;
+use App\Models\Licitacion;
 use App\Models\OcDocumentoAdicional;
 use App\Models\OcRecibida;
 use App\Models\OcRecibidaItem;
@@ -827,6 +828,28 @@ class OcRecibidaController extends Controller
 
         $estado = EstadoCotizacion::firstOrCreate(['nombre' => $estadoNombre]);
         $cotizacion->update(['estado_cotizacion_id' => $estado->id]);
+
+        if ($estadoNombre === 'oc_registrada') {
+            $this->marcarOportunidadesComoGanadas($cotizacion);
+        }
+    }
+
+    private function marcarOportunidadesComoGanadas(Cotizacion $cotizacion): void
+    {
+        Licitacion::whereHas('cotizaciones', function ($query) use ($cotizacion): void {
+            $query->where('cotizacion_id', $cotizacion->id);
+        })
+            ->whereNotIn('estado', ['ganada', 'perdida', 'no_se_realizara', 'vencida'])
+            ->get()
+            ->each(function (Licitacion $licitacion): void {
+                $licitacion->update(['estado' => 'ganada']);
+                $licitacion->historial()->create([
+                    'fecha' => now(),
+                    'usuario' => 'Sistema',
+                    'tipo' => 'estado',
+                    'descripcion' => 'Oportunidad marcada como ganada por OC registrada en la cotizacion vinculada.',
+                ]);
+            });
     }
 
     private function generarNumero(): string
