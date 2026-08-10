@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Cliente;
 use App\Models\Licencia;
+use App\Models\LicenciaDocumento;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
@@ -23,6 +26,8 @@ class LicenciaController extends Controller
 
         $query = Licencia::with([
             'cliente:id,nombre,ruc,correo',
+            'moneda:id,codigo,simbolo',
+            'documentos',
             'alertasEnviadas' => fn ($query) => $query->latest('sent_at'),
         ])
             ->withCount('alertasEnviadas')
@@ -107,10 +112,56 @@ class LicenciaController extends Controller
 
     public function destroy(Licencia $licencia)
     {
+        $licencia->documentos()->each(function (LicenciaDocumento $documento): void {
+            Storage::disk('public')->delete($documento->path);
+            $documento->delete();
+        });
         $licencia->delete();
 
         return response()->json([
             'message' => 'Licencia eliminada correctamente',
+        ]);
+    }
+
+    public function documentos(Request $request, Licencia $licencia)
+    {
+        $request->validate([
+            'documentos' => 'required|array|min:1|max:10',
+            'documentos.*' => 'file|mimes:pdf|max:10240',
+        ]);
+
+        foreach ($request->file('documentos', []) as $file) {
+            if (! $file instanceof UploadedFile) {
+                continue;
+            }
+
+            $licencia->documentos()->create([
+                'nombre_original' => $file->getClientOriginalName(),
+                'path' => $file->store('licencias/cotizaciones-referenciales', 'public'),
+                'mime_type' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+                'created_by' => $request->user()?->id,
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Documentos subidos correctamente',
+            'licencia' => $this->loadLicenciaRelations($licencia->refresh()),
+        ]);
+    }
+
+    public function eliminarDocumento(Licencia $licencia, LicenciaDocumento $documento)
+    {
+        if ((int) $documento->licencia_id !== (int) $licencia->id) {
+            abort(404);
+        }
+
+        Storage::disk('public')->delete($documento->path);
+        $documento->delete();
+
+        return response()->json([
+            'message' => 'Documento eliminado correctamente',
+            'licencia' => $this->loadLicenciaRelations($licencia->refresh()),
         ]);
     }
 
@@ -164,6 +215,7 @@ class LicenciaController extends Controller
             'empresa' => trim((string) $request->input('empresa', '')),
             'producto' => trim((string) $request->input('producto', '')),
             'correo_licencia' => $this->nullableTrim($request->input('correo_licencia')),
+            'precio_sin_igv' => $request->input('precio_sin_igv') === '' ? null : $request->input('precio_sin_igv'),
         ]);
 
         return $request->validate([
@@ -171,6 +223,8 @@ class LicenciaController extends Controller
             'empresa' => 'required|string|max:255',
             'producto' => 'required|string|max:255',
             'cantidad' => 'required|integer|min:1|max:100000',
+            'precio_sin_igv' => 'nullable|numeric|min:0',
+            'moneda_id' => 'nullable|integer|exists:monedas,id',
             'suscripcion_meses' => 'required|integer|min:1|max:240',
             'correo_licencia' => 'nullable|email|max:255',
             'fecha_inicio' => 'required|date',
@@ -182,6 +236,8 @@ class LicenciaController extends Controller
         return $licencia
             ->load([
                 'cliente:id,nombre,ruc,correo',
+                'moneda:id,codigo,simbolo',
+                'documentos',
                 'alertasEnviadas' => fn ($query) => $query->latest('sent_at'),
             ])
             ->loadCount('alertasEnviadas')

@@ -17,6 +17,8 @@ class Licencia extends Model
         'empresa',
         'producto',
         'cantidad',
+        'precio_sin_igv',
+        'moneda_id',
         'suscripcion_meses',
         'correo_licencia',
         'fecha_inicio',
@@ -25,6 +27,7 @@ class Licencia extends Model
 
     protected $casts = [
         'cantidad' => 'integer',
+        'precio_sin_igv' => 'decimal:2',
         'suscripcion_meses' => 'integer',
         'fecha_inicio' => 'date:Y-m-d',
         'fecha_renovacion' => 'date:Y-m-d',
@@ -38,6 +41,16 @@ class Licencia extends Model
     public function alertasEnviadas(): HasMany
     {
         return $this->hasMany(LicenciaAlertaEnviada::class);
+    }
+
+    public function documentos(): HasMany
+    {
+        return $this->hasMany(LicenciaDocumento::class);
+    }
+
+    public function moneda(): BelongsTo
+    {
+        return $this->belongsTo(Moneda::class);
     }
 
     protected function auditModelName(): string

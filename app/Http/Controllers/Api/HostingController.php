@@ -3,9 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Cliente;
 use App\Models\Hosting;
+use App\Models\HostingDocumento;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
 class HostingController extends Controller
@@ -19,7 +24,11 @@ class HostingController extends Controller
             'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
-        $query = Hosting::with('clienteRelacionado:id,nombre,ruc,correo')
+        $query = Hosting::with([
+            'clienteRelacionado:id,nombre,ruc,correo',
+            'moneda:id,codigo,simbolo',
+            'documentos',
+        ])
             ->orderBy('fecha_renovacion')
             ->orderBy('empresa');
 
@@ -75,14 +84,14 @@ class HostingController extends Controller
 
         return response()->json([
             'message' => 'Hosting registrado correctamente',
-            'hosting' => $hosting->load('clienteRelacionado:id,nombre,ruc,correo'),
+            'hosting' => $this->loadHostingRelations($hosting),
         ], 201);
     }
 
     public function show(Hosting $hosting)
     {
         return response()->json(
-            $hosting->load('clienteRelacionado:id,nombre,ruc,correo')
+            $this->loadHostingRelations($hosting)
         );
     }
 
@@ -98,17 +107,105 @@ class HostingController extends Controller
 
         return response()->json([
             'message' => 'Hosting actualizado correctamente',
-            'hosting' => $hosting->refresh()->load('clienteRelacionado:id,nombre,ruc,correo'),
+            'hosting' => $this->loadHostingRelations($hosting->refresh()),
         ]);
     }
 
     public function destroy(Hosting $hosting)
     {
+        $hosting->documentos()->each(function (HostingDocumento $documento): void {
+            Storage::disk('public')->delete($documento->path);
+            $documento->delete();
+        });
+
         $hosting->delete();
 
         return response()->json([
             'message' => 'Hosting eliminado correctamente',
         ]);
+    }
+
+    public function documentos(Request $request, Hosting $hosting)
+    {
+        $validated = $request->validate([
+            'documentos' => 'required|array|min:1|max:10',
+            'documentos.*' => 'file|mimes:pdf|max:10240',
+        ]);
+
+        foreach ($validated['documentos'] as $documento) {
+            if (! $documento instanceof UploadedFile) {
+                continue;
+            }
+
+            $path = $documento->store('hostings/cotizaciones-referenciales', 'public');
+
+            $hosting->documentos()->create([
+                'nombre_original' => $documento->getClientOriginalName(),
+                'path' => $path,
+                'mime_type' => $documento->getClientMimeType(),
+                'size' => $documento->getSize(),
+                'created_by' => $request->user()?->id,
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Documentos subidos correctamente',
+            'hosting' => $this->loadHostingRelations($hosting->refresh()),
+        ]);
+    }
+
+    public function eliminarDocumento(Hosting $hosting, HostingDocumento $documento)
+    {
+        abort_if($documento->hosting_id !== $hosting->id, 404);
+
+        Storage::disk('public')->delete($documento->path);
+        $documento->delete();
+
+        return response()->json([
+            'message' => 'Documento eliminado correctamente',
+            'hosting' => $this->loadHostingRelations($hosting->refresh()),
+        ]);
+    }
+
+    public function previewImport(Request $request)
+    {
+        $validated = $request->validate([
+            'rows' => 'required|array|min:1|max:1000',
+            'rows.*' => 'array',
+        ]);
+
+        return response()->json($this->buildImportPreview($validated['rows']));
+    }
+
+    public function confirmImport(Request $request)
+    {
+        $validated = $request->validate([
+            'rows' => 'required|array|min:1|max:1000',
+            'rows.*' => 'array',
+        ]);
+
+        $preview = $this->buildImportPreview($validated['rows']);
+        $invalidRows = collect($preview['rows'])->where('valid', false)->values();
+
+        if ($invalidRows->isNotEmpty()) {
+            return response()->json([
+                'message' => 'El archivo tiene filas con errores. Corrige o elimina esas filas antes de importar.',
+                'summary' => $preview['summary'],
+                'rows' => $preview['rows'],
+            ], 422);
+        }
+
+        $created = [];
+
+        foreach ($preview['rows'] as $row) {
+            $created[] = $this->loadHostingRelations(Hosting::create($row['data']));
+        }
+
+        return response()->json([
+            'message' => count($created).' hosting(s) importado(s) correctamente',
+            'created' => count($created),
+            'hostings' => $created,
+        ], 201);
     }
 
     /**
@@ -122,17 +219,32 @@ class HostingController extends Controller
             ]);
         }
 
+        $request->merge([
+            'precio_sin_igv' => $request->input('precio_sin_igv') === '' ? null : $request->input('precio_sin_igv'),
+        ]);
+
         return $request->validate([
             'cliente_id' => 'nullable|integer|exists:clientes,id',
             'empresa' => 'required|string|max:255',
             'ruc' => 'nullable|string|max:20',
             'dominio' => 'required|string|max:255',
             'plan' => 'required|string|max:255',
+            'precio_sin_igv' => 'nullable|numeric|min:0',
+            'moneda_id' => 'nullable|integer|exists:monedas,id',
             'suscripcion' => ['required', Rule::in(['ANUAL', 'MENSUAL'])],
             'fecha_inicio' => 'required|date',
             'contacto' => 'nullable|string|max:255',
             'cliente' => 'nullable|string|max:255',
             'correo_hosting' => 'nullable|email|max:255',
+        ]);
+    }
+
+    private function loadHostingRelations(Hosting $hosting): Hosting
+    {
+        return $hosting->load([
+            'clienteRelacionado:id,nombre,ruc,correo',
+            'moneda:id,codigo,simbolo',
+            'documentos',
         ]);
     }
 
@@ -157,5 +269,154 @@ class HostingController extends Controller
         )
             ->subDay()
             ->toDateString();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<string, mixed>
+     */
+    private function buildImportPreview(array $rows): array
+    {
+        $seen = [];
+        $previewRows = [];
+
+        foreach ($rows as $index => $rawRow) {
+            $rowNumber = $index + 2;
+            $normalized = $this->normalizeImportRow($rawRow);
+            $errors = [];
+            $warnings = [];
+
+            $validator = Validator::make($normalized, [
+                'cliente_id' => 'nullable|integer|exists:clientes,id',
+                'empresa' => 'required|string|max:255',
+                'ruc' => 'nullable|string|max:20',
+                'dominio' => 'required|string|max:255',
+                'plan' => 'required|string|max:255',
+                'suscripcion' => ['required', Rule::in(['ANUAL', 'MENSUAL'])],
+                'fecha_inicio' => 'required|date_format:Y-m-d',
+                'contacto' => 'nullable|string|max:255',
+                'cliente' => 'nullable|string|max:255',
+                'correo_hosting' => 'nullable|email|max:255',
+            ], [], [
+                'cliente_id' => 'cliente',
+                'empresa' => 'empresa',
+                'ruc' => 'ruc',
+                'dominio' => 'dominio',
+                'plan' => 'plan',
+                'suscripcion' => 'suscripcion',
+                'fecha_inicio' => 'fecha inicio',
+                'contacto' => 'contacto',
+                'cliente' => 'cliente',
+                'correo_hosting' => 'correo hosting',
+            ]);
+
+            if ($validator->fails()) {
+                $errors = $validator->errors()->all();
+            }
+
+            if (empty($normalized['cliente_id']) && ! empty($normalized['empresa'])) {
+                $cliente = Cliente::query()
+                    ->whereRaw('LOWER(nombre) = ?', [mb_strtolower($normalized['empresa'])])
+                    ->first(['id', 'nombre', 'ruc', 'correo']);
+
+                if ($cliente) {
+                    $normalized['cliente_id'] = $cliente->id;
+                    $normalized['empresa'] = $cliente->nombre;
+                    $normalized['ruc'] = $normalized['ruc'] ?: $cliente->ruc;
+                    $normalized['cliente'] = $normalized['cliente'] ?: $cliente->nombre;
+                    $normalized['correo_hosting'] = $normalized['correo_hosting'] ?: $cliente->correo;
+                } else {
+                    $warnings[] = 'No se encontro un cliente registrado con ese nombre. Se importara como empresa escrita.';
+                }
+            }
+
+            if (empty($errors)) {
+                $normalized['fecha_renovacion'] = $this->calculateFechaRenovacion(
+                    $normalized['fecha_inicio'],
+                    $normalized['suscripcion']
+                );
+
+                $key = mb_strtolower($normalized['empresa'].'|'.$normalized['dominio'].'|'.$normalized['fecha_inicio']);
+
+                if (isset($seen[$key])) {
+                    $warnings[] = 'Posible duplicado dentro del archivo con la fila '.$seen[$key].'.';
+                } else {
+                    $seen[$key] = $rowNumber;
+                }
+
+                $exists = Hosting::query()
+                    ->where('empresa', $normalized['empresa'])
+                    ->where('dominio', $normalized['dominio'])
+                    ->whereDate('fecha_inicio', $normalized['fecha_inicio'])
+                    ->exists();
+
+                if ($exists) {
+                    $warnings[] = 'Ya existe un hosting similar en el sistema.';
+                }
+            }
+
+            $previewRows[] = [
+                'row' => $rowNumber,
+                'valid' => empty($errors),
+                'errors' => $errors,
+                'warnings' => $warnings,
+                'data' => $normalized,
+            ];
+        }
+
+        return [
+            'summary' => [
+                'total' => count($previewRows),
+                'valid' => collect($previewRows)->where('valid', true)->count(),
+                'invalid' => collect($previewRows)->where('valid', false)->count(),
+                'warnings' => collect($previewRows)->filter(fn ($row) => count($row['warnings']) > 0)->count(),
+            ],
+            'rows' => $previewRows,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function normalizeImportRow(array $row): array
+    {
+        $fechaInicio = $this->normalizeImportDate($row['fecha_inicio'] ?? null);
+        $suscripcion = strtoupper(trim((string) ($row['suscripcion'] ?? '')));
+
+        return [
+            'cliente_id' => $this->nullableInteger($row['cliente_id'] ?? null),
+            'empresa' => trim((string) ($row['empresa'] ?? '')),
+            'ruc' => $this->nullableTrim($row['ruc'] ?? null),
+            'dominio' => trim((string) ($row['dominio'] ?? '')),
+            'plan' => trim((string) ($row['plan'] ?? '')),
+            'suscripcion' => $suscripcion,
+            'fecha_inicio' => $fechaInicio,
+            'contacto' => $this->nullableTrim($row['contacto'] ?? null),
+            'cliente' => $this->nullableTrim($row['cliente'] ?? null),
+            'correo_hosting' => $this->nullableTrim($row['correo_hosting'] ?? null),
+        ];
+    }
+
+    private function nullableInteger(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    private function normalizeImportDate(mixed $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse(trim($value))->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

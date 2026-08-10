@@ -1107,6 +1107,6 @@ class OcRecibidaController extends Controller
 
     private function notifyAdministrators(object $notification): void
     {
-        User::role(['superadmin', 'admin'])->get()->each->notify($notification);
+        User::role(['superadmin', 'admin', 'contabilidad'])->get()->each->notify($notification);
     }
 }

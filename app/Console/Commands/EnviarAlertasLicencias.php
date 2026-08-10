@@ -59,16 +59,21 @@ class EnviarAlertasLicencias extends Command
                     }
 
                     $customerEmail = $licencia->correo_licencia ?: null;
-                    $recipients = collect([$customerEmail, self::INTERNAL_RECIPIENT])
-                        ->filter()
-                        ->unique()
-                        ->values()
-                        ->all();
+
+                    if (! $customerEmail) {
+                        $skipped++;
+
+                        continue;
+                    }
 
                     if (! $dryRun) {
-                        Mail::to($recipients)->send(
-                            new LicenciaVencimientoReminder($licencia, $diasRestantes)
-                        );
+                        $message = Mail::to($customerEmail);
+
+                        if (strtolower($customerEmail) !== strtolower(self::INTERNAL_RECIPIENT)) {
+                            $message->bcc(self::INTERNAL_RECIPIENT);
+                        }
+
+                        $message->send(new LicenciaVencimientoReminder($licencia, $diasRestantes));
 
                         LicenciaAlertaEnviada::create([
                             'licencia_id' => $licencia->id,
