@@ -262,6 +262,7 @@ Route::prefix('oc-recibidas')->middleware(['auth:sanctum', 'token.idle'])->group
     Route::post('/', [OcRecibidaController::class, 'store'])->middleware('role:superadmin|ventas');
     Route::get('/{ocRecibida}', [OcRecibidaController::class, 'show'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::patch('/{ocRecibida}/items', [OcRecibidaController::class, 'updateItems'])->middleware('role:superadmin|ventas');
+    Route::patch('/{ocRecibida}/items/{item}/asociar-producto', [OcRecibidaController::class, 'asociarProductoInterno'])->middleware('role:superadmin|ventas');
     Route::patch('/{ocRecibida}/cancelar', [OcRecibidaController::class, 'cancelar'])->middleware('role:superadmin|ventas');
     Route::post('/{ocRecibida}/documentos', [OcRecibidaController::class, 'documentos'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::delete('/{ocRecibida}/documentos/{tipo}', [OcRecibidaController::class, 'eliminarDocumento'])->middleware('role:superadmin|ventas|admin|contabilidad');

@@ -104,6 +104,11 @@ class Cotizacion extends Model
         return $this->hasOne(OcRecibida::class);
     }
 
+    public function ocRecibidas(): HasMany
+    {
+        return $this->hasMany(OcRecibida::class);
+    }
+
     public function ocEmitidas(): HasMany
     {
         return $this->hasMany(OcEmitida::class);

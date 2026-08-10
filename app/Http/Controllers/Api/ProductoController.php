@@ -250,12 +250,34 @@ class ProductoController extends Controller
     {
         $this->ensureCanManageInternalProducts($request);
 
-        $producto = Producto::findOrFail($id);
+        $producto = Producto::withCount([
+            'inventarioMovimientos',
+            'cotizacionItems',
+            'series',
+            'woocommerceProducto',
+        ])->findOrFail($id);
 
-        if (! $producto) {
+        $stockActual = (float) ($producto->stock_actual ?? $producto->stock ?? 0);
+        $stockReservado = (float) ($producto->stock_reservado ?? 0);
+
+        if ($stockActual > 0 || $stockReservado > 0) {
             return response()->json([
-                'message' => 'Producto no encontrado',
-            ], 404);
+                'message' => 'No se puede retirar/eliminar un producto con stock actual o reservado. Primero registra la salida o libera la reserva.',
+            ], 422);
+        }
+
+        $tieneHistorial = $producto->inventario_movimientos_count > 0
+            || $producto->cotizacion_items_count > 0
+            || $producto->series_count > 0
+            || $producto->woocommerce_producto_count > 0;
+
+        if ($tieneHistorial) {
+            $producto->forceFill(['activo' => false])->save();
+
+            return response()->json([
+                'message' => 'Producto retirado del listado activo. Se conserva su historial de Kardex, series y auditoria.',
+                'producto' => $producto->fresh(),
+            ]);
         }
 
         $producto->delete();

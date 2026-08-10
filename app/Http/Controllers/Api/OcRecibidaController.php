@@ -10,6 +10,7 @@ use App\Models\Licitacion;
 use App\Models\OcDocumentoAdicional;
 use App\Models\OcRecibida;
 use App\Models\OcRecibidaItem;
+use App\Models\Producto;
 use App\Models\ProductoSerie;
 use App\Models\User;
 use App\Notifications\OcRecibidaRegistradaNotification;
@@ -24,7 +25,8 @@ class OcRecibidaController extends Controller
 {
     public function preview(Cotizacion $cotizacion)
     {
-        $cotizacion->load(['cliente', 'items.proveedores']);
+        $cotizacion->load(['cliente', 'estadoCotizacion', 'items.proveedores']);
+        $cantidadesRegistradas = $this->cantidadesRegistradasPorItem($cotizacion);
 
         return response()->json([
             'cotizacion' => [
@@ -33,18 +35,31 @@ class OcRecibidaController extends Controller
                 'cliente_nombre' => $cotizacion->cliente_nombre,
                 'cliente_ruc' => $cotizacion->cliente_ruc,
                 'fecha_recepcion' => now()->toDateString(),
+                'estado_cotizacion_id' => $cotizacion->estado_cotizacion_id,
+                'estado_nombre' => $cotizacion->estadoCotizacion?->nombre,
             ],
-            'items' => $cotizacion->items->map(fn ($item): array => [
-                'cotizacion_item_id' => $item->id,
-                'descripcion' => $item->descripcion,
-                'codigo' => $item->codigo,
-                'marca' => $item->marca,
-                'unidad_medida' => $item->unidad_medida,
-                'cantidad_cotizada' => $item->cantidad,
-                'cantidad_recibida' => $item->cantidad,
-                'seleccionado' => true,
-                'proveedores' => $item->proveedores,
-            ])->values(),
+            'items' => $cotizacion->items
+                ->map(function ($item) use ($cantidadesRegistradas): array {
+                    $cantidadCotizada = (int) $item->cantidad;
+                    $cantidadRegistrada = (int) ($cantidadesRegistradas->get((int) $item->id, 0));
+                    $cantidadPendiente = max(0, $cantidadCotizada - $cantidadRegistrada);
+
+                    return [
+                        'cotizacion_item_id' => $item->id,
+                        'descripcion' => $item->descripcion,
+                        'codigo' => $item->codigo,
+                        'marca' => $item->marca,
+                        'unidad_medida' => $item->unidad_medida,
+                        'cantidad_cotizada' => $cantidadCotizada,
+                        'cantidad_registrada_oc' => $cantidadRegistrada,
+                        'cantidad_pendiente' => $cantidadPendiente,
+                        'cantidad_recibida' => $cantidadPendiente,
+                        'seleccionado' => $cantidadPendiente > 0,
+                        'proveedores' => $item->proveedores,
+                    ];
+                })
+                ->filter(fn (array $item): bool => (int) $item['cantidad_pendiente'] > 0)
+                ->values(),
         ]);
     }
 
@@ -136,11 +151,6 @@ class OcRecibidaController extends Controller
         $cotizacion = Cotizacion::with(['items', 'cliente'])->findOrFail($validated['cotizacion_id']);
         $this->ensureCanCreateOcForCotizacion($request, $cotizacion);
 
-        $existingOc = OcRecibida::query()->where('cotizacion_id', $cotizacion->id)->first();
-        if ($existingOc) {
-            $this->ensureCanEditOc($request, $existingOc);
-        }
-
         $selectedItems = collect($validated['items'])
             ->filter(fn (array $item): bool => (bool) $item['seleccionado'] && (int) $item['cantidad_recibida'] > 0);
 
@@ -150,13 +160,13 @@ class OcRecibidaController extends Controller
             ], 422);
         }
 
+        $this->validarCantidadesPendientes($cotizacion, $selectedItems);
+
         $ocRecibida = DB::transaction(function () use ($request, $validated, $cotizacion): OcRecibida {
-            $ocRecibida = OcRecibida::firstOrNew(['cotizacion_id' => $cotizacion->id]);
-
-            if (! $ocRecibida->exists) {
-                $ocRecibida->numero = $this->generarNumero();
-            }
-
+            $ocRecibida = new OcRecibida([
+                'cotizacion_id' => $cotizacion->id,
+            ]);
+            $ocRecibida->numero = $this->generarNumero();
             $ocRecibida->fill([
                 'fecha_recepcion' => $validated['fecha_recepcion'] ?? now()->toDateString(),
                 'estado' => OcRecibida::ESTADO_PENDIENTE,
@@ -167,7 +177,7 @@ class OcRecibidaController extends Controller
                 'cliente_contacto' => $cotizacion->cliente_contacto,
                 'cliente_correo' => $cotizacion->cliente_correo,
                 'cliente_id' => $cotizacion->cliente_id,
-                'user_id' => $ocRecibida->user_id ?: $request->user()->id,
+                'user_id' => $request->user()->id,
             ]);
 
             if ($request->hasFile('orden_compra_cliente')) {
@@ -186,7 +196,6 @@ class OcRecibidaController extends Controller
             }
 
             $ocRecibida->save();
-            $ocRecibida->items()->delete();
 
             $itemsById = $cotizacion->items->keyBy('id');
 
@@ -298,6 +307,75 @@ class OcRecibidaController extends Controller
         ]);
     }
 
+    public function asociarProductoInterno(Request $request, OcRecibida $ocRecibida, OcRecibidaItem $item)
+    {
+        $this->ensureCanEditOc($request, $ocRecibida);
+
+        if ((int) $item->oc_recibida_id !== (int) $ocRecibida->id) {
+            abort(404);
+        }
+
+        if ($ocRecibida->estado === OcRecibida::ESTADO_CANCELADO) {
+            return response()->json([
+                'message' => 'No se puede asociar productos a una OC cancelada.',
+            ], 422);
+        }
+
+        if ($item->entregado) {
+            return response()->json([
+                'message' => 'No se puede cambiar la asociacion de un item entregado.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'producto_id' => 'required|integer|exists:productos,id',
+        ]);
+
+        $item->loadMissing('cotizacionItem');
+        if (! $item->cotizacionItem) {
+            return response()->json([
+                'message' => 'El item de OC no esta vinculado a un item de cotizacion.',
+            ], 422);
+        }
+
+        if ($item->cotizacionItem?->producto_id) {
+            return response()->json([
+                'message' => 'Este item ya esta asociado a un producto interno.',
+            ], 422);
+        }
+
+        $producto = Producto::query()
+            ->whereKey($validated['producto_id'])
+            ->where('activo', true)
+            ->firstOrFail();
+
+        DB::transaction(function () use ($request, $ocRecibida, $item, $producto): void {
+            $item->cotizacionItem->forceFill([
+                'producto_id' => $producto->id,
+            ])->save();
+
+            $this->reservarStockOc($ocRecibida->refresh()->load('items.cotizacionItem'), $request);
+            $this->actualizarEstadoOc($ocRecibida->refresh()->load('items'));
+        });
+
+        return response()->json([
+            'message' => 'Producto interno asociado. La reserva fue recalculada.',
+            'oc_recibida' => $ocRecibida->refresh()->load([
+                'items.cotizacionItem.proveedores',
+                'items.cotizacionItem.producto.series' => fn ($query) => $query
+                    ->select(['id', 'producto_id', 'serie', 'factura_numero', 'estado', 'fecha_ingreso', 'fecha_salida', 'oc_recibida_id', 'cotizacion_item_id'])
+                    ->where(function ($seriesQuery) use ($ocRecibida): void {
+                        $seriesQuery->where('estado', ProductoSerie::ESTADO_DISPONIBLE)
+                            ->orWhere('oc_recibida_id', $ocRecibida->id);
+                    })
+                    ->latest(),
+                'documentosAdicionales',
+                'cotizacion',
+                'cliente',
+            ]),
+        ]);
+    }
+
     public function cancelar(Request $request, OcRecibida $ocRecibida)
     {
         $this->ensureCanEditOc($request, $ocRecibida);
@@ -383,6 +461,10 @@ class OcRecibidaController extends Controller
             $ocRecibida->forceFill([
                 'estado' => OcRecibida::ESTADO_CANCELADO,
             ])->save();
+
+            if ($ocRecibida->cotizacion) {
+                $this->actualizarEstadoCotizacion($ocRecibida->cotizacion, $ocRecibida);
+            }
         });
 
         return response()->json([
@@ -816,13 +898,14 @@ class OcRecibidaController extends Controller
 
     private function actualizarEstadoCotizacion(Cotizacion $cotizacion, OcRecibida $ocRecibida): void
     {
-        $itemsCotizados = $cotizacion->items()->count();
-        $itemsSeleccionados = $ocRecibida->items()
-            ->where('seleccionado', true)
-            ->where('cantidad_recibida', '>', 0)
-            ->count();
+        $cotizacion->loadMissing('items');
+        $cantidadesRegistradas = $this->cantidadesRegistradasPorItem($cotizacion);
+        $itemsCotizados = $cotizacion->items;
+        $todosCubiertos = $itemsCotizados->isNotEmpty() && $itemsCotizados->every(function ($item) use ($cantidadesRegistradas): bool {
+            return (int) ($cantidadesRegistradas->get((int) $item->id, 0)) >= (int) $item->cantidad;
+        });
 
-        $estadoNombre = $itemsCotizados > 0 && $itemsSeleccionados >= $itemsCotizados
+        $estadoNombre = $todosCubiertos
             ? 'oc_registrada'
             : 'parcialmente_aprobada';
 
@@ -831,6 +914,54 @@ class OcRecibidaController extends Controller
 
         if ($estadoNombre === 'oc_registrada') {
             $this->marcarOportunidadesComoGanadas($cotizacion);
+        }
+    }
+
+    private function cantidadesRegistradasPorItem(Cotizacion $cotizacion)
+    {
+        return OcRecibidaItem::query()
+            ->select('cotizacion_item_id', DB::raw('SUM(cantidad_recibida) as cantidad_registrada'))
+            ->where('seleccionado', true)
+            ->where('cantidad_recibida', '>', 0)
+            ->whereHas('ocRecibida', function ($query) use ($cotizacion): void {
+                $query->where('cotizacion_id', $cotizacion->id)
+                    ->where('estado', '!=', OcRecibida::ESTADO_CANCELADO);
+            })
+            ->groupBy('cotizacion_item_id')
+            ->pluck('cantidad_registrada', 'cotizacion_item_id')
+            ->map(fn ($cantidad): int => (int) $cantidad);
+    }
+
+    private function validarCantidadesPendientes(Cotizacion $cotizacion, $selectedItems): void
+    {
+        $cotizacion->loadMissing('items');
+        $itemsById = $cotizacion->items->keyBy('id');
+        $cantidadesRegistradas = $this->cantidadesRegistradasPorItem($cotizacion);
+        $errors = [];
+
+        $selectedItems
+            ->groupBy(fn (array $item): int => (int) $item['cotizacion_item_id'])
+            ->each(function ($rows, int $cotizacionItemId) use ($itemsById, $cantidadesRegistradas, &$errors): void {
+                $cotizacionItem = $itemsById->get($cotizacionItemId);
+
+                if (! $cotizacionItem) {
+                    return;
+                }
+
+                $cantidadSolicitada = (int) $rows->sum(fn (array $row): int => (int) $row['cantidad_recibida']);
+                $cantidadCotizada = (int) $cotizacionItem->cantidad;
+                $cantidadRegistrada = (int) ($cantidadesRegistradas->get($cotizacionItemId, 0));
+                $cantidadPendiente = max(0, $cantidadCotizada - $cantidadRegistrada);
+
+                if ($cantidadSolicitada > $cantidadPendiente) {
+                    $errors["items.{$cotizacionItemId}.cantidad_recibida"] = [
+                        "El item {$cotizacionItem->descripcion} solo tiene {$cantidadPendiente} unidad(es) pendiente(s) por registrar en OC.",
+                    ];
+                }
+            });
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
         }
     }
 
