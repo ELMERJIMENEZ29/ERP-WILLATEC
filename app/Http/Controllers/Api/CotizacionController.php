@@ -20,6 +20,7 @@ use App\Models\Plantilla;
 use App\Models\Plataforma;
 use App\Models\Producto;
 use App\Models\ProductoExterno;
+use App\Models\Proveedor;
 use App\Models\User;
 use App\Notifications\CotizacionAprobadaNotification;
 use App\Notifications\CotizacionEnviadaRevisionNotification;
@@ -561,6 +562,7 @@ class CotizacionController extends Controller
             'link_proveedor' => 'nullable|string',
             'tipo' => 'nullable|string|in:catalogo,personalizado,externo',
             'proveedores' => 'nullable|array',
+            'proveedores.*.proveedor_id' => 'nullable|integer|exists:proveedores,id',
             'proveedores.*.nombre' => 'required|string|max:255',
             'proveedores.*.link' => 'nullable|string',
             'proveedores.*.precio' => 'nullable|numeric|min:0',
@@ -666,6 +668,7 @@ class CotizacionController extends Controller
             'link_proveedor' => 'nullable|string',
             'tipo' => 'nullable|string|in:catalogo,personalizado,externo',
             'proveedores' => 'nullable|array',
+            'proveedores.*.proveedor_id' => 'nullable|integer|exists:proveedores,id',
             'proveedores.*.nombre' => 'required|string|max:255',
             'proveedores.*.link' => 'nullable|string',
             'proveedores.*.precio' => 'nullable|numeric|min:0',
@@ -1327,6 +1330,7 @@ class CotizacionController extends Controller
             'items.*.producto_externo_id' => 'nullable|exists:productos_externos,id',
             'items.*.imagen' => 'sometimes|nullable',
             'items.*.proveedores' => 'nullable|array',
+            'items.*.proveedores.*.proveedor_id' => 'nullable|integer|exists:proveedores,id',
             'items.*.proveedores.*.nombre' => 'required|string|max:255',
             'items.*.proveedores.*.link' => 'nullable|string',
             'items.*.proveedores.*.precio' => 'nullable|numeric|min:0',
@@ -1512,6 +1516,7 @@ class CotizacionController extends Controller
             'items.*.producto_externo_id' => 'nullable|exists:productos_externos,id',
             'items.*.imagen' => 'sometimes|nullable',
             'items.*.proveedores' => 'nullable|array',
+            'items.*.proveedores.*.proveedor_id' => 'nullable|integer|exists:proveedores,id',
             'items.*.proveedores.*.nombre' => 'required|string|max:255',
             'items.*.proveedores.*.link' => 'nullable|string',
             'items.*.proveedores.*.precio' => 'nullable|numeric|min:0',
@@ -1983,6 +1988,7 @@ class CotizacionController extends Controller
             'items.*.producto_externo_id' => 'nullable|exists:productos_externos,id',
             'items.*.imagen' => 'sometimes|nullable',
             'items.*.proveedores' => 'nullable|array',
+            'items.*.proveedores.*.proveedor_id' => 'nullable|integer|exists:proveedores,id',
             'items.*.proveedores.*.nombre' => 'required|string|max:255',
             'items.*.proveedores.*.link' => 'nullable|string',
             'items.*.proveedores.*.precio' => 'nullable|numeric|min:0',
@@ -2109,6 +2115,7 @@ class CotizacionController extends Controller
         foreach ($proveedores as $index => $proveedor) {
             CotizacionItemProveedor::create([
                 'cotizacion_item_id' => $item->id,
+                'proveedor_id' => $proveedor['proveedor_id'],
                 'nombre' => $proveedor['nombre'],
                 'link' => $proveedor['link'],
                 'precio' => $proveedor['precio'],
@@ -2136,7 +2143,7 @@ class CotizacionController extends Controller
 
     /**
      * @param  array<int, array<string, mixed>>|null  $proveedores
-     * @return array<int, array{nombre: string, link: ?string, precio: ?float, notas: ?string}>
+     * @return array<int, array{proveedor_id: ?int, nombre: string, link: ?string, precio: ?float, notas: ?string}>
      */
     private function normalizeProveedores(?array $proveedores): array
     {
@@ -2144,24 +2151,51 @@ class CotizacionController extends Controller
             return [];
         }
 
+        $catalogo = Proveedor::query()
+            ->where('activo', true)
+            ->get(['id', 'nombre'])
+            ->mapWithKeys(fn (Proveedor $proveedor): array => [
+                $this->normalizeProveedorKey($proveedor->nombre) => $proveedor,
+            ]);
+
         return collect($proveedores)
-            ->map(function (array $proveedor): ?array {
+            ->map(function (array $proveedor) use ($catalogo): ?array {
                 $nombre = trim((string) ($proveedor['nombre'] ?? ''));
 
                 if ($nombre === '') {
                     return null;
                 }
 
+                $proveedorId = isset($proveedor['proveedor_id']) && (int) $proveedor['proveedor_id'] > 0
+                    ? (int) $proveedor['proveedor_id']
+                    : null;
+                $proveedorCatalogo = $proveedorId
+                    ? Proveedor::query()->whereKey($proveedorId)->first(['id', 'nombre'])
+                    : $catalogo->get($this->normalizeProveedorKey($nombre));
+
                 return [
-                    'nombre' => $nombre,
+                    'proveedor_id' => $proveedorCatalogo?->id,
+                    'nombre' => $proveedorCatalogo?->nombre ?: $nombre,
                     'link' => isset($proveedor['link']) ? trim((string) $proveedor['link']) ?: null : null,
                     'precio' => isset($proveedor['precio']) ? (float) $proveedor['precio'] : null,
                     'notas' => isset($proveedor['notas']) ? trim((string) $proveedor['notas']) ?: null : null,
                 ];
             })
             ->filter()
+            ->unique(fn (array $proveedor): string => $proveedor['proveedor_id']
+                ? 'id:'.$proveedor['proveedor_id']
+                : 'nombre:'.$this->normalizeProveedorKey($proveedor['nombre']))
             ->values()
             ->all();
+    }
+
+    private function normalizeProveedorKey(?string $value): string
+    {
+        $normalized = trim((string) $value);
+        $normalized = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalized) ?: $normalized;
+        $normalized = preg_replace('/[^a-z0-9]+/i', '', $normalized) ?? '';
+
+        return strtolower($normalized);
     }
 
     /**

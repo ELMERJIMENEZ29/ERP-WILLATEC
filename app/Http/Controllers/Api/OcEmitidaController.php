@@ -7,6 +7,7 @@ use App\Models\Cotizacion;
 use App\Models\OcDocumentoAdicional;
 use App\Models\OcEmitida;
 use App\Models\OcEmitidaItem;
+use App\Models\Proveedor;
 use App\Models\User;
 use App\Notifications\OcEmitidaRegistradaNotification;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -29,8 +30,9 @@ class OcEmitidaController extends Controller
                 'cliente_nombre' => $cotizacion->cliente_nombre,
             ],
             'proveedores' => $this->proveedoresDeCotizacion($cotizacion)
-                ->map(fn (string $proveedor): array => [
-                    'nombre' => $proveedor,
+                ->map(fn (array $proveedor): array => [
+                    'id' => $proveedor['proveedor_id'],
+                    'nombre' => $proveedor['nombre'],
                     'items_count' => $this->itemsPorProveedor($cotizacion, $proveedor)->count(),
                 ])
                 ->values(),
@@ -41,13 +43,16 @@ class OcEmitidaController extends Controller
     {
         $validated = $request->validate([
             'proveedor' => 'required|string|max:255',
+            'proveedor_id' => 'nullable|integer|exists:proveedores,id',
         ]);
 
         $cotizacion->load(['items.proveedores']);
-        $items = $this->buildItemsProveedor($cotizacion, $validated['proveedor']);
+        $proveedor = $this->resolveProveedorSeleccionado($validated);
+        $items = $this->buildItemsProveedor($cotizacion, $proveedor);
 
         return response()->json([
-            'proveedor' => $validated['proveedor'],
+            'proveedor' => $proveedor['nombre'],
+            'proveedor_id' => $proveedor['proveedor_id'],
             'items' => $items,
             'totales' => $this->calcularTotales($items),
         ]);
@@ -101,6 +106,7 @@ class OcEmitidaController extends Controller
         $validated = $request->validate([
             'cotizacion_id' => 'required|exists:cotizaciones,id',
             'proveedor' => 'required|string|max:255',
+            'proveedor_id' => 'nullable|integer|exists:proveedores,id',
             'fecha_emision' => 'nullable|date',
             'observaciones' => 'nullable|string',
             'items' => 'required|array|min:1',
@@ -111,15 +117,16 @@ class OcEmitidaController extends Controller
 
         $cotizacion = Cotizacion::with(['items.proveedores', 'cliente', 'moneda'])->findOrFail($validated['cotizacion_id']);
         $this->ensureCanCreateOcForCotizacion($request, $cotizacion);
+        $proveedorSeleccionado = $this->resolveProveedorSeleccionado($validated);
         $proveedores = $this->proveedoresDeCotizacion($cotizacion);
 
-        if (! $proveedores->contains($validated['proveedor'])) {
+        if (! $proveedores->contains(fn (array $proveedor): bool => $this->sameProveedor($proveedor, $proveedorSeleccionado))) {
             return response()->json([
                 'message' => 'El proveedor no esta asociado a la cotizacion seleccionada.',
             ], 422);
         }
 
-        $idsProveedor = $this->itemsPorProveedor($cotizacion, $validated['proveedor'])->pluck('id');
+        $idsProveedor = $this->itemsPorProveedor($cotizacion, $proveedorSeleccionado)->pluck('id');
         $idsSolicitados = collect($validated['items'])->pluck('cotizacion_item_id');
 
         if ($idsSolicitados->diff($idsProveedor)->isNotEmpty()) {
@@ -128,7 +135,7 @@ class OcEmitidaController extends Controller
             ], 422);
         }
 
-        $ocEmitida = DB::transaction(function () use ($request, $validated, $cotizacion): OcEmitida {
+        $ocEmitida = DB::transaction(function () use ($request, $validated, $cotizacion, $proveedorSeleccionado): OcEmitida {
             $itemsById = $cotizacion->items->keyBy('id');
             $subtotal = collect($validated['items'])->sum(
                 fn (array $item): float => round((int) $item['cantidad'] * (float) $item['precio_unitario'], 2)
@@ -140,7 +147,7 @@ class OcEmitidaController extends Controller
                 'numero' => $this->generarNumero(),
                 'fecha_emision' => $validated['fecha_emision'] ?? now()->toDateString(),
                 'estado' => OcEmitida::ESTADO_EMITIDA,
-                'proveedor' => $validated['proveedor'],
+                'proveedor' => $proveedorSeleccionado['nombre'],
                 'observaciones' => $validated['observaciones'] ?? null,
                 'moneda' => $cotizacion->moneda?->codigo ?? 'PEN',
                 'subtotal' => round($subtotal, 2),
@@ -279,41 +286,48 @@ class OcEmitidaController extends Controller
     }
 
     /**
-     * @return Collection<int, string>
+     * @return Collection<int, array{proveedor_id: ?int, nombre: string, key: string}>
      */
     private function proveedoresDeCotizacion(Cotizacion $cotizacion): Collection
     {
-        return $cotizacion->items
+        $proveedores = $cotizacion->items
             ->flatMap(function ($item): array {
-                $proveedores = $item->proveedores
-                    ->pluck('nombre')
-                    ->filter()
-                    ->all();
+                $proveedores = $item->proveedores->map(fn ($proveedor): array => $this->proveedorDescriptor(
+                    $proveedor->nombre,
+                    $proveedor->proveedor_id,
+                ))->all();
 
                 if ($proveedores === [] && filled($item->proveedor)) {
-                    $proveedores[] = $item->proveedor;
+                    $proveedores[] = $this->proveedorDescriptor($item->proveedor);
                 }
 
                 return $proveedores;
             })
-            ->map(fn (string $proveedor): string => trim($proveedor))
-            ->filter()
-            ->unique()
+            ->filter(fn (array $proveedor): bool => $proveedor['key'] !== '')
+            ->values();
+
+        return $proveedores
+            ->unique(fn (array $proveedor): string => $proveedor['key'])
             ->values();
     }
 
     /**
      * @return Collection<int, mixed>
      */
-    private function itemsPorProveedor(Cotizacion $cotizacion, string $proveedor): Collection
+    private function itemsPorProveedor(Cotizacion $cotizacion, array $proveedor): Collection
     {
         return $cotizacion->items
             ->filter(function ($item) use ($proveedor): bool {
-                if ($item->proveedores->where('nombre', $proveedor)->isNotEmpty()) {
-                    return true;
+                if ($item->proveedores->isNotEmpty()) {
+                    return $item->proveedores->contains(
+                        fn ($itemProveedor): bool => $this->sameProveedor(
+                            $this->proveedorDescriptor($itemProveedor->nombre, $itemProveedor->proveedor_id),
+                            $proveedor,
+                        )
+                    );
                 }
 
-                return $item->proveedores->isEmpty() && $item->proveedor === $proveedor;
+                return $this->sameProveedor($this->proveedorDescriptor($item->proveedor), $proveedor);
             })
             ->values();
     }
@@ -321,11 +335,16 @@ class OcEmitidaController extends Controller
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function buildItemsProveedor(Cotizacion $cotizacion, string $proveedor): array
+    private function buildItemsProveedor(Cotizacion $cotizacion, array $proveedor): array
     {
         return $this->itemsPorProveedor($cotizacion, $proveedor)
             ->map(function ($item) use ($proveedor): array {
-                $proveedorData = $item->proveedores->firstWhere('nombre', $proveedor);
+                $proveedorData = $item->proveedores->first(
+                    fn ($itemProveedor): bool => $this->sameProveedor(
+                        $this->proveedorDescriptor($itemProveedor->nombre, $itemProveedor->proveedor_id),
+                        $proveedor,
+                    )
+                );
                 $precio = $proveedorData?->precio ?? $item->costo_unitario ?? 0;
                 $subtotal = round((int) $item->cantidad * (float) $precio, 2);
 
@@ -342,6 +361,61 @@ class OcEmitidaController extends Controller
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array{proveedor_id: ?int, nombre: string, key: string}
+     */
+    private function resolveProveedorSeleccionado(array $validated): array
+    {
+        $proveedor = ! empty($validated['proveedor_id'])
+            ? Proveedor::query()->find($validated['proveedor_id'])
+            : Proveedor::query()
+                ->where('activo', true)
+                ->get(['id', 'nombre'])
+                ->first(fn (Proveedor $row): bool => $this->normalizeProveedorKey($row->nombre) === $this->normalizeProveedorKey($validated['proveedor']));
+
+        return $this->proveedorDescriptor(
+            $proveedor?->nombre ?: $validated['proveedor'],
+            $proveedor?->id,
+        );
+    }
+
+    /**
+     * @return array{proveedor_id: ?int, nombre: string, key: string}
+     */
+    private function proveedorDescriptor(?string $nombre, ?int $proveedorId = null): array
+    {
+        $nombre = trim((string) $nombre);
+
+        return [
+            'proveedor_id' => $proveedorId,
+            'nombre' => $nombre,
+            'key' => $this->normalizeProveedorKey($nombre),
+        ];
+    }
+
+    /**
+     * @param  array{proveedor_id: ?int, nombre: string, key: string}  $left
+     * @param  array{proveedor_id: ?int, nombre: string, key: string}  $right
+     */
+    private function sameProveedor(array $left, array $right): bool
+    {
+        if ($left['proveedor_id'] && $right['proveedor_id']) {
+            return (int) $left['proveedor_id'] === (int) $right['proveedor_id'];
+        }
+
+        return $left['key'] !== '' && $left['key'] === $right['key'];
+    }
+
+    private function normalizeProveedorKey(?string $value): string
+    {
+        $normalized = trim((string) $value);
+        $normalized = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalized) ?: $normalized;
+        $normalized = preg_replace('/[^a-z0-9]+/i', '', $normalized) ?? '';
+
+        return strtolower($normalized);
     }
 
     /**

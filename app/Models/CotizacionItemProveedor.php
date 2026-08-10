@@ -15,6 +15,7 @@ class CotizacionItemProveedor extends Model
 
     protected $fillable = [
         'cotizacion_item_id',
+        'proveedor_id',
         'nombre',
         'link',
         'precio',
@@ -36,6 +37,11 @@ class CotizacionItemProveedor extends Model
     public function cotizacionItem(): BelongsTo
     {
         return $this->belongsTo(CotizacionItem::class);
+    }
+
+    public function proveedor(): BelongsTo
+    {
+        return $this->belongsTo(Proveedor::class);
     }
 
     protected function auditModelName(): string
