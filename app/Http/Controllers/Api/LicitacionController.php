@@ -293,11 +293,11 @@ class LicitacionController extends Controller
         ]);
 
         $validated['es_nueva'] = filter_var($validated['es_nueva'] ?? true, FILTER_VALIDATE_BOOLEAN);
-        $validated['vigencia'] = Carbon::parse($validated['vigencia']);
+        $validated['vigencia'] = $this->parseLimaDateTime($validated['vigencia']);
 
         foreach (['asignado_en', 'creado_en', 'modificado_en'] as $dateField) {
             if (! empty($validated[$dateField])) {
-                $validated[$dateField] = Carbon::parse($validated[$dateField]);
+                $validated[$dateField] = $this->parseLimaDateTime($validated[$dateField]);
             }
         }
 
@@ -406,23 +406,23 @@ class LicitacionController extends Controller
             'tipo' => $licitacion->tipo,
             'empresa' => $licitacion->empresa,
             'requerimiento' => $licitacion->requerimiento,
-            'vigencia' => optional($licitacion->vigencia)->toIso8601String(),
+            'vigencia' => $this->serializeLimaDateTime($licitacion->vigencia),
             'ejecutivo' => [
                 'id' => $licitacion->ejecutivo_id ?? 0,
                 'nombre' => $licitacion->ejecutivo ? $this->userDisplayName($licitacion->ejecutivo) : ($licitacion->ejecutivo_nombre ?? 'Sin ejecutivo'),
                 'email' => $licitacion->ejecutivo?->email ?? $licitacion->ejecutivo_email,
             ],
             'asignado_a' => $licitacion->asignado_a,
-            'asignado_en' => optional($licitacion->asignado_en)->toIso8601String(),
+            'asignado_en' => $this->serializeLimaDateTime($licitacion->asignado_en),
             'asignado_por' => $licitacion->asignado_por,
             'es_nueva' => $licitacion->es_nueva,
             'categoria' => $licitacion->categoria,
             'estado' => $licitacion->estado,
             'observacion' => $licitacion->observacion,
-            'creado_en' => optional($licitacion->creado_en ?? $licitacion->created_at)->toIso8601String(),
+            'creado_en' => $this->serializeLimaDateTime($licitacion->creado_en ?? $licitacion->created_at),
             'created_by' => $licitacion->created_by,
             'creado_por' => $licitacion->creado_por,
-            'modificado_en' => optional($licitacion->modificado_en ?? $licitacion->updated_at)->toIso8601String(),
+            'modificado_en' => $this->serializeLimaDateTime($licitacion->modificado_en ?? $licitacion->updated_at),
             'modificado_por' => $licitacion->modificado_por,
             'garantia' => $licitacion->garantia,
             'plazo' => $licitacion->plazo,
@@ -637,7 +637,34 @@ class LicitacionController extends Controller
             return true;
         }
 
-        return Carbon::parse($current)->equalTo(Carbon::parse($next));
+        if (! $current || ! $next) {
+            return false;
+        }
+
+        return $this->parseLimaDateTime($current)->equalTo($this->parseLimaDateTime($next));
+    }
+
+    private function parseLimaDateTime(mixed $value): Carbon
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return Carbon::instance($value)->setTimezone('America/Lima');
+        }
+
+        $date = trim((string) $value);
+        $hasExplicitTimezone = (bool) preg_match('/(?:Z|[+-]\d{2}:?\d{2})$/i', $date);
+
+        return $hasExplicitTimezone
+            ? Carbon::parse($date)->setTimezone('America/Lima')
+            : Carbon::parse($date, 'America/Lima');
+    }
+
+    private function serializeLimaDateTime(mixed $value): ?string
+    {
+        if (! $value) {
+            return null;
+        }
+
+        return $this->parseLimaDateTime($value)->toIso8601String();
     }
 
     private function userDisplayName(?User $user): string

@@ -30,7 +30,7 @@ class NuevaOportunidadDisponibleNotification extends Notification
 
         return [
             'title' => 'Nueva oportunidad disponible',
-            'description' => "{$creatorName} registro una nueva oportunidad {$tipo}: {$this->licitacion->requerimiento}.",
+            'description' => "{$creatorName} registro una nueva oportunidad {$tipo} para {$this->licitacion->empresa}: {$this->licitacion->requerimiento}.",
             'message' => "{$creatorName} registro una nueva oportunidad {$tipo} para {$this->licitacion->empresa}: {$this->licitacion->requerimiento}.",
             'action_url' => '/seguimiento-licitaciones',
             'action' => 'nueva_oportunidad',
