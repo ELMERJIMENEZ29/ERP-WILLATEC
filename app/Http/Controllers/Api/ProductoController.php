@@ -313,19 +313,30 @@ class ProductoController extends Controller
         }
 
         foreach (array_values(array_unique(array_filter($series))) as $serieItem) {
-            ProductoSerie::query()->updateOrCreate(
-                [
-                    'producto_id' => $producto->id,
-                    'serie' => $serieItem,
-                ],
-                [
+            $productoSerie = ProductoSerie::query()
+                ->where('producto_id', $producto->id)
+                ->where('serie', $serieItem)
+                ->first();
+
+            if ($productoSerie) {
+                $productoSerie->update([
                     'factura_numero' => $producto->factura_numero,
                     'costo_unitario' => $producto->costo_unitario,
                     'moneda_id' => $producto->moneda_id,
-                    'estado' => ProductoSerie::ESTADO_DISPONIBLE,
-                    'created_by' => auth()->id(),
-                ]
-            );
+                ]);
+
+                continue;
+            }
+
+            ProductoSerie::query()->create([
+                'producto_id' => $producto->id,
+                'serie' => $serieItem,
+                'factura_numero' => $producto->factura_numero,
+                'costo_unitario' => $producto->costo_unitario,
+                'moneda_id' => $producto->moneda_id,
+                'estado' => ProductoSerie::ESTADO_DISPONIBLE,
+                'created_by' => auth()->id(),
+            ]);
         }
     }
 

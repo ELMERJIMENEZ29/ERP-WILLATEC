@@ -82,6 +82,8 @@ class LicitacionController extends Controller
         $payload = $this->validatePayload($request);
         $payload['created_by'] = $request->user()?->id;
         $payload['creado_por'] = $payload['creado_por'] ?? $this->userDisplayName($request->user());
+        $payload['creado_en'] = $payload['creado_en'] ?? now('America/Lima');
+        $payload['modificado_en'] = $payload['modificado_en'] ?? $payload['creado_en'];
 
         $licitacion = DB::transaction(function () use ($request, $payload): Licitacion {
             $licitacion = Licitacion::create($payload);
@@ -104,6 +106,7 @@ class LicitacionController extends Controller
     {
         $payload = $this->validatePayload($request);
         $this->ensureCanUpdate($request, $licitacion, $payload);
+        $payload['modificado_en'] = $payload['modificado_en'] ?? now('America/Lima');
         $isPresentationTransition = in_array($licitacion->estado, ['cotizacion_generada', 'vencida'], true)
             && ($payload['estado'] ?? null) === 'atendido';
         $canSyncNestedData = $this->isCreator($request, $licitacion) && ! $isPresentationTransition;
@@ -124,7 +127,7 @@ class LicitacionController extends Controller
                 }
 
                 $licitacion->historial()->create([
-                    'fecha' => now(),
+                    'fecha' => now('America/Lima'),
                     'usuario' => $this->userDisplayName($request->user()),
                     'tipo' => 'estado',
                     'descripcion' => $previousEstado === 'vencida'
@@ -167,7 +170,7 @@ class LicitacionController extends Controller
         $comentario = $licitacion->comentarios()->create([
             'usuario' => $validated['usuario'] ?? $this->userDisplayName($request->user()),
             'comentario' => $validated['comentario'],
-            'fecha' => $validated['fecha'] ?? now(),
+            'fecha' => ! empty($validated['fecha']) ? $this->parseLimaDateTime($validated['fecha']) : now('America/Lima'),
         ]);
 
         return response()->json($this->serializeComentario($comentario), 201);
@@ -198,21 +201,21 @@ class LicitacionController extends Controller
                     'monto' => $validated['monto'] ?? $cotizacionOrigen->total,
                     'moneda' => $validated['moneda'] ?? $cotizacionOrigen->moneda?->codigo,
                     'creado_por' => $userName,
-                    'creado_en' => now(),
+                    'creado_en' => now('America/Lima'),
                 ]
             );
 
             $licitacion->update([
                 'estado' => 'cotizacion_generada',
                 'modificado_por' => $userName,
-                'modificado_en' => now(),
+                'modificado_en' => now('America/Lima'),
             ]);
 
             $licitacion->historial()->create([
                 'usuario' => $userName,
                 'tipo' => 'cotizacion',
                 'descripcion' => 'Cotizacion '.$relacion->numero.' vinculada a la oportunidad.',
-                'fecha' => now(),
+                'fecha' => now('America/Lima'),
             ]);
 
             return $relacion;
@@ -333,7 +336,7 @@ class LicitacionController extends Controller
                 $licitacion->comentarios()->create([
                     'usuario' => $comentario['usuario'] ?? null,
                     'comentario' => $comentario['comentario'],
-                    'fecha' => $comentario['fecha'] ?? now(),
+                    'fecha' => ! empty($comentario['fecha']) ? $this->parseLimaDateTime($comentario['fecha']) : now('America/Lima'),
                 ]);
             }
         }
@@ -345,7 +348,7 @@ class LicitacionController extends Controller
                     'usuario' => $historial['usuario'] ?? null,
                     'tipo' => $historial['tipo'] ?? 'estado',
                     'descripcion' => $historial['descripcion'],
-                    'fecha' => $historial['fecha'] ?? now(),
+                    'fecha' => ! empty($historial['fecha']) ? $this->parseLimaDateTime($historial['fecha']) : now('America/Lima'),
                 ]);
             }
         }
@@ -360,7 +363,9 @@ class LicitacionController extends Controller
                     'monto' => $cotizacion['monto'] ?? null,
                     'moneda' => $cotizacion['moneda'] ?? null,
                     'creado_por' => $cotizacion['creado_por'] ?? $cotizacion['creadoPor'] ?? null,
-                    'creado_en' => $cotizacion['creado_en'] ?? $cotizacion['creadoEn'] ?? now(),
+                    'creado_en' => ! empty($cotizacion['creado_en'] ?? $cotizacion['creadoEn'] ?? null)
+                        ? $this->parseLimaDateTime($cotizacion['creado_en'] ?? $cotizacion['creadoEn'])
+                        : now('America/Lima'),
                 ]);
             }
         }
@@ -380,7 +385,9 @@ class LicitacionController extends Controller
             'data_url' => $payload['dataUrl'] ?? $payload['data_url'] ?? null,
             'path' => $payload['path'] ?? null,
             'creado_por' => $payload['creadoPor'] ?? $payload['creado_por'] ?? null,
-            'creado_en' => $payload['creadoEn'] ?? $payload['creado_en'] ?? now(),
+            'creado_en' => ! empty($payload['creadoEn'] ?? $payload['creado_en'] ?? null)
+                ? $this->parseLimaDateTime($payload['creadoEn'] ?? $payload['creado_en'])
+                : now('America/Lima'),
         ]);
     }
 
@@ -476,7 +483,7 @@ class LicitacionController extends Controller
             'tamanio' => $archivo->tamanio,
             'dataUrl' => $archivo->data_url,
             'path' => $archivo->path,
-            'creadoEn' => optional($archivo->creado_en ?? $archivo->created_at)->toIso8601String(),
+            'creadoEn' => $this->serializeLimaDateTime($archivo->creado_en ?? $archivo->created_at),
             'creadoPor' => $archivo->creado_por,
         ];
     }
@@ -489,7 +496,7 @@ class LicitacionController extends Controller
         return [
             'id' => (string) $comentario->id,
             'usuario' => $comentario->usuario,
-            'fecha' => optional($comentario->fecha ?? $comentario->created_at)->toIso8601String(),
+            'fecha' => $this->serializeLimaDateTime($comentario->fecha ?? $comentario->created_at),
             'comentario' => $comentario->comentario,
         ];
     }
@@ -501,7 +508,7 @@ class LicitacionController extends Controller
     {
         return [
             'id' => (string) $historial->id,
-            'fecha' => optional($historial->fecha ?? $historial->created_at)->toIso8601String(),
+            'fecha' => $this->serializeLimaDateTime($historial->fecha ?? $historial->created_at),
             'usuario' => $historial->usuario,
             'tipo' => $historial->tipo,
             'descripcion' => $historial->descripcion,
@@ -519,17 +526,17 @@ class LicitacionController extends Controller
             'id' => (string) $cotizacion->id,
             'cotizacionId' => $cotizacion->cotizacion_id,
             'numero' => $cotizacion->numero,
-            'fecha' => optional($cotizacion->creado_en ?? $cotizacion->created_at)->toIso8601String(),
+            'fecha' => $this->serializeLimaDateTime($cotizacion->creado_en ?? $cotizacion->created_at),
             'estado' => $cotizacion->estado,
             'monto' => $cotizacion->monto,
             'moneda' => $cotizacion->moneda,
             'creadoPor' => $cotizacion->creado_por,
-            'creadoEn' => optional($cotizacion->creado_en ?? $cotizacion->created_at)->toIso8601String(),
+            'creadoEn' => $this->serializeLimaDateTime($cotizacion->creado_en ?? $cotizacion->created_at),
             'tieneModificacionPendiente' => (bool) $modificacionPendiente,
             'modificacionPendiente' => $modificacionPendiente ? [
                 'id' => $modificacionPendiente->id,
                 'estado' => $modificacionPendiente->estado,
-                'submittedAt' => optional($modificacionPendiente->submitted_at)->toIso8601String(),
+                'submittedAt' => $this->serializeLimaDateTime($modificacionPendiente->submitted_at),
                 'motivo' => $modificacionPendiente->motivo,
             ] : null,
         ];

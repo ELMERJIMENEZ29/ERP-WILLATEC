@@ -1047,7 +1047,7 @@ class OcRecibidaController extends Controller
             ->each(function (Licitacion $licitacion): void {
                 $licitacion->update(['estado' => 'ganada']);
                 $licitacion->historial()->create([
-                    'fecha' => now(),
+                    'fecha' => now('America/Lima'),
                     'usuario' => 'Sistema',
                     'tipo' => 'estado',
                     'descripcion' => 'Oportunidad marcada como ganada por OC registrada en la cotizacion vinculada.',
