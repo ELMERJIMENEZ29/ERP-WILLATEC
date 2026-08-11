@@ -12,6 +12,7 @@ use App\Models\LicitacionHistorial;
 use App\Models\User;
 use App\Notifications\LicitacionCotizacionListaNotification;
 use App\Notifications\NuevaOportunidadDisponibleNotification;
+use App\Notifications\OportunidadAtendidaNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -102,24 +103,32 @@ class LicitacionController extends Controller
     {
         $payload = $this->validatePayload($request);
         $this->ensureCanUpdate($request, $licitacion, $payload);
-        $canSyncNestedData = $this->isCreator($request, $licitacion);
+        $isPresentationTransition = in_array($licitacion->estado, ['cotizacion_generada', 'vencida'], true)
+            && ($payload['estado'] ?? null) === 'atendido';
+        $canSyncNestedData = $this->isCreator($request, $licitacion) && ! $isPresentationTransition;
         $previousEstado = $licitacion->estado;
 
         DB::transaction(function () use ($request, $licitacion, $payload, $canSyncNestedData, $previousEstado): void {
             $licitacion->update($payload);
 
-            if (
-                in_array($previousEstado, ['cotizacion_generada', 'vencida'], true)
+            $isProposalPresentation = in_array($previousEstado, ['cotizacion_generada', 'vencida'], true)
                 && ($payload['estado'] ?? null) === 'atendido'
-                && $request->user()?->hasRole('licitacion')
-            ) {
+                && $this->canPresentProposal($request, $licitacion);
+
+            if ($isProposalPresentation) {
+                $evidencia = $request->input('presentacion_evidencia', $request->input('presentacionEvidencia'));
+
+                if (is_array($evidencia)) {
+                    $this->createArchivoFromPayload($licitacion, $evidencia, 'adjunto');
+                }
+
                 $licitacion->historial()->create([
                     'fecha' => now(),
                     'usuario' => $this->userDisplayName($request->user()),
                     'tipo' => 'estado',
                     'descripcion' => $previousEstado === 'vencida'
-                        ? 'Propuesta presentada fuera de registro, posterior al vencimiento.'
-                        : 'Propuesta presentada/subida en la plataforma correspondiente.',
+                        ? 'Propuesta presentada fuera de registro con evidencia, posterior al vencimiento.'
+                        : 'Propuesta presentada/subida con evidencia en la plataforma correspondiente.',
                 ]);
             }
 
@@ -127,6 +136,10 @@ class LicitacionController extends Controller
                 $this->syncNestedData($licitacion, $request);
             }
         });
+
+        if ($previousEstado !== 'atendido' && ($payload['estado'] ?? null) === 'atendido') {
+            $this->notifyLicitacionAndSuperadmins(new OportunidadAtendidaNotification($licitacion->refresh(), $request->user()));
+        }
 
         return response()->json($this->serialize($this->loadRelations($licitacion->refresh())));
     }
@@ -543,6 +556,26 @@ class LicitacionController extends Controller
      */
     private function ensureCanUpdate(Request $request, Licitacion $licitacion, array $payload): void
     {
+        $isPresentationTransition = in_array($licitacion->estado, ['cotizacion_generada', 'vencida'], true)
+            && ($payload['estado'] ?? null) === 'atendido';
+
+        if ($isPresentationTransition) {
+            if (! $this->canPresentProposal($request, $licitacion)) {
+                abort(403, 'No tienes permiso para marcar esta oportunidad como presentada.');
+            }
+
+            $evidencia = $request->input('presentacion_evidencia', $request->input('presentacionEvidencia'));
+            if (! is_array($evidencia)) {
+                abort(422, 'Debe adjuntar una evidencia para marcar la oportunidad como presentada.');
+            }
+
+            if ($this->contentFieldsAreUnchanged($licitacion, $payload)) {
+                return;
+            }
+
+            abort(403, 'No se puede modificar el contenido al marcar la oportunidad como presentada.');
+        }
+
         if ($this->isCreator($request, $licitacion)) {
             return;
         }
@@ -556,11 +589,7 @@ class LicitacionController extends Controller
             && $nextAssignedId === $userId
             && ($payload['estado'] ?? null) === 'en_atencion';
         $isAssignedWorkflow = $userId > 0 && $assignedId === $userId;
-        $isLicitacionPresentation = $request->user()?->hasRole('licitacion')
-            && in_array($licitacion->estado, ['cotizacion_generada', 'vencida'], true)
-            && ($payload['estado'] ?? null) === 'atendido';
-
-        if (($isAssigningSelf || $isAssignedWorkflow || $isLicitacionPresentation) && $this->contentFieldsAreUnchanged($licitacion, $payload)) {
+        if (($isAssigningSelf || $isAssignedWorkflow) && $this->contentFieldsAreUnchanged($licitacion, $payload)) {
             return;
         }
 
@@ -590,6 +619,21 @@ class LicitacionController extends Controller
         }
 
         return false;
+    }
+
+    private function canPresentProposal(Request $request, Licitacion $licitacion): bool
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($licitacion->tipo === 'licitacion') {
+            return $user->hasRole('licitacion') || $this->isCreator($request, $licitacion);
+        }
+
+        return (int) ($licitacion->asignado_a ?: $licitacion->ejecutivo_id) === (int) $user->id;
     }
 
     /**
@@ -685,9 +729,12 @@ class LicitacionController extends Controller
 
     private function notifyLicitacionUsers(Licitacion $licitacion, Cotizacion $cotizacion): void
     {
-        $notification = new LicitacionCotizacionListaNotification($licitacion, $cotizacion);
+        $this->notifyLicitacionAndSuperadmins(new LicitacionCotizacionListaNotification($licitacion, $cotizacion));
+    }
 
-        User::role('licitacion')->get()->each->notify($notification);
+    private function notifyLicitacionAndSuperadmins(object $notification): void
+    {
+        User::role(['licitacion', 'superadmin'])->get()->each->notify($notification);
     }
 
     private function notifyNewOpportunity(Licitacion $licitacion, ?User $creator): void

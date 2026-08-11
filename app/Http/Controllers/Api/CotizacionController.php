@@ -75,7 +75,7 @@ class CotizacionController extends Controller
             return;
         }
 
-        $users = User::role('licitacion')->get();
+        $users = User::role(['licitacion', 'superadmin'])->get();
 
         foreach ($licitaciones as $licitacion) {
             $users->each->notify(new LicitacionCotizacionListaNotification($licitacion, $cotizacion));
