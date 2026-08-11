@@ -101,6 +101,7 @@ class OcRecibidaController extends Controller
 
         $paginator->getCollection()->each(function (OcRecibida $ocRecibida) use ($request): void {
             $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'), $request);
+            $this->asegurarInventarioOcAtendida($ocRecibida->refresh()->load('items.cotizacionItem', 'cotizacion'), $request);
             $ocRecibida->unsetRelation('items');
             $ocRecibida->load(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc', 'usuario:id,nombres,apellidos,email']);
             $ocRecibida->load('documentosAdicionales');
@@ -117,6 +118,7 @@ class OcRecibidaController extends Controller
     public function show(Request $request, OcRecibida $ocRecibida)
     {
         $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'), $request);
+        $this->asegurarInventarioOcAtendida($ocRecibida->refresh()->load('items.cotizacionItem', 'cotizacion'), $request);
 
         return response()->json(
             $ocRecibida->load([
@@ -296,6 +298,7 @@ class OcRecibidaController extends Controller
 
             if ($ocRecibida->estado === OcRecibida::ESTADO_ATENDIDO) {
                 $this->registrarSalidaAtendida($ocRecibida, $request, $validated['items']);
+                $this->asegurarInventarioOcAtendida($ocRecibida->refresh()->load('items.cotizacionItem', 'cotizacion'), $request);
             }
         });
 
@@ -764,6 +767,63 @@ class OcRecibidaController extends Controller
                 ocRecibidaId: $ocRecibida->id,
                 cotizacionItemId: $item->cotizacion_item_id
             );
+        }
+    }
+
+    private function asegurarInventarioOcAtendida(OcRecibida $ocRecibida, Request $request): void
+    {
+        if ($ocRecibida->estado !== OcRecibida::ESTADO_ATENDIDO || ! $ocRecibida->factura_path) {
+            return;
+        }
+
+        try {
+            $this->registrarSalidaAtendida($ocRecibida, $request);
+        } catch (ValidationException) {
+            return;
+        }
+
+        foreach ($ocRecibida->items->where('seleccionado', true) as $item) {
+            $productoId = $item->cotizacionItem?->producto_id;
+
+            if (! $productoId) {
+                continue;
+            }
+
+            $cantidad = (float) $item->cantidad_recibida;
+            $salidaKey = "oc-recibida:{$ocRecibida->id}:salida:cotizacion-item:{$item->cotizacion_item_id}";
+            $reservaKey = "oc-recibida:{$ocRecibida->id}:reserva:cotizacion-item:{$item->cotizacion_item_id}";
+
+            if (
+                ! InventarioMovimiento::query()->where('idempotency_key', $salidaKey)->exists() ||
+                ! InventarioMovimiento::query()->where('idempotency_key', $reservaKey)->exists()
+            ) {
+                continue;
+            }
+
+            DB::transaction(function () use ($productoId, $cantidad): void {
+                $producto = Producto::query()->lockForUpdate()->find($productoId);
+
+                if (! $producto) {
+                    return;
+                }
+
+                $stockActual = (float) $producto->stock_actual;
+                $stockReservado = (float) $producto->stock_reservado;
+                $stockDisponible = (float) $producto->stock_disponible;
+
+                if ($stockReservado < $cantidad || $stockDisponible > 0) {
+                    return;
+                }
+
+                $producto->stock_actual = $stockActual >= $cantidad
+                    ? max(0, $stockActual - $cantidad)
+                    : $stockActual;
+                $producto->stock_reservado = max(0, $stockReservado - $cantidad);
+                $producto->stock_disponible = max(0, (float) $producto->stock_actual - (float) $producto->stock_reservado);
+                $producto->stock = (int) round((float) $producto->stock_actual);
+                $producto->valor_stock = round((float) $producto->stock_actual * (float) ($producto->costo_promedio ?? 0), 2);
+                $producto->save();
+            });
         }
     }
 
