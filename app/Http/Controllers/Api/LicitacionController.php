@@ -33,9 +33,12 @@ class LicitacionController extends Controller
             'vigencia_desde' => 'nullable|date',
             'vigencia_hasta' => 'nullable|date',
             'per_page' => 'nullable|integer|min:1|max:100',
+            'lite' => 'nullable|boolean',
         ]);
 
-        $query = Licitacion::with($this->relations())
+        $lite = $request->boolean('lite');
+
+        $query = Licitacion::with($this->relations($lite))
             ->orderBy('vigencia')
             ->orderByDesc('id');
 
@@ -67,13 +70,13 @@ class LicitacionController extends Controller
         if ($request->filled('per_page')) {
             $items = $query
                 ->paginate($request->integer('per_page', 10))
-                ->through(fn (Licitacion $licitacion) => $this->serialize($licitacion));
+                ->through(fn (Licitacion $licitacion) => $this->serialize($licitacion, ! $lite));
 
             return response()->json($items);
         }
 
         return response()->json(
-            $query->get()->map(fn (Licitacion $licitacion) => $this->serialize($licitacion))->values()
+            $query->get()->map(fn (Licitacion $licitacion) => $this->serialize($licitacion, ! $lite))->values()
         );
     }
 
@@ -399,11 +402,19 @@ class LicitacionController extends Controller
     /**
      * @return array<int, string>
      */
-    private function relations(): array
+    private function relations(bool $lite = false): array
     {
-        return [
+        $relations = [
             'ejecutivo:id,nombres,apellidos,email',
             'creador:id,nombres,apellidos,email',
+        ];
+
+        if ($lite) {
+            return $relations;
+        }
+
+        return [
+            ...$relations,
             'comentarios' => fn ($query) => $query->latest('fecha')->latest('id'),
             'historial' => fn ($query) => $query->latest('fecha')->latest('id'),
             'archivos' => fn ($query) => $query->latest('created_at'),
@@ -420,13 +431,18 @@ class LicitacionController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function serialize(Licitacion $licitacion): array
+    private function serialize(Licitacion $licitacion, bool $withDetails = true): array
     {
-        $tdr = $licitacion->archivos->firstWhere('tipo_archivo', 'tdr');
-        $archivos = $licitacion->archivos
-            ->where('tipo_archivo', '!=', 'tdr')
-            ->values()
-            ->map(fn (LicitacionArchivo $archivo) => $this->serializeArchivo($archivo));
+        $tdr = null;
+        $archivos = collect();
+
+        if ($withDetails) {
+            $tdr = $licitacion->archivos->firstWhere('tipo_archivo', 'tdr');
+            $archivos = $licitacion->archivos
+                ->where('tipo_archivo', '!=', 'tdr')
+                ->values()
+                ->map(fn (LicitacionArchivo $archivo) => $this->serializeArchivo($archivo));
+        }
 
         return [
             'id' => (string) $licitacion->id,
@@ -454,7 +470,7 @@ class LicitacionController extends Controller
             'garantia' => $licitacion->garantia,
             'plazo' => $licitacion->plazo,
             'carpeta_servidor' => $licitacion->carpeta_servidor,
-            'tdr' => $tdr ? $this->serializeArchivo($tdr) : null,
+            'tdr' => $withDetails && $tdr ? $this->serializeArchivo($tdr) : null,
             'forma_pago' => $licitacion->forma_pago,
             'destino_entrega' => $licitacion->destino_entrega,
             'wherex_id' => $licitacion->wherex_id,
@@ -464,10 +480,10 @@ class LicitacionController extends Controller
             'comentario_cierre' => $licitacion->comentario_cierre,
             'perdida_info' => $licitacion->perdida_info,
             'lecciones_aprendidas' => $licitacion->lecciones_aprendidas,
-            'comentarios' => $licitacion->comentarios->map(fn (LicitacionComentario $comentario) => $this->serializeComentario($comentario))->values(),
-            'archivos' => $archivos,
-            'historial' => $licitacion->historial->map(fn (LicitacionHistorial $historial) => $this->serializeHistorial($historial))->values(),
-            'cotizaciones' => $licitacion->cotizaciones->map(fn (LicitacionCotizacion $cotizacion) => $this->serializeCotizacion($cotizacion))->values(),
+            'comentarios' => $withDetails ? $licitacion->comentarios->map(fn (LicitacionComentario $comentario) => $this->serializeComentario($comentario))->values() : [],
+            'archivos' => $withDetails ? $archivos : [],
+            'historial' => $withDetails ? $licitacion->historial->map(fn (LicitacionHistorial $historial) => $this->serializeHistorial($historial))->values() : [],
+            'cotizaciones' => $withDetails ? $licitacion->cotizaciones->map(fn (LicitacionCotizacion $cotizacion) => $this->serializeCotizacion($cotizacion))->values() : [],
         ];
     }
 
