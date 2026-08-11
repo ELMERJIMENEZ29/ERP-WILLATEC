@@ -28,11 +28,14 @@ class OcRecibida extends Model
         'estado',
         'observaciones',
         'orden_compra_cliente_path',
+        'orden_compra_cliente_nombre_original',
         'orden_compra_cliente_uploaded_by',
         'guia_emision_path',
+        'guia_emision_nombre_original',
         'guia_emision_uploaded_by',
         'factura_numero',
         'factura_path',
+        'factura_nombre_original',
         'factura_uploaded_by',
         'cliente_nombre',
         'cliente_ruc',
@@ -81,7 +84,6 @@ class OcRecibida extends Model
         return collect([
             'orden_compra_cliente' => $this->orden_compra_cliente_path,
             'guia_emision' => $this->guia_emision_path,
-            'factura_numero' => $this->factura_numero,
             'factura' => $this->factura_path,
         ])->filter(fn (?string $path): bool => blank($path))->keys()->values()->all();
     }

@@ -72,7 +72,12 @@ class OcRecibidaController extends Controller
         ]);
 
         $query = OcRecibida::query()
-            ->with(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc', 'documentosAdicionales'])
+            ->with([
+                'cotizacion:id,numero,titulo',
+                'cliente:id,nombre,ruc',
+                'usuario:id,nombres,apellidos,email',
+                'documentosAdicionales',
+            ])
             ->withCount([
                 'items as items_total' => fn ($query) => $query->where('seleccionado', true),
                 'items as items_comprados' => fn ($query) => $query->where('seleccionado', true)->where('comprado', true),
@@ -97,7 +102,7 @@ class OcRecibidaController extends Controller
         $paginator->getCollection()->each(function (OcRecibida $ocRecibida) use ($request): void {
             $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'), $request);
             $ocRecibida->unsetRelation('items');
-            $ocRecibida->load(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc']);
+            $ocRecibida->load(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc', 'usuario:id,nombres,apellidos,email']);
             $ocRecibida->load('documentosAdicionales');
             $ocRecibida->loadCount([
                 'items as items_total' => fn ($query) => $query->where('seleccionado', true),
@@ -126,6 +131,7 @@ class OcRecibidaController extends Controller
                     ->latest(),
                 'cotizacion',
                 'cliente',
+                'usuario:id,nombres,apellidos,email',
             ])
         );
     }
@@ -182,16 +188,19 @@ class OcRecibidaController extends Controller
 
             if ($request->hasFile('orden_compra_cliente')) {
                 $ocRecibida->orden_compra_cliente_path = $this->storeDocumento($request->file('orden_compra_cliente'), 'oc-recibidas');
+                $ocRecibida->orden_compra_cliente_nombre_original = $request->file('orden_compra_cliente')->getClientOriginalName();
                 $ocRecibida->orden_compra_cliente_uploaded_by = $request->user()?->id;
             }
 
             if ($request->hasFile('guia_emision')) {
                 $ocRecibida->guia_emision_path = $this->storeDocumento($request->file('guia_emision'), 'oc-recibidas');
+                $ocRecibida->guia_emision_nombre_original = $request->file('guia_emision')->getClientOriginalName();
                 $ocRecibida->guia_emision_uploaded_by = $request->user()?->id;
             }
 
             if ($request->hasFile('factura')) {
                 $ocRecibida->factura_path = $this->storeDocumento($request->file('factura'), 'oc-recibidas/facturas');
+                $ocRecibida->factura_nombre_original = $request->file('factura')->getClientOriginalName();
                 $ocRecibida->factura_uploaded_by = $request->user()?->id;
             }
 
@@ -489,11 +498,13 @@ class OcRecibidaController extends Controller
 
         if ($request->hasFile('orden_compra_cliente')) {
             $ocRecibida->orden_compra_cliente_path = $this->storeDocumento($request->file('orden_compra_cliente'), 'oc-recibidas');
+            $ocRecibida->orden_compra_cliente_nombre_original = $request->file('orden_compra_cliente')->getClientOriginalName();
             $ocRecibida->orden_compra_cliente_uploaded_by = $request->user()?->id;
         }
 
         if ($request->hasFile('guia_emision')) {
             $ocRecibida->guia_emision_path = $this->storeDocumento($request->file('guia_emision'), 'oc-recibidas');
+            $ocRecibida->guia_emision_nombre_original = $request->file('guia_emision')->getClientOriginalName();
             $ocRecibida->guia_emision_uploaded_by = $request->user()?->id;
         }
 
@@ -503,6 +514,7 @@ class OcRecibidaController extends Controller
 
         if ($request->hasFile('factura')) {
             $ocRecibida->factura_path = $this->storeDocumento($request->file('factura'), 'oc-recibidas/facturas');
+            $ocRecibida->factura_nombre_original = $request->file('factura')->getClientOriginalName();
             $ocRecibida->factura_uploaded_by = $request->user()?->id;
         }
 
@@ -700,9 +712,9 @@ class OcRecibidaController extends Controller
 
     private function registrarSalidaAtendida(OcRecibida $ocRecibida, Request $request, array $itemsPayload = []): void
     {
-        if (! $ocRecibida->factura_numero || ! $ocRecibida->factura_path) {
+        if (! $ocRecibida->factura_path) {
             throw ValidationException::withMessages([
-                'factura' => 'Para atender una OC recibida debe registrar numero de factura y archivo de factura.',
+                'factura' => 'Para atender una OC recibida debe registrar el archivo de factura.',
             ]);
         }
 

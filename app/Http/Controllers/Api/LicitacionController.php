@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Cotizacion;
+use App\Models\CotizacionModificacion;
 use App\Models\Licitacion;
 use App\Models\LicitacionArchivo;
 use App\Models\LicitacionComentario;
@@ -399,7 +400,13 @@ class LicitacionController extends Controller
             'comentarios' => fn ($query) => $query->latest('fecha')->latest('id'),
             'historial' => fn ($query) => $query->latest('fecha')->latest('id'),
             'archivos' => fn ($query) => $query->latest('created_at'),
-            'cotizaciones' => fn ($query) => $query->latest('creado_en')->latest('id'),
+            'cotizaciones' => fn ($query) => $query
+                ->with(['cotizacion.modificaciones' => fn ($modificacionQuery) => $modificacionQuery
+                    ->where('estado', CotizacionModificacion::ESTADO_EN_REVISION)
+                    ->latest('submitted_at')
+                    ->latest('id')])
+                ->latest('creado_en')
+                ->latest('id'),
         ];
     }
 
@@ -434,7 +441,7 @@ class LicitacionController extends Controller
             'observacion' => $licitacion->observacion,
             'creado_en' => $this->serializeLimaDateTime($licitacion->creado_en ?? $licitacion->created_at),
             'created_by' => $licitacion->created_by,
-            'creado_por' => $licitacion->creado_por,
+            'creado_por' => $licitacion->creador ? $this->userDisplayName($licitacion->creador) : $licitacion->creado_por,
             'modificado_en' => $this->serializeLimaDateTime($licitacion->modificado_en ?? $licitacion->updated_at),
             'modificado_por' => $licitacion->modificado_por,
             'garantia' => $licitacion->garantia,
@@ -506,6 +513,8 @@ class LicitacionController extends Controller
      */
     private function serializeCotizacion(LicitacionCotizacion $cotizacion): array
     {
+        $modificacionPendiente = $cotizacion->cotizacion?->modificaciones?->first();
+
         return [
             'id' => (string) $cotizacion->id,
             'cotizacionId' => $cotizacion->cotizacion_id,
@@ -516,6 +525,13 @@ class LicitacionController extends Controller
             'moneda' => $cotizacion->moneda,
             'creadoPor' => $cotizacion->creado_por,
             'creadoEn' => optional($cotizacion->creado_en ?? $cotizacion->created_at)->toIso8601String(),
+            'tieneModificacionPendiente' => (bool) $modificacionPendiente,
+            'modificacionPendiente' => $modificacionPendiente ? [
+                'id' => $modificacionPendiente->id,
+                'estado' => $modificacionPendiente->estado,
+                'submittedAt' => optional($modificacionPendiente->submitted_at)->toIso8601String(),
+                'motivo' => $modificacionPendiente->motivo,
+            ] : null,
         ];
     }
 
