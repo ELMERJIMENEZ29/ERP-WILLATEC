@@ -10,11 +10,13 @@ use App\Http\Controllers\Api\InventarioController;
 use App\Http\Controllers\Api\LicenciaController;
 use App\Http\Controllers\Api\LicitacionController;
 use App\Http\Controllers\Api\OcEmitidaController;
+use App\Http\Controllers\Api\OcAtencionController;
 use App\Http\Controllers\Api\OcRecibidaController;
 use App\Http\Controllers\Api\OrdenCompraController;
 use App\Http\Controllers\Api\ProductoController;
 use App\Http\Controllers\Api\ProductoExternoController;
 use App\Http\Controllers\Api\ProveedorController;
+use App\Http\Controllers\Api\RequerimientoCompraController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WooCommerceProductoController;
@@ -261,12 +263,28 @@ Route::prefix('oc-recibidas')->middleware(['auth:sanctum', 'token.idle'])->group
     Route::get('/', [OcRecibidaController::class, 'index'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::post('/', [OcRecibidaController::class, 'store'])->middleware('role:superadmin|ventas');
     Route::get('/{ocRecibida}', [OcRecibidaController::class, 'show'])->middleware('role:superadmin|ventas|admin|contabilidad');
-    Route::patch('/{ocRecibida}/items', [OcRecibidaController::class, 'updateItems'])->middleware('role:superadmin|ventas');
+    Route::patch('/{ocRecibida}/items', [OcRecibidaController::class, 'updateItems'])->middleware('role:superadmin|admin|logistica');
     Route::patch('/{ocRecibida}/items/{item}/asociar-producto', [OcRecibidaController::class, 'asociarProductoInterno'])->middleware('role:superadmin|ventas');
     Route::patch('/{ocRecibida}/cancelar', [OcRecibidaController::class, 'cancelar'])->middleware('role:superadmin|ventas');
     Route::post('/{ocRecibida}/documentos', [OcRecibidaController::class, 'documentos'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::delete('/{ocRecibida}/documentos/{tipo}', [OcRecibidaController::class, 'eliminarDocumento'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::delete('/{ocRecibida}/documentos-adicionales/{documento}', [OcRecibidaController::class, 'eliminarDocumentoAdicional'])->middleware('role:superadmin|ventas|admin|contabilidad');
+    Route::get('/{ocRecibida}/atenciones', [OcAtencionController::class, 'index'])->middleware('role:superadmin|ventas|admin|contabilidad|logistica');
+    Route::post('/{ocRecibida}/atenciones', [OcAtencionController::class, 'store'])->middleware('role:superadmin|admin|logistica');
+    Route::get('/{ocRecibida}/requerimientos/faltantes', [RequerimientoCompraController::class, 'faltantes'])->middleware('role:superadmin|ventas|admin|contabilidad|logistica');
+    Route::post('/{ocRecibida}/requerimientos/generar', [RequerimientoCompraController::class, 'generarDesdeOc'])->middleware('role:superadmin|admin|logistica');
+});
+
+Route::prefix('oc-atenciones')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
+    Route::get('/{ocAtencion}', [OcAtencionController::class, 'show'])->middleware('role:superadmin|ventas|admin|contabilidad|logistica');
+    Route::patch('/{ocAtencion}/confirmar', [OcAtencionController::class, 'confirmar'])->middleware('role:superadmin|admin|logistica');
+    Route::patch('/{ocAtencion}/cancelar', [OcAtencionController::class, 'cancelar'])->middleware('role:superadmin|admin|logistica');
+});
+
+Route::prefix('requerimientos-compra')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
+    Route::get('/', [RequerimientoCompraController::class, 'index'])->middleware('role:superadmin|admin|logistica|contabilidad|ventas');
+    Route::post('/', [RequerimientoCompraController::class, 'store'])->middleware('role:superadmin|admin|logistica');
+    Route::get('/{requerimientoCompra}', [RequerimientoCompraController::class, 'show'])->middleware('role:superadmin|admin|logistica|contabilidad|ventas');
 });
 
 Route::prefix('oc-emitidas')->middleware(['auth:sanctum', 'token.idle'])->group(function () {

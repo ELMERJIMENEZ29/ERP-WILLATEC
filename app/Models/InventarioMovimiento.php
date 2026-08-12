@@ -28,6 +28,7 @@ class InventarioMovimiento extends Model
         'valor_stock_despues',
         'referencia_tipo',
         'referencia_id',
+        'oc_atencion_item_id',
         'origen',
         'observacion',
         'documento_tipo',
@@ -75,6 +76,7 @@ class InventarioMovimiento extends Model
         'valor_stock_despues',
         'referencia_tipo',
         'referencia_id',
+        'oc_atencion_item_id',
         'origen',
         'idempotency_key',
         'observacion',
@@ -122,6 +124,11 @@ class InventarioMovimiento extends Model
     public function proveedorCatalogo(): BelongsTo
     {
         return $this->belongsTo(Proveedor::class, 'proveedor_id');
+    }
+
+    public function ocAtencionItem(): BelongsTo
+    {
+        return $this->belongsTo(OcAtencionItem::class, 'oc_atencion_item_id');
     }
 
     /**

@@ -107,6 +107,11 @@ class Producto extends Model
         return $this->hasOne(WooCommerceProducto::class);
     }
 
+    public function requerimientoCompraItems(): HasMany
+    {
+        return $this->hasMany(RequerimientoCompraItem::class);
+    }
+
     /**
      * @return array<string, string>
      */

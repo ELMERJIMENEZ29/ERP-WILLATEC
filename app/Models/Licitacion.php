@@ -93,6 +93,11 @@ class Licitacion extends Model
         return $this->hasMany(LicitacionCotizacion::class);
     }
 
+    public function vistas(): HasMany
+    {
+        return $this->hasMany(LicitacionVista::class);
+    }
+
     protected function auditModelName(): string
     {
         return 'Licitacion';
