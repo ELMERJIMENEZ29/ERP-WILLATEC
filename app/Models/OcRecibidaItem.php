@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class OcRecibidaItem extends Model
@@ -33,6 +34,16 @@ class OcRecibidaItem extends Model
     public function cotizacionItem(): BelongsTo
     {
         return $this->belongsTo(CotizacionItem::class);
+    }
+
+    public function atencionItems(): HasMany
+    {
+        return $this->hasMany(OcAtencionItem::class);
+    }
+
+    public function requerimientoCompraItems(): HasMany
+    {
+        return $this->hasMany(RequerimientoCompraItem::class);
     }
 
     /**

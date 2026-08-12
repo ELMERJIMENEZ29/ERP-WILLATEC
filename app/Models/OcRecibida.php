@@ -22,10 +22,38 @@ class OcRecibida extends Model
 
     public const ESTADO_CANCELADO = 'cancelado';
 
+    public const ESTADO_COMERCIAL_REGISTRADA = 'registrada';
+
+    public const ESTADO_COMERCIAL_EN_ATENCION = 'en_atencion';
+
+    public const ESTADO_COMERCIAL_CERRADA = 'cerrada';
+
+    public const ESTADO_COMERCIAL_CANCELADA = 'cancelada';
+
+    public const ESTADO_LOGISTICO_PENDIENTE = 'pendiente';
+
+    public const ESTADO_LOGISTICO_PREPARANDO = 'preparando';
+
+    public const ESTADO_LOGISTICO_PARCIAL = 'parcial';
+
+    public const ESTADO_LOGISTICO_ENTREGADO = 'entregado';
+
+    public const ESTADO_DOCUMENTAL_PENDIENTE = 'pendiente';
+
+    public const ESTADO_DOCUMENTAL_INCOMPLETO = 'incompleto';
+
+    public const ESTADO_DOCUMENTAL_COMPLETO = 'completo';
+
+    public const ESTADO_FINANCIERO_PENDIENTE = 'pendiente';
+
     protected $fillable = [
         'numero',
         'fecha_recepcion',
         'estado',
+        'estado_comercial',
+        'estado_logistico',
+        'estado_documental',
+        'estado_financiero',
         'observaciones',
         'orden_compra_cliente_path',
         'orden_compra_cliente_nombre_original',
@@ -54,6 +82,16 @@ class OcRecibida extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OcRecibidaItem::class);
+    }
+
+    public function atenciones(): HasMany
+    {
+        return $this->hasMany(OcAtencion::class);
+    }
+
+    public function requerimientosCompra(): HasMany
+    {
+        return $this->hasMany(RequerimientoCompra::class);
     }
 
     public function documentosAdicionales(): HasMany

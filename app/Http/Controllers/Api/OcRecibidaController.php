@@ -7,6 +7,7 @@ use App\Models\Cotizacion;
 use App\Models\EstadoCotizacion;
 use App\Models\InventarioMovimiento;
 use App\Models\Licitacion;
+use App\Models\OcAtencion;
 use App\Models\OcDocumentoAdicional;
 use App\Models\OcRecibida;
 use App\Models\OcRecibidaItem;
@@ -18,6 +19,7 @@ use App\Services\InventarioService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -97,29 +99,13 @@ class OcRecibidaController extends Controller
             });
         }
 
-        $paginator = $query->latest()->paginate($request->integer('per_page', 10));
-
-        $paginator->getCollection()->each(function (OcRecibida $ocRecibida) use ($request): void {
-            $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'), $request);
-            $this->asegurarInventarioOcAtendida($ocRecibida->refresh()->load('items.cotizacionItem', 'cotizacion'), $request);
-            $ocRecibida->unsetRelation('items');
-            $ocRecibida->load(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc', 'usuario:id,nombres,apellidos,email']);
-            $ocRecibida->load('documentosAdicionales');
-            $ocRecibida->loadCount([
-                'items as items_total' => fn ($query) => $query->where('seleccionado', true),
-                'items as items_comprados' => fn ($query) => $query->where('seleccionado', true)->where('comprado', true),
-                'items as items_entregados' => fn ($query) => $query->where('seleccionado', true)->where('entregado', true),
-            ]);
-        });
-
-        return response()->json($paginator);
+        return response()->json(
+            $query->latest()->paginate($request->integer('per_page', 10))
+        );
     }
 
     public function show(Request $request, OcRecibida $ocRecibida)
     {
-        $this->sincronizarCompradoConInventario($ocRecibida->load('items.cotizacionItem'), $request);
-        $this->asegurarInventarioOcAtendida($ocRecibida->refresh()->load('items.cotizacionItem', 'cotizacion'), $request);
-
         return response()->json(
             $ocRecibida->load([
                 'items.cotizacionItem.proveedores',
@@ -269,6 +255,20 @@ class OcRecibidaController extends Controller
             'items.*.producto_serie_ids.*' => 'integer|exists:producto_series,id',
         ]);
 
+        $quiereMarcarEntregado = collect($validated['items'])
+            ->contains(fn (array $item): bool => (bool) $item['entregado']);
+
+        if (
+            $quiereMarcarEntregado &&
+            $ocRecibida->atenciones()
+                ->where('estado', '!=', OcAtencion::ESTADO_CANCELADO)
+                ->exists()
+        ) {
+            return response()->json([
+                'message' => 'La entrega de esta OC ya se gestiona mediante atenciones logisticas.',
+            ], 422);
+        }
+
         DB::transaction(function () use ($request, $validated, $ocRecibida): void {
             $this->reservarStockOc($ocRecibida->refresh()->load('items.cotizacionItem'), $request);
             $itemsActuales = $ocRecibida->refresh()->load('items.cotizacionItem')->items->keyBy('id');
@@ -278,7 +278,7 @@ class OcRecibidaController extends Controller
 
                 if ((bool) $itemData['entregado'] && ! (bool) $itemActual?->comprado) {
                     throw ValidationException::withMessages([
-                        'entregado' => "El item {$itemActual?->descripcion} no puede marcarse como entregado porque aun no esta comprado.",
+                        'entregado' => "El item {$itemActual?->descripcion} no puede marcarse como entregado porque aun no tiene stock cubierto o asegurado.",
                     ]);
                 }
 
@@ -597,13 +597,13 @@ class OcRecibidaController extends Controller
             $estado = OcRecibida::ESTADO_PENDIENTE;
         } elseif ($items->where('comprado', false)->isNotEmpty()) {
             $estado = OcRecibida::ESTADO_EN_PROCESO;
-        } elseif ($items->where('entregado', false)->isNotEmpty() || ! $ocRecibida->documentos_completos) {
+        } elseif ($items->where('entregado', false)->isNotEmpty()) {
             $estado = OcRecibida::ESTADO_POR_ENTREGA;
         } else {
             $estado = OcRecibida::ESTADO_ATENDIDO;
         }
 
-        $ocRecibida->update(['estado' => $estado]);
+        $ocRecibida->update($this->buildOcStatusPayload($ocRecibida, $items, $estado));
     }
 
     private function reservarStockOc(OcRecibida $ocRecibida, Request $request): void
@@ -650,6 +650,62 @@ class OcRecibidaController extends Controller
                 $item->forceFill(['comprado' => $this->tieneMovimientoInventario($idempotencyKey)])->save();
             }
         }
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, \App\Models\OcRecibidaItem>  $items
+     * @return array<string, string>
+     */
+    private function buildOcStatusPayload(OcRecibida $ocRecibida, $items, string $estadoLegacy): array
+    {
+        $payload = ['estado' => $estadoLegacy];
+
+        if (! $this->ocRecibidaTieneEstadosIndependientes()) {
+            return $payload;
+        }
+
+        $documentosFaltantes = $ocRecibida->documentosFaltantes();
+        $itemsSeleccionados = $items->where('seleccionado', true);
+        $todosCubiertos = $itemsSeleccionados->isNotEmpty() && $itemsSeleccionados->where('comprado', false)->isEmpty();
+        $todosEntregados = $itemsSeleccionados->isNotEmpty() && $itemsSeleccionados->where('entregado', false)->isEmpty();
+
+        $payload['estado_comercial'] = match ($estadoLegacy) {
+            OcRecibida::ESTADO_CANCELADO => OcRecibida::ESTADO_COMERCIAL_CANCELADA,
+            OcRecibida::ESTADO_ATENDIDO => OcRecibida::ESTADO_COMERCIAL_CERRADA,
+            OcRecibida::ESTADO_EN_PROCESO, OcRecibida::ESTADO_POR_ENTREGA => OcRecibida::ESTADO_COMERCIAL_EN_ATENCION,
+            default => OcRecibida::ESTADO_COMERCIAL_REGISTRADA,
+        };
+
+        $payload['estado_logistico'] = match (true) {
+            $todosEntregados => OcRecibida::ESTADO_LOGISTICO_ENTREGADO,
+            $itemsSeleccionados->where('entregado', true)->isNotEmpty() => OcRecibida::ESTADO_LOGISTICO_PARCIAL,
+            $todosCubiertos => OcRecibida::ESTADO_LOGISTICO_PREPARANDO,
+            default => OcRecibida::ESTADO_LOGISTICO_PENDIENTE,
+        };
+
+        $payload['estado_documental'] = $documentosFaltantes === []
+            ? OcRecibida::ESTADO_DOCUMENTAL_COMPLETO
+            : (count($documentosFaltantes) === 3
+                ? OcRecibida::ESTADO_DOCUMENTAL_PENDIENTE
+                : OcRecibida::ESTADO_DOCUMENTAL_INCOMPLETO);
+
+        $payload['estado_financiero'] = $ocRecibida->estado_financiero ?: OcRecibida::ESTADO_FINANCIERO_PENDIENTE;
+
+        return $payload;
+    }
+
+    private function ocRecibidaTieneEstadosIndependientes(): bool
+    {
+        static $hasColumns = null;
+
+        if ($hasColumns !== null) {
+            return $hasColumns;
+        }
+
+        return $hasColumns = Schema::hasColumn('oc_recibidas', 'estado_comercial')
+            && Schema::hasColumn('oc_recibidas', 'estado_logistico')
+            && Schema::hasColumn('oc_recibidas', 'estado_documental')
+            && Schema::hasColumn('oc_recibidas', 'estado_financiero');
     }
 
     private function tieneMovimientoInventario(string $idempotencyKey): bool
@@ -715,12 +771,6 @@ class OcRecibidaController extends Controller
 
     private function registrarSalidaAtendida(OcRecibida $ocRecibida, Request $request, array $itemsPayload = []): void
     {
-        if (! $ocRecibida->factura_path) {
-            throw ValidationException::withMessages([
-                'factura' => 'Para atender una OC recibida debe registrar el archivo de factura.',
-            ]);
-        }
-
         $inventarioService = app(InventarioService::class);
         $ocRecibida->loadMissing('cotizacion');
         $monedaId = $ocRecibida->cotizacion?->moneda_id;
@@ -757,8 +807,8 @@ class OcRecibidaController extends Controller
                 observacion: "Salida por OC atendida {$ocRecibida->numero}",
                 ipOrigen: $request->ip(),
                 userAgent: $request->userAgent(),
-                documentoTipo: 'factura',
-                documentoNumero: $ocRecibida->factura_numero,
+                documentoTipo: $ocRecibida->factura_path ? 'factura' : 'oc_recibida',
+                documentoNumero: $ocRecibida->factura_numero ?: $ocRecibida->numero,
                 documentoPath: $ocRecibida->factura_path,
                 fechaDocumento: now()->toDateString(),
                 monedaId: $monedaId,
@@ -772,7 +822,7 @@ class OcRecibidaController extends Controller
 
     private function asegurarInventarioOcAtendida(OcRecibida $ocRecibida, Request $request): void
     {
-        if ($ocRecibida->estado !== OcRecibida::ESTADO_ATENDIDO || ! $ocRecibida->factura_path) {
+        if ($ocRecibida->estado !== OcRecibida::ESTADO_ATENDIDO) {
             return;
         }
 
@@ -1062,7 +1112,7 @@ class OcRecibidaController extends Controller
 
     private function ensureCanCreateOcForCotizacion(Request $request, Cotizacion $cotizacion): void
     {
-        if ($request->user()->hasRole('superadmin')) {
+        if ($request->user()->hasAnyRole(['superadmin', 'admin', 'logistica'])) {
             return;
         }
 

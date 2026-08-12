@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class ProductoSerie extends Model
 {
@@ -71,6 +72,16 @@ class ProductoSerie extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function ocAtencionItems(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            OcAtencionItem::class,
+            'oc_atencion_item_producto_serie',
+            'producto_serie_id',
+            'oc_atencion_item_id'
+        )->withTimestamps();
     }
 
     /**

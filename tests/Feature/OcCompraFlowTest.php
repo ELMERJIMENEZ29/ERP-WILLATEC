@@ -11,6 +11,7 @@ use App\Models\OcEmitida;
 use App\Models\OcRecibida;
 use App\Models\Plantilla;
 use App\Models\Plataforma;
+use App\Models\Producto;
 use App\Models\TipoCliente;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
@@ -21,7 +22,7 @@ use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
 
-test('oc recibida solo queda atendida cuando items estan comprados entregados y documentos completos', function () {
+test('ventas registra oc recibida pero no puede marcar entrega logistica', function () {
     Storage::fake('public');
     $base = crearCotizacionBase();
     Sanctum::actingAs($base['ventas']);
@@ -47,7 +48,8 @@ test('oc recibida solo queda atendida cuando items estan comprados entregados y 
         ->assertCreated()
         ->assertJsonPath('message', 'OC RECIBIDA GUARDADA')
         ->assertJsonPath('cotizacion.estado', 'oc_registrada')
-        ->assertJsonPath('oc_recibida.estado', 'pendiente')
+        ->assertJsonPath('oc_recibida.estado', 'por_entrega')
+        ->assertJsonPath('oc_recibida.estado_logistico', 'preparando')
         ->assertJsonPath('oc_recibida.documentos_completos', false);
 
     $base['superadmin']->refresh();
@@ -64,20 +66,16 @@ test('oc recibida solo queda atendida cuando items estan comprados entregados y 
             'comprado' => true,
             'entregado' => true,
         ])->values()->all(),
-    ])
-        ->assertOk()
-        ->assertJsonPath('estado', 'por_entrega')
-        ->assertJsonPath('documentos_completos', false)
-        ->assertJsonPath('faltantes.0', 'orden_compra_cliente')
-        ->assertJsonPath('faltantes.1', 'guia_emision');
+    ])->assertForbidden();
 
     $this->post("/api/oc-recibidas/{$ocRecibida->id}/documentos", [
         'orden_compra_cliente' => UploadedFile::fake()->create('oc.pdf', 10, 'application/pdf'),
         'guia_emision' => UploadedFile::fake()->create('guia.pdf', 10, 'application/pdf'),
     ])
         ->assertOk()
-        ->assertJsonPath('estado', 'atendido')
-        ->assertJsonPath('documentos_completos', true);
+        ->assertJsonPath('estado', 'por_entrega')
+        ->assertJsonPath('documentos_completos', false)
+        ->assertJsonPath('faltantes.0', 'factura');
 });
 
 test('oc recibida acepta seleccionado como texto cuando se envia multipart', function () {
@@ -218,6 +216,18 @@ function crearCotizacionBase(): array
 
     $itemA = CotizacionItem::create([
         'cotizacion_id' => $cotizacion->id,
+        'producto_id' => Producto::create([
+            'nombre' => 'Laptop Lenovo',
+            'sku' => 'LEN-1',
+            'codigo' => 'LEN-1',
+            'tipo_producto' => 'stock',
+            'controla_stock' => true,
+            'stock_actual' => 2,
+            'stock_reservado' => 0,
+            'stock_disponible' => 2,
+            'stock' => 2,
+            'activo' => true,
+        ])->id,
         'descripcion' => 'Laptop Lenovo',
         'cantidad' => 2,
         'codigo' => 'LEN-1',
@@ -236,6 +246,18 @@ function crearCotizacionBase(): array
 
     $itemB = CotizacionItem::create([
         'cotizacion_id' => $cotizacion->id,
+        'producto_id' => Producto::create([
+            'nombre' => 'Mouse Logitech',
+            'sku' => 'LOG-1',
+            'codigo' => 'LOG-1',
+            'tipo_producto' => 'stock',
+            'controla_stock' => true,
+            'stock_actual' => 1,
+            'stock_reservado' => 0,
+            'stock_disponible' => 1,
+            'stock' => 1,
+            'activo' => true,
+        ])->id,
         'descripcion' => 'Mouse Logitech',
         'cantidad' => 1,
         'codigo' => 'LOG-1',

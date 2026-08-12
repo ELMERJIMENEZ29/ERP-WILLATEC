@@ -42,6 +42,11 @@ class ProductoExterno extends Model
         return $this->hasMany(CotizacionItem::class);
     }
 
+    public function requerimientoCompraItems(): HasMany
+    {
+        return $this->hasMany(RequerimientoCompraItem::class);
+    }
+
     public function producto(): BelongsTo
     {
         return $this->belongsTo(Producto::class);

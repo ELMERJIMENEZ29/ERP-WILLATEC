@@ -10,10 +10,12 @@ use App\Models\LicitacionArchivo;
 use App\Models\LicitacionComentario;
 use App\Models\LicitacionCotizacion;
 use App\Models\LicitacionHistorial;
+use App\Models\LicitacionVista;
 use App\Models\User;
 use App\Notifications\LicitacionCotizacionListaNotification;
 use App\Notifications\NuevaOportunidadDisponibleNotification;
 use App\Notifications\OportunidadAtendidaNotification;
+use App\Notifications\OportunidadComentarioNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -100,8 +102,10 @@ class LicitacionController extends Controller
         return response()->json($this->serialize($this->loadRelations($licitacion)), 201);
     }
 
-    public function show(Licitacion $licitacion)
+    public function show(Request $request, Licitacion $licitacion)
     {
+        $this->markAsViewed($licitacion, $request->user());
+
         return response()->json($this->serialize($this->loadRelations($licitacion)));
     }
 
@@ -145,7 +149,11 @@ class LicitacionController extends Controller
         });
 
         if ($previousEstado !== 'atendido' && ($payload['estado'] ?? null) === 'atendido') {
-            $this->notifyLicitacionAndSuperadmins(new OportunidadAtendidaNotification($licitacion->refresh(), $request->user()));
+            $licitacion->refresh();
+            $this->notifyOpportunityStakeholders(
+                new OportunidadAtendidaNotification($licitacion, $request->user()),
+                $licitacion
+            );
         }
 
         return response()->json($this->serialize($this->loadRelations($licitacion->refresh())));
@@ -175,6 +183,12 @@ class LicitacionController extends Controller
             'comentario' => $validated['comentario'],
             'fecha' => ! empty($validated['fecha']) ? $this->parseLimaDateTime($validated['fecha']) : now('America/Lima'),
         ]);
+
+        $this->notifyOpportunityStakeholders(
+            new OportunidadComentarioNotification($licitacion->refresh(), $comentario, $request->user()),
+            $licitacion,
+            $request->user()?->id
+        );
 
         return response()->json($this->serializeComentario($comentario), 201);
     }
@@ -458,7 +472,7 @@ class LicitacionController extends Controller
             'asignado_a' => $licitacion->asignado_a,
             'asignado_en' => $this->serializeLimaDateTime($licitacion->asignado_en),
             'asignado_por' => $licitacion->asignado_por,
-            'es_nueva' => $licitacion->es_nueva,
+            'es_nueva' => $this->isNewForUser($licitacion, request()->user()),
             'categoria' => $licitacion->categoria,
             'estado' => $licitacion->estado,
             'observacion' => $licitacion->observacion,
@@ -776,6 +790,34 @@ class LicitacionController extends Controller
         User::role(['licitacion', 'superadmin'])->get()->each->notify($notification);
     }
 
+    private function notifyOpportunityStakeholders(object $notification, Licitacion $licitacion, ?int $excludeUserId = null): void
+    {
+        $roleUsers = User::role(['licitacion', 'superadmin'])
+            ->where('activo', true)
+            ->get();
+
+        $directUserIds = collect([
+            $licitacion->asignado_a,
+            $licitacion->ejecutivo_id,
+            $licitacion->created_by,
+        ])
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        $directUsers = $directUserIds->isEmpty()
+            ? collect()
+            : User::query()->whereIn('id', $directUserIds)->where('activo', true)->get();
+
+        $roleUsers
+            ->merge($directUsers)
+            ->unique('id')
+            ->reject(fn (User $user): bool => $excludeUserId !== null && (int) $user->id === $excludeUserId)
+            ->each
+            ->notify($notification);
+    }
+
     private function notifyNewOpportunity(Licitacion $licitacion, ?User $creator): void
     {
         $notification = new NuevaOportunidadDisponibleNotification($licitacion, $creator);
@@ -785,6 +827,33 @@ class LicitacionController extends Controller
             ->get()
             ->each
             ->notify($notification);
+    }
+
+    private function markAsViewed(Licitacion $licitacion, ?User $user): void
+    {
+        if (! $user) {
+            return;
+        }
+
+        LicitacionVista::query()->updateOrCreate(
+            [
+                'licitacion_id' => $licitacion->id,
+                'user_id' => $user->id,
+            ],
+            ['visto_en' => now('America/Lima')]
+        );
+    }
+
+    private function isNewForUser(Licitacion $licitacion, ?User $user): bool
+    {
+        if (! $licitacion->es_nueva || ! $user) {
+            return (bool) $licitacion->es_nueva;
+        }
+
+        return ! LicitacionVista::query()
+            ->where('licitacion_id', $licitacion->id)
+            ->where('user_id', $user->id)
+            ->exists();
     }
 
     /**
