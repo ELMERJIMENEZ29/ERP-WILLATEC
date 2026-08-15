@@ -358,6 +358,8 @@ class HostingController extends Controller
             'renovacion_programada_at' => null,
             'renovacion_programada_por' => null,
         ]);
+
+        $hosting->alertasEnviadas()->delete();
     }
 
     private function notifyAdmins(ServicioRenovacionNotification $notification): void

@@ -54,6 +54,11 @@ class Hosting extends Model
         return $this->hasMany(HostingDocumento::class);
     }
 
+    public function alertasEnviadas(): HasMany
+    {
+        return $this->hasMany(HostingAlertaEnviada::class);
+    }
+
     public function moneda(): BelongsTo
     {
         return $this->belongsTo(Moneda::class);

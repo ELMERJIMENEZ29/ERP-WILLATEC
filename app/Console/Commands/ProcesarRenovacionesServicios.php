@@ -118,6 +118,8 @@ class ProcesarRenovacionesServicios extends Command
             'renovacion_programada_por' => null,
         ]);
 
+        $hosting->alertasEnviadas()->delete();
+
         $this->notifyAdmins(new ServicioRenovacionNotification(
             'hosting',
             $hosting->id,
