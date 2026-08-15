@@ -30,7 +30,10 @@ class HostingController extends Controller
             'clienteRelacionado:id,nombre,ruc,correo',
             'moneda:id,codigo,simbolo',
             'documentos',
+            'alertasEnviadas' => fn ($query) => $query->latest('sent_at'),
         ])
+            ->withCount('alertasEnviadas')
+            ->withMax('alertasEnviadas', 'sent_at')
             ->orderBy('fecha_renovacion')
             ->orderBy('empresa');
 
@@ -300,7 +303,10 @@ class HostingController extends Controller
             'clienteRelacionado:id,nombre,ruc,correo',
             'moneda:id,codigo,simbolo',
             'documentos',
-        ]);
+            'alertasEnviadas' => fn ($query) => $query->latest('sent_at'),
+        ])
+            ->loadCount('alertasEnviadas')
+            ->loadMax('alertasEnviadas', 'sent_at');
     }
 
     private function nullableTrim(mixed $value): ?string
