@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Cliente;
 use App\Models\Licencia;
 use App\Models\LicenciaDocumento;
+use App\Models\User;
+use App\Notifications\ServicioRenovacionNotification;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -106,6 +108,58 @@ class LicenciaController extends Controller
 
         return response()->json([
             'message' => 'Licencia actualizada correctamente',
+            'licencia' => $this->loadLicenciaRelations($licencia->refresh()),
+        ]);
+    }
+
+    public function renovar(Request $request, Licencia $licencia)
+    {
+        $payload = $this->validateRenovacionPayload($request);
+        $meses = $payload['modo'] === 'ANUAL' ? 12 : (int) $payload['meses'];
+        $inicioRenovacion = Carbon::parse($licencia->fecha_renovacion)->addDay();
+
+        if ($inicioRenovacion->lte(Carbon::today('America/Lima'))) {
+            $this->aplicarRenovacion($licencia, $inicioRenovacion, $meses);
+
+            $message = 'Licencia renovada correctamente.';
+            $this->notifyAdmins(new ServicioRenovacionNotification(
+                'licencia',
+                $licencia->id,
+                'Licencia renovada',
+                "Se renovo la licencia {$licencia->producto} de {$licencia->empresa}.",
+                '/servicios/licencias',
+                [
+                    'fecha_inicio' => $inicioRenovacion->toDateString(),
+                    'fecha_renovacion' => $licencia->fresh()->fecha_renovacion?->toDateString(),
+                    'renovacion_meses' => $meses,
+                ]
+            ));
+        } else {
+            $licencia->update([
+                'renovacion_programada' => true,
+                'renovacion_modo' => $payload['modo'],
+                'renovacion_meses' => $meses,
+                'renovacion_programada_para' => $inicioRenovacion->toDateString(),
+                'renovacion_programada_at' => now('America/Lima'),
+                'renovacion_programada_por' => $request->user()?->id,
+            ]);
+
+            $message = 'Se programo la renovacion automatica para cuando venza la licencia.';
+            $this->notifyAdmins(new ServicioRenovacionNotification(
+                'licencia',
+                $licencia->id,
+                'Renovacion de licencia programada',
+                "Se programo la renovacion automatica de {$licencia->producto} de {$licencia->empresa} para el {$inicioRenovacion->format('d/m/Y')}.",
+                '/servicios/licencias',
+                [
+                    'renovacion_programada_para' => $inicioRenovacion->toDateString(),
+                    'renovacion_meses' => $meses,
+                ]
+            ));
+        }
+
+        return response()->json([
+            'message' => $message,
             'licencia' => $this->loadLicenciaRelations($licencia->refresh()),
         ]);
     }
@@ -261,6 +315,39 @@ class LicenciaController extends Controller
             ->addMonthsNoOverflow($meses)
             ->subDay()
             ->toDateString();
+    }
+
+    /**
+     * @return array{modo:string, meses?:int}
+     */
+    private function validateRenovacionPayload(Request $request): array
+    {
+        return $request->validate([
+            'modo' => ['required', Rule::in(['ANUAL', 'MENSUAL'])],
+            'meses' => 'required_if:modo,MENSUAL|nullable|integer|min:1|max:240',
+        ]);
+    }
+
+    private function aplicarRenovacion(Licencia $licencia, Carbon $fechaInicio, int $meses): void
+    {
+        $licencia->update([
+            'fecha_inicio' => $fechaInicio->toDateString(),
+            'fecha_renovacion' => $this->calculateFechaRenovacion($fechaInicio->toDateString(), $meses),
+            'suscripcion_meses' => $meses,
+            'renovacion_programada' => false,
+            'renovacion_modo' => null,
+            'renovacion_meses' => null,
+            'renovacion_programada_para' => null,
+            'renovacion_programada_at' => null,
+            'renovacion_programada_por' => null,
+        ]);
+
+        $licencia->alertasEnviadas()->delete();
+    }
+
+    private function notifyAdmins(ServicioRenovacionNotification $notification): void
+    {
+        User::role(['superadmin', 'admin'])->get()->each->notify($notification);
     }
 
     /**

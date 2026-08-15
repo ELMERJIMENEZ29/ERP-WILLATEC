@@ -118,8 +118,9 @@ class LicitacionController extends Controller
             && ($payload['estado'] ?? null) === 'atendido';
         $canSyncNestedData = $this->isCreator($request, $licitacion) && ! $isPresentationTransition;
         $previousEstado = $licitacion->estado;
+        $previousAsignadoA = $licitacion->asignado_a;
 
-        DB::transaction(function () use ($request, $licitacion, $payload, $canSyncNestedData, $previousEstado): void {
+        DB::transaction(function () use ($request, $licitacion, $payload, $canSyncNestedData, $previousEstado, $previousAsignadoA): void {
             $licitacion->update($payload);
 
             $isProposalPresentation = in_array($previousEstado, ['cotizacion_generada', 'vencida'], true)
@@ -146,6 +147,8 @@ class LicitacionController extends Controller
             if ($canSyncNestedData) {
                 $this->syncNestedData($licitacion, $request);
             }
+
+            $this->appendAutomaticHistory($licitacion->refresh(), $request, $previousEstado, $previousAsignadoA);
         });
 
         if ($previousEstado !== 'atendido' && ($payload['estado'] ?? null) === 'atendido') {
@@ -239,6 +242,13 @@ class LicitacionController extends Controller
         });
 
         if ($this->isApprovedCotizacion($cotizacionOrigen)) {
+            $licitacion->refresh()->historial()->create([
+                'usuario' => 'Sistema',
+                'tipo' => 'cotizacion',
+                'descripcion' => 'Cotizacion '.$cotizacionOrigen->numero.' aprobada y lista para descargar desde el detalle de la oportunidad.',
+                'fecha' => now('America/Lima'),
+            ]);
+
             $this->notifyLicitacionUsers($licitacion->refresh(), $cotizacionOrigen);
         }
 
@@ -434,9 +444,12 @@ class LicitacionController extends Controller
             'archivos' => fn ($query) => $query->latest('created_at'),
             'cotizaciones' => fn ($query) => $query
                 ->with(['cotizacion.modificaciones' => fn ($modificacionQuery) => $modificacionQuery
-                    ->where('estado', CotizacionModificacion::ESTADO_EN_REVISION)
+                    ->whereIn('estado', [
+                        CotizacionModificacion::ESTADO_BORRADOR,
+                        CotizacionModificacion::ESTADO_EN_REVISION,
+                    ])
                     ->latest('submitted_at')
-                    ->latest('id')])
+                    ->latest('id'), 'cotizacion.estadoCotizacion'])
                 ->latest('creado_en')
                 ->latest('id'),
         ];
@@ -551,18 +564,30 @@ class LicitacionController extends Controller
     private function serializeCotizacion(LicitacionCotizacion $cotizacion): array
     {
         $modificacionPendiente = $cotizacion->cotizacion?->modificaciones?->first();
+        $estadoReal = $cotizacion->cotizacion?->estadoCotizacion?->nombre ?? $cotizacion->estado;
+        $estaAprobada = mb_strtolower((string) $estadoReal) === 'aprobada';
+        $puedeDescargarPdf = $estaAprobada && ! $modificacionPendiente;
+        $pdfBloqueoMotivo = null;
+
+        if (! $estaAprobada) {
+            $pdfBloqueoMotivo = 'El PDF se habilitara solo cuando la cotizacion este aprobada.';
+        } elseif ($modificacionPendiente) {
+            $pdfBloqueoMotivo = 'La cotizacion tiene una modificacion pendiente. El PDF se habilitara cuando sea aprobada.';
+        }
 
         return [
             'id' => (string) $cotizacion->id,
             'cotizacionId' => $cotizacion->cotizacion_id,
             'numero' => $cotizacion->numero,
             'fecha' => $this->serializeLimaDateTime($cotizacion->creado_en ?? $cotizacion->created_at),
-            'estado' => $cotizacion->estado,
+            'estado' => $estadoReal,
             'monto' => $cotizacion->monto,
             'moneda' => $cotizacion->moneda,
             'creadoPor' => $cotizacion->creado_por,
             'creadoEn' => $this->serializeLimaDateTime($cotizacion->creado_en ?? $cotizacion->created_at),
             'tieneModificacionPendiente' => (bool) $modificacionPendiente,
+            'puedeDescargarPdf' => $puedeDescargarPdf,
+            'pdfBloqueoMotivo' => $pdfBloqueoMotivo,
             'modificacionPendiente' => $modificacionPendiente ? [
                 'id' => $modificacionPendiente->id,
                 'estado' => $modificacionPendiente->estado,
@@ -778,6 +803,84 @@ class LicitacionController extends Controller
         $cotizacion->loadMissing('estadoCotizacion');
 
         return mb_strtolower((string) $cotizacion->estadoCotizacion?->nombre) === 'aprobada';
+    }
+
+    private function appendAutomaticHistory(Licitacion $licitacion, Request $request, ?string $previousEstado, mixed $previousAsignadoA): void
+    {
+        $usuario = $this->userDisplayName($request->user());
+        $now = now('America/Lima');
+        $nextEstado = (string) $licitacion->estado;
+
+        if ($previousEstado !== $nextEstado) {
+            $descripcion = 'Estado cambiado de '.$this->estadoLabel($previousEstado).' a '.$this->estadoLabel($nextEstado).'.';
+
+            if (in_array($nextEstado, ['perdida', 'no_se_realizara', 'vencida'], true) && $licitacion->motivo_cierre) {
+                $descripcion .= ' Motivo: '.$licitacion->motivo_cierre.'.';
+            }
+
+            $this->createHistoryIfMissing($licitacion, [
+                'fecha' => $now,
+                'usuario' => $usuario,
+                'tipo' => in_array($nextEstado, ['ganada', 'perdida', 'no_se_realizara', 'vencida'], true) ? 'cierre' : 'estado',
+                'descripcion' => $descripcion,
+            ]);
+        }
+
+        $previousAssigned = $previousAsignadoA ? (int) $previousAsignadoA : null;
+        $nextAssigned = $licitacion->asignado_a ? (int) $licitacion->asignado_a : null;
+
+        if ($previousAssigned !== $nextAssigned) {
+            if ($nextAssigned) {
+                $assignedUser = User::find($nextAssigned);
+                $this->createHistoryIfMissing($licitacion, [
+                    'fecha' => $now,
+                    'usuario' => $usuario,
+                    'tipo' => 'responsable',
+                    'descripcion' => 'Oportunidad asignada a '.$this->userDisplayName($assignedUser).'.',
+                ]);
+            } elseif ($previousAssigned) {
+                $previousUser = User::find($previousAssigned);
+                $motivo = $licitacion->comentario_cierre ?: $licitacion->motivo_cierre;
+                $this->createHistoryIfMissing($licitacion, [
+                    'fecha' => $now,
+                    'usuario' => $usuario,
+                    'tipo' => 'responsable',
+                    'descripcion' => 'Oportunidad liberada de '.$this->userDisplayName($previousUser).($motivo ? '. Motivo: '.$motivo.'.' : '.'),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function createHistoryIfMissing(Licitacion $licitacion, array $data): void
+    {
+        $exists = $licitacion->historial()
+            ->where('tipo', $data['tipo'])
+            ->where('descripcion', $data['descripcion'])
+            ->where('usuario', $data['usuario'])
+            ->where('fecha', '>=', now('America/Lima')->subMinutes(5))
+            ->exists();
+
+        if (! $exists) {
+            $licitacion->historial()->create($data);
+        }
+    }
+
+    private function estadoLabel(?string $estado): string
+    {
+        return match ($estado) {
+            'sin_atender' => 'Sin atender',
+            'en_atencion' => 'En atencion',
+            'atendido' => 'Atendido',
+            'cotizacion_generada' => 'Cotizacion generada',
+            'ganada' => 'Ganada',
+            'perdida' => 'Perdida',
+            'no_se_realizara' => 'No se realizara',
+            'vencida' => 'Vencida',
+            default => $estado ?: 'Sin estado',
+        };
     }
 
     private function notifyLicitacionUsers(Licitacion $licitacion, Cotizacion $cotizacion): void

@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Cliente;
 use App\Models\Hosting;
 use App\Models\HostingDocumento;
+use App\Models\User;
+use App\Notifications\ServicioRenovacionNotification;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -107,6 +109,59 @@ class HostingController extends Controller
 
         return response()->json([
             'message' => 'Hosting actualizado correctamente',
+            'hosting' => $this->loadHostingRelations($hosting->refresh()),
+        ]);
+    }
+
+    public function renovar(Request $request, Hosting $hosting)
+    {
+        $payload = $this->validateRenovacionPayload($request);
+        $modo = $payload['modo'];
+        $meses = $modo === 'ANUAL' ? 12 : (int) $payload['meses'];
+        $inicioRenovacion = Carbon::parse($hosting->fecha_renovacion)->addDay();
+
+        if ($inicioRenovacion->lte(Carbon::today('America/Lima'))) {
+            $this->aplicarRenovacion($hosting, $inicioRenovacion, $modo, $meses);
+
+            $message = 'Hosting renovado correctamente.';
+            $this->notifyAdmins(new ServicioRenovacionNotification(
+                'hosting',
+                $hosting->id,
+                'Hosting renovado',
+                "Se renovo el hosting {$hosting->dominio} de {$hosting->empresa}.",
+                '/servicios/hosting',
+                [
+                    'fecha_inicio' => $inicioRenovacion->toDateString(),
+                    'fecha_renovacion' => $hosting->fresh()->fecha_renovacion?->toDateString(),
+                    'renovacion_meses' => $meses,
+                ]
+            ));
+        } else {
+            $hosting->update([
+                'renovacion_programada' => true,
+                'renovacion_modo' => $modo,
+                'renovacion_meses' => $meses,
+                'renovacion_programada_para' => $inicioRenovacion->toDateString(),
+                'renovacion_programada_at' => now('America/Lima'),
+                'renovacion_programada_por' => $request->user()?->id,
+            ]);
+
+            $message = 'Se programo la renovacion automatica para cuando venza el hosting.';
+            $this->notifyAdmins(new ServicioRenovacionNotification(
+                'hosting',
+                $hosting->id,
+                'Renovacion de hosting programada',
+                "Se programo la renovacion automatica de {$hosting->dominio} de {$hosting->empresa} para el {$inicioRenovacion->format('d/m/Y')}.",
+                '/servicios/hosting',
+                [
+                    'renovacion_programada_para' => $inicioRenovacion->toDateString(),
+                    'renovacion_meses' => $meses,
+                ]
+            ));
+        }
+
+        return response()->json([
+            'message' => $message,
             'hosting' => $this->loadHostingRelations($hosting->refresh()),
         ]);
     }
@@ -269,6 +324,45 @@ class HostingController extends Controller
         )
             ->subDay()
             ->toDateString();
+    }
+
+    private function calculateFechaRenovacionMeses(string $fechaInicio, int $meses): string
+    {
+        return Carbon::parse($fechaInicio)
+            ->addMonthsNoOverflow($meses)
+            ->subDay()
+            ->toDateString();
+    }
+
+    /**
+     * @return array{modo:string, meses?:int}
+     */
+    private function validateRenovacionPayload(Request $request): array
+    {
+        return $request->validate([
+            'modo' => ['required', Rule::in(['ANUAL', 'MENSUAL'])],
+            'meses' => 'required_if:modo,MENSUAL|nullable|integer|min:1|max:240',
+        ]);
+    }
+
+    private function aplicarRenovacion(Hosting $hosting, Carbon $fechaInicio, string $modo, int $meses): void
+    {
+        $hosting->update([
+            'fecha_inicio' => $fechaInicio->toDateString(),
+            'fecha_renovacion' => $this->calculateFechaRenovacionMeses($fechaInicio->toDateString(), $meses),
+            'suscripcion' => $modo,
+            'renovacion_programada' => false,
+            'renovacion_modo' => null,
+            'renovacion_meses' => null,
+            'renovacion_programada_para' => null,
+            'renovacion_programada_at' => null,
+            'renovacion_programada_por' => null,
+        ]);
+    }
+
+    private function notifyAdmins(ServicioRenovacionNotification $notification): void
+    {
+        User::role(['superadmin', 'admin'])->get()->each->notify($notification);
     }
 
     /**

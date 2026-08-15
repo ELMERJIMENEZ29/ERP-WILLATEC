@@ -78,6 +78,13 @@ class CotizacionController extends Controller
         $users = User::role(['licitacion', 'superadmin'])->get();
 
         foreach ($licitaciones as $licitacion) {
+            $licitacion->historial()->create([
+                'fecha' => now('America/Lima'),
+                'usuario' => 'Sistema',
+                'tipo' => 'cotizacion',
+                'descripcion' => 'Cotizacion '.$cotizacion->numero.' aprobada y lista para descargar desde el detalle de la oportunidad.',
+            ]);
+
             $users->each->notify(new LicitacionCotizacionListaNotification($licitacion, $cotizacion));
         }
     }
@@ -1194,7 +1201,7 @@ class CotizacionController extends Controller
         ]);
     }
 
-    public function exportarPdf(Cotizacion $cotizacion)
+    public function exportarPdf(Request $request, Cotizacion $cotizacion)
     {
         $cotizacion = Cotizacion::with([
             'cliente',
@@ -1204,7 +1211,12 @@ class CotizacionController extends Controller
             'user.profile',
             'plantilla',
             'moneda',
+            'estadoCotizacion',
         ])->findOrFail($cotizacion->id);
+
+        if ($request->boolean('desde_oportunidad')) {
+            $this->ensureCanExportPdfFromOpportunity($cotizacion);
+        }
 
         // Validar plantilla:
         if (! $cotizacion->plantilla || ! $cotizacion->plantilla->activo) {
@@ -1232,6 +1244,26 @@ class CotizacionController extends Controller
             'Content-Disposition' => $this->buildUtf8AttachmentDisposition($filename),
             'X-Suggested-Filename' => $this->buildAsciiPdfFilenameFallback($filename),
         ]);
+    }
+
+    private function ensureCanExportPdfFromOpportunity(Cotizacion $cotizacion): void
+    {
+        $estado = mb_strtolower((string) $cotizacion->estadoCotizacion?->nombre);
+
+        if ($estado !== 'aprobada') {
+            abort(422, 'La cotizacion vinculada solo puede descargarse desde la oportunidad cuando este aprobada.');
+        }
+
+        $hasPendingModification = $cotizacion->modificaciones()
+            ->whereIn('estado', [
+                CotizacionModificacion::ESTADO_BORRADOR,
+                CotizacionModificacion::ESTADO_EN_REVISION,
+            ])
+            ->exists();
+
+        if ($hasPendingModification) {
+            abort(422, 'La cotizacion tiene una modificacion pendiente. El PDF se habilitara cuando sea aprobada.');
+        }
     }
 
     // =========================

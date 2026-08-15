@@ -26,12 +26,22 @@ class Hosting extends Model
         'contacto',
         'cliente',
         'correo_hosting',
+        'renovacion_programada',
+        'renovacion_modo',
+        'renovacion_meses',
+        'renovacion_programada_para',
+        'renovacion_programada_at',
+        'renovacion_programada_por',
     ];
 
     protected $casts = [
         'precio_sin_igv' => 'decimal:2',
         'fecha_inicio' => 'date:Y-m-d',
         'fecha_renovacion' => 'date:Y-m-d',
+        'renovacion_programada' => 'boolean',
+        'renovacion_meses' => 'integer',
+        'renovacion_programada_para' => 'date:Y-m-d',
+        'renovacion_programada_at' => 'datetime',
     ];
 
     public function clienteRelacionado(): BelongsTo
