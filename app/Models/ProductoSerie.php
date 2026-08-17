@@ -41,6 +41,7 @@ class ProductoSerie extends Model
         'oc_recibida_id',
         'cotizacion_item_id',
         'fecha_salida',
+        'recepcion_item_id',
         'created_by',
     ];
 
@@ -72,6 +73,11 @@ class ProductoSerie extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function recepcionItem(): BelongsTo
+    {
+        return $this->belongsTo(RecepcionItem::class);
     }
 
     public function ocAtencionItems(): BelongsToMany

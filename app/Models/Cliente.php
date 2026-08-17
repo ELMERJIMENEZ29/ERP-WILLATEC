@@ -37,6 +37,16 @@ class Cliente extends Model
         return $this->hasMany(Cotizacion::class);
     }
 
+    public function comprobantes(): HasMany
+    {
+        return $this->hasMany(Comprobante::class);
+    }
+
+    public function cuentasPorCobrar(): HasMany
+    {
+        return $this->hasMany(CuentaPorCobrar::class);
+    }
+
     protected function auditModelName(): string
     {
         return 'Cliente';

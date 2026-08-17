@@ -9,6 +9,7 @@ use App\Models\OcRecibida;
 use App\Models\RequerimientoCompra;
 use App\Services\RequerimientoCompraService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class RequerimientoCompraController extends Controller
 {
@@ -26,7 +27,9 @@ class RequerimientoCompraController extends Controller
             ->with([
                 'ocRecibida:id,numero,cliente_nombre,cotizacion_id',
                 'items.producto:id,nombre,sku,codigo',
-                'items.productoExterno:id,descripcion,codigo,marca',
+                'items.productoExterno:id,descripcion,codigo,marca,costo_base_referencial,moneda_id',
+                'items.cotizacionItem:id,cotizacion_id,costo_base,costo_unitario',
+                'items.cotizacionItem.cotizacion:id,moneda_id',
                 'solicitadoPor:id,nombres,apellidos,email',
                 'asignadoA:id,nombres,apellidos,email',
             ])
@@ -71,14 +74,63 @@ class RequerimientoCompraController extends Controller
         ], 201);
     }
 
+    public function sincronizarOcPendientes(Request $request, RequerimientoCompraService $service)
+    {
+        $validated = $request->validate([
+            'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
+        ]);
+
+        $ocs = OcRecibida::query()
+            ->where('estado', '!=', OcRecibida::ESTADO_CANCELADO)
+            ->whereHas('items', fn ($query) => $query->where('seleccionado', true))
+            ->latest()
+            ->limit($validated['limit'] ?? 200)
+            ->get();
+
+        $generados = 0;
+        $existentes = 0;
+        $omitidos = 0;
+
+        foreach ($ocs as $oc) {
+            $idsAntes = RequerimientoCompra::query()
+                ->where('oc_recibida_id', $oc->id)
+                ->whereIn('estado', RequerimientoCompra::estadosActivos())
+                ->pluck('id')
+                ->all();
+
+            try {
+                $requerimiento = $service->generarDesdeOc($oc, [
+                    'prioridad' => RequerimientoCompra::PRIORIDAD_NORMAL,
+                    'observacion' => "Requerimiento generado automaticamente por faltantes de la OC {$oc->numero}",
+                ], $request);
+
+                if (in_array($requerimiento->id, $idsAntes, true)) {
+                    $existentes++;
+                } else {
+                    $generados++;
+                }
+            } catch (ValidationException) {
+                $omitidos++;
+            }
+        }
+
+        return response()->json([
+            'message' => 'Sincronizacion de faltantes finalizada.',
+            'generados' => $generados,
+            'existentes' => $existentes,
+            'omitidos' => $omitidos,
+        ]);
+    }
+
     public function show(RequerimientoCompra $requerimientoCompra)
     {
         return response()->json([
             'requerimiento' => $requerimientoCompra->load([
                 'items.ocRecibidaItem',
-                'items.cotizacionItem',
+                'items.cotizacionItem:id,cotizacion_id,costo_base,costo_unitario',
+                'items.cotizacionItem.cotizacion:id,moneda_id',
                 'items.producto',
-                'items.productoExterno',
+                'items.productoExterno:id,descripcion,codigo,marca,costo_base_referencial,moneda_id',
                 'ocRecibida',
                 'solicitadoPor:id,nombres,apellidos,email',
                 'asignadoA:id,nombres,apellidos,email',

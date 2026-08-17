@@ -199,9 +199,10 @@ class RequerimientoCompraService
     {
         return [
             'items.ocRecibidaItem',
-            'items.cotizacionItem',
+            'items.cotizacionItem:id,cotizacion_id,costo_base,costo_unitario',
+            'items.cotizacionItem.cotizacion:id,moneda_id',
             'items.producto',
-            'items.productoExterno',
+            'items.productoExterno:id,descripcion,codigo,marca,costo_base_referencial,moneda_id',
             'ocRecibida',
             'solicitadoPor:id,nombres,apellidos,email',
             'asignadoA:id,nombres,apellidos,email',

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class OcEmitidaItem extends Model
@@ -32,6 +33,11 @@ class OcEmitidaItem extends Model
     public function cotizacionItem(): BelongsTo
     {
         return $this->belongsTo(CotizacionItem::class);
+    }
+
+    public function compraItems(): HasMany
+    {
+        return $this->hasMany(CompraItem::class, 'oc_emitida_item_id');
     }
 
     /**

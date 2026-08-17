@@ -16,8 +16,10 @@ use App\Models\ProductoSerie;
 use App\Models\User;
 use App\Notifications\OcRecibidaRegistradaNotification;
 use App\Services\InventarioService;
+use App\Services\RequerimientoCompraService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -224,16 +226,35 @@ class OcRecibidaController extends Controller
             return $ocRecibida->refresh()->load(['items', 'cotizacion.estadoCotizacion']);
         });
 
+        $requerimientoAutomatico = $this->generarRequerimientoCompraAutomatico($ocRecibida, $request);
+
         $this->notifyAdministrators(new OcRecibidaRegistradaNotification($ocRecibida, $request->user()));
 
         return response()->json([
             'message' => 'OC RECIBIDA GUARDADA',
             'oc_recibida' => $ocRecibida,
+            'requerimiento_compra' => $requerimientoAutomatico,
             'cotizacion' => [
                 'id' => $ocRecibida->cotizacion->id,
                 'estado' => $ocRecibida->cotizacion->estadoCotizacion?->nombre,
             ],
         ], 201);
+    }
+
+    private function generarRequerimientoCompraAutomatico(OcRecibida $ocRecibida, Request $request): ?array
+    {
+        try {
+            $service = app(RequerimientoCompraService::class);
+
+            $requerimiento = $service->generarDesdeOc($ocRecibida, [
+                'prioridad' => 'normal',
+                'observacion' => "Requerimiento generado automaticamente por faltantes de la OC {$ocRecibida->numero}",
+            ], $request);
+
+            return $requerimiento->only(['id', 'numero', 'estado', 'origen_tipo']);
+        } catch (ValidationException) {
+            return null;
+        }
     }
 
     public function updateItems(Request $request, OcRecibida $ocRecibida)
@@ -630,10 +651,29 @@ class OcRecibidaController extends Controller
                 continue;
             }
 
+            $cantidadReservar = (float) $item->cantidad_recibida;
+            $producto = Producto::query()->find($productoId);
+
+            if (! $producto) {
+                $item->forceFill(['comprado' => false])->save();
+
+                continue;
+            }
+
+            $stockDisponible = max(0, (float) $producto->stock_disponible);
+
+            if ($stockDisponible <= 0) {
+                $item->forceFill(['comprado' => $this->tieneMovimientoInventario($idempotencyKey)])->save();
+
+                continue;
+            }
+
+            $cantidadReservar = min($cantidadReservar, $stockDisponible);
+
             try {
                 $inventarioService->reservarStock(
                     productoId: (int) $productoId,
-                    cantidad: (float) $item->cantidad_recibida,
+                    cantidad: $cantidadReservar,
                     referenciaTipo: 'oc_recibida',
                     referenciaId: $ocRecibida->id,
                     origen: 'orden_compra',
@@ -645,7 +685,7 @@ class OcRecibidaController extends Controller
                     monedaId: $monedaId
                 );
 
-                $item->forceFill(['comprado' => true])->save();
+                $item->forceFill(['comprado' => $cantidadReservar >= (float) $item->cantidad_recibida])->save();
             } catch (ValidationException) {
                 $item->forceFill(['comprado' => $this->tieneMovimientoInventario($idempotencyKey)])->save();
             }
@@ -653,7 +693,7 @@ class OcRecibidaController extends Controller
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, \App\Models\OcRecibidaItem>  $items
+     * @param  Collection<int, OcRecibidaItem>  $items
      * @return array<string, string>
      */
     private function buildOcStatusPayload(OcRecibida $ocRecibida, $items, string $estadoLegacy): array

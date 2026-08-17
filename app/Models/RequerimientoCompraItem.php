@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class RequerimientoCompraItem extends Model
@@ -49,6 +50,11 @@ class RequerimientoCompraItem extends Model
     public function productoExterno(): BelongsTo
     {
         return $this->belongsTo(ProductoExterno::class);
+    }
+
+    public function compraItems(): HasMany
+    {
+        return $this->hasMany(CompraItem::class, 'requerimiento_compra_item_id');
     }
 
     /**

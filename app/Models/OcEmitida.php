@@ -68,6 +68,11 @@ class OcEmitida extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
+    public function compras(): HasMany
+    {
+        return $this->hasMany(Compra::class);
+    }
+
     /**
      * @return array<int, string>
      */

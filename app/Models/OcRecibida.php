@@ -94,6 +94,16 @@ class OcRecibida extends Model
         return $this->hasMany(RequerimientoCompra::class);
     }
 
+    public function comprobantes(): HasMany
+    {
+        return $this->hasMany(Comprobante::class);
+    }
+
+    public function cuentasPorCobrar(): HasMany
+    {
+        return $this->hasMany(CuentaPorCobrar::class);
+    }
+
     public function documentosAdicionales(): HasMany
     {
         return $this->hasMany(OcDocumentoAdicional::class);

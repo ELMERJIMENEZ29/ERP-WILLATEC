@@ -7,30 +7,31 @@ use App\Models\EstadoCotizacion;
 use App\Models\EstadoCotizacionItem;
 use App\Models\InventarioMovimiento;
 use App\Models\Moneda;
+use App\Models\OcAtencion;
+use App\Models\OcAtencionItem;
 use App\Models\OcRecibida;
+use App\Models\OcRecibidaItem;
 use App\Models\Plantilla;
 use App\Models\Plataforma;
 use App\Models\Producto;
 use App\Models\ProductoExterno;
-use App\Models\OcAtencion;
-use App\Models\OcAtencionItem;
 use App\Models\RequerimientoCompra;
-use App\Services\OcAtencionService;
 use App\Models\TipoCliente;
 use App\Models\User;
 use App\Services\InventarioService;
+use App\Services\OcAtencionService;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
 
-test('genera requerimiento solo por faltante real y no duplica por doble request', function () {
+test('oc recibida genera requerimiento automatico por faltante real y no duplica por doble request', function () {
     $base = crearBaseRequerimientoCompra();
 
     Sanctum::actingAs($base['ventas']);
 
-    $this->postJson('/api/oc-recibidas', [
+    $responseOc = $this->postJson('/api/oc-recibidas', [
         'cotizacion_id' => $base['cotizacion']->id,
         'fecha_recepcion' => '2026-08-12',
         'items' => [
@@ -45,42 +46,31 @@ test('genera requerimiento solo por faltante real y no duplica por doble request
                 'cantidad_recibida' => 2,
             ],
         ],
-    ])->assertCreated();
+    ])
+        ->assertCreated()
+        ->assertJsonPath('requerimiento_compra.origen_tipo', 'oc_cliente');
 
     $oc = OcRecibida::with('items.cotizacionItem')->firstOrFail();
-    $itemInternoOc = $oc->items->firstWhere('cotizacion_item_id', $base['itemInterno']->id);
+    $requerimientoId = $responseOc->json('requerimiento_compra.id');
 
-    app(InventarioService::class)->reservarStock(
-        productoId: $base['producto']->id,
-        cantidad: 4,
-        referenciaTipo: 'oc_recibida',
-        referenciaId: $oc->id,
-        origen: 'orden_compra',
-        idempotencyKey: "oc-recibida:{$oc->id}:reserva:cotizacion-item:{$itemInternoOc->cotizacion_item_id}",
-        createdBy: $base['logistica']->id,
-        observacion: 'Reserva parcial simulada para faltante real'
-    );
+    $requerimiento = RequerimientoCompra::with('items')->findOrFail($requerimientoId);
+    expect($requerimiento->items)->toHaveCount(2);
+    expect((float) $requerimiento->items[0]->cantidad_requerida)->toBe(6.0);
+    expect((float) $requerimiento->items[1]->cantidad_requerida)->toBe(2.0);
 
     Sanctum::actingAs($base['logistica']);
 
     $this->getJson("/api/oc-recibidas/{$oc->id}/requerimientos/faltantes")
         ->assertOk()
-        ->assertJsonPath('faltantes.0.cantidad_solicitada', 10)
-        ->assertJsonPath('faltantes.0.cantidad_cubierta', 4)
-        ->assertJsonPath('faltantes.0.cantidad_faltante', 6)
-        ->assertJsonPath('faltantes.1.cantidad_solicitada', 2)
-        ->assertJsonPath('faltantes.1.cantidad_faltante', 2);
+        ->assertJsonPath('faltantes', []);
 
-    $response = $this->postJson("/api/oc-recibidas/{$oc->id}/requerimientos/generar", [
+    $this->postJson("/api/oc-recibidas/{$oc->id}/requerimientos/generar", [
         'prioridad' => 'alta',
         'observacion' => 'Comprar faltantes',
     ])
         ->assertCreated()
         ->assertJsonPath('requerimiento.origen_tipo', 'oc_cliente')
-        ->assertJsonPath('requerimiento.items.0.cantidad_requerida', '6.00')
-        ->assertJsonPath('requerimiento.items.1.cantidad_requerida', '2.00');
-
-    $requerimientoId = $response->json('requerimiento.id');
+        ->assertJsonPath('requerimiento.id', $requerimientoId);
 
     $this->postJson("/api/oc-recibidas/{$oc->id}/requerimientos/generar", [
         'prioridad' => 'alta',
@@ -113,6 +103,50 @@ test('permite requerimiento manual sin oc recibida', function () {
         ->assertJsonPath('requerimiento.oc_recibida_id', null)
         ->assertJsonPath('requerimiento.items.0.descripcion', 'Producto especial sin catalogo')
         ->assertJsonPath('requerimiento.items.0.cantidad_requerida', '3.00');
+});
+
+test('sincroniza oc historicas pendientes y genera requerimientos por faltantes reales', function () {
+    $base = crearBaseRequerimientoCompra();
+
+    $oc = OcRecibida::create([
+        'numero' => 'OCR-HIST-001',
+        'fecha_recepcion' => '2026-08-12',
+        'estado' => OcRecibida::ESTADO_POR_ENTREGA,
+        'cliente_nombre' => 'Cliente historico',
+        'cliente_ruc' => '12345678901',
+        'cliente_contacto' => '-',
+        'cliente_correo' => 'cliente@example.com',
+        'cotizacion_id' => $base['cotizacion']->id,
+        'cliente_id' => $base['cotizacion']->cliente_id,
+        'user_id' => $base['ventas']->id,
+    ]);
+
+    OcRecibidaItem::create([
+        'oc_recibida_id' => $oc->id,
+        'cotizacion_item_id' => $base['itemExterno']->id,
+        'descripcion' => $base['itemExterno']->descripcion,
+        'codigo' => $base['itemExterno']->codigo,
+        'unidad_medida' => 'UND',
+        'cantidad_cotizada' => 2,
+        'cantidad_recibida' => 2,
+        'seleccionado' => true,
+        'comprado' => false,
+        'entregado' => false,
+    ]);
+
+    Sanctum::actingAs($base['logistica']);
+
+    $this->postJson('/api/requerimientos-compra/sincronizar-oc-pendientes')
+        ->assertOk()
+        ->assertJsonPath('generados', 1);
+
+    $this->postJson('/api/requerimientos-compra/sincronizar-oc-pendientes')
+        ->assertOk()
+        ->assertJsonPath('generados', 0)
+        ->assertJsonPath('existentes', 1);
+
+    expect(RequerimientoCompra::query()->where('oc_recibida_id', $oc->id)->count())->toBe(1);
+    expect((float) RequerimientoCompra::query()->where('oc_recibida_id', $oc->id)->firstOrFail()->items()->first()->cantidad_requerida)->toBe(2.0);
 });
 
 test('descuenta atenciones confirmadas al calcular faltantes de oc', function () {

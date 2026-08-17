@@ -189,7 +189,9 @@ class InventarioService
         ?int $proveedorId = null,
         ?int $monedaId = null,
         ?array $series = null,
-        string $tipoMovimiento = InventarioMovimiento::TIPO_ENTRADA
+        string $tipoMovimiento = InventarioMovimiento::TIPO_ENTRADA,
+        ?int $recepcionItemId = null,
+        ?string $costoTipo = null
     ): Producto {
         if (! in_array($tipoMovimiento, [InventarioMovimiento::TIPO_ENTRADA, InventarioMovimiento::TIPO_DEVOLUCION], true)) {
             throw ValidationException::withMessages([
@@ -217,7 +219,9 @@ class InventarioService
             proveedor: $proveedor,
             proveedorId: $proveedorId,
             monedaId: $monedaId,
-            series: $series
+            series: $series,
+            recepcionItemId: $recepcionItemId,
+            costoTipo: $costoTipo
         );
     }
 
@@ -301,7 +305,9 @@ class InventarioService
         ?array $productoSerieIds = null,
         ?string $salidaSerieEstado = null,
         ?int $ocRecibidaId = null,
-        ?int $cotizacionItemId = null
+        ?int $cotizacionItemId = null,
+        ?int $recepcionItemId = null,
+        ?string $costoTipo = null
     ): Producto {
         return DB::transaction(function () use (
             $productoId,
@@ -328,7 +334,9 @@ class InventarioService
             $productoSerieIds,
             $salidaSerieEstado,
             $ocRecibidaId,
-            $cotizacionItemId
+            $cotizacionItemId,
+            $recepcionItemId,
+            $costoTipo
         ): Producto {
             if ($idempotencyKey) {
                 $movimientoExistente = InventarioMovimiento::query()
@@ -412,7 +420,8 @@ class InventarioService
                     costoUnitario: $costoMovimiento,
                     monedaId: $monedaMovimientoId,
                     fechaDocumento: $fechaDocumento,
-                    createdBy: $createdBy
+                    createdBy: $createdBy,
+                    recepcionItemId: $recepcionItemId
                 )
                 : [];
             $seriesSalida = $salidaCantidad > 0
@@ -436,6 +445,7 @@ class InventarioService
             $movimiento = InventarioMovimiento::create([
                 'producto_id' => $producto->id,
                 'producto_serie_id' => $productoSerieId,
+                'recepcion_item_id' => $recepcionItemId,
                 'tipo_movimiento' => $tipoMovimiento,
                 'cantidad' => $cantidad,
                 'entrada_cantidad' => $entradaCantidad,
@@ -444,6 +454,7 @@ class InventarioService
                 'stock_despues' => (float) $producto->stock_actual,
                 'saldo_cantidad' => (float) $producto->stock_actual,
                 'costo_unitario' => $costoMovimiento,
+                'costo_tipo' => $costoTipo,
                 'moneda_id' => $monedaMovimientoId,
                 'costo_promedio_antes' => $costoPromedioAntes,
                 'costo_promedio_despues' => (float) $producto->costo_promedio,
@@ -538,7 +549,8 @@ class InventarioService
         ?float $costoUnitario,
         ?int $monedaId,
         ?string $fechaDocumento,
-        ?int $createdBy
+        ?int $createdBy,
+        ?int $recepcionItemId = null
     ): array {
         $seriesNormalizadas = collect($series)
             ->map(fn ($serie) => trim((string) $serie))
@@ -559,7 +571,8 @@ class InventarioService
                 $costoUnitario,
                 $monedaId,
                 $fechaDocumento,
-                $createdBy
+                $createdBy,
+                $recepcionItemId
             ): ProductoSerie {
                 return ProductoSerie::query()->updateOrCreate(
                     [
@@ -574,6 +587,7 @@ class InventarioService
                         'moneda_id' => $monedaId,
                         'fecha_ingreso' => $fechaDocumento,
                         'estado' => ProductoSerie::ESTADO_DISPONIBLE,
+                        'recepcion_item_id' => $recepcionItemId,
                         'created_by' => $createdBy,
                     ]
                 );

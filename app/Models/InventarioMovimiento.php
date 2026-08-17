@@ -29,6 +29,7 @@ class InventarioMovimiento extends Model
         'referencia_tipo',
         'referencia_id',
         'oc_atencion_item_id',
+        'recepcion_item_id',
         'origen',
         'observacion',
         'documento_tipo',
@@ -69,6 +70,7 @@ class InventarioMovimiento extends Model
         'stock_despues',
         'saldo_cantidad',
         'costo_unitario',
+        'costo_tipo',
         'moneda_id',
         'costo_promedio_antes',
         'costo_promedio_despues',
@@ -77,6 +79,7 @@ class InventarioMovimiento extends Model
         'referencia_tipo',
         'referencia_id',
         'oc_atencion_item_id',
+        'recepcion_item_id',
         'origen',
         'idempotency_key',
         'observacion',
@@ -129,6 +132,11 @@ class InventarioMovimiento extends Model
     public function ocAtencionItem(): BelongsTo
     {
         return $this->belongsTo(OcAtencionItem::class, 'oc_atencion_item_id');
+    }
+
+    public function recepcionItem(): BelongsTo
+    {
+        return $this->belongsTo(RecepcionItem::class, 'recepcion_item_id');
     }
 
     /**

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Cliente;
+use App\Models\Compra;
 use App\Models\Cotizacion;
 use App\Models\CotizacionItem;
 use App\Models\CotizacionItemProveedor;
@@ -12,6 +13,7 @@ use App\Models\OcRecibida;
 use App\Models\Plantilla;
 use App\Models\Plataforma;
 use App\Models\Producto;
+use App\Models\Proveedor;
 use App\Models\TipoCliente;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
@@ -151,6 +153,181 @@ test('oc emitida se genera desde proveedor de cotizacion con totales y pdf', fun
 
     expect($ocEmitida->pdf_path)->not->toBeNull();
     Storage::disk('public')->assertExists($ocEmitida->pdf_path);
+});
+
+test('logistica crea compra vinculada a oc emitida del mismo proveedor', function () {
+    Storage::fake('public');
+
+    $base = crearCotizacionBase();
+
+    /*
+     * 1. Ventas genera la OC emitida real usando
+     * el flujo que ya existe en el ERP.
+     */
+    Sanctum::actingAs($base['ventas']);
+
+    $responseOc = $this->postJson('/api/oc-emitidas', [
+        'cotizacion_id' => $base['cotizacion']->id,
+        'proveedor' => 'Proveedor A',
+        'fecha_emision' => '2026-08-12',
+        'items' => [
+            [
+                'cotizacion_item_id' => $base['items'][0]->id,
+                'cantidad' => 2,
+                'precio_unitario' => 150,
+            ],
+        ],
+    ])
+        ->assertCreated()
+        ->assertJsonPath('oc_emitida.proveedor', 'Proveedor A');
+
+    $ocEmitidaId = $responseOc->json('oc_emitida.id');
+
+    expect($ocEmitidaId)->not->toBeNull();
+
+    /*
+     * 2. Creamos el proveedor del catálogo.
+     *
+     * Su nombre coincide con el proveedor legacy
+     * almacenado dentro de la OC emitida.
+     */
+    $proveedor = Proveedor::create([
+        'nombre' => 'Proveedor A',
+        'ruc' => '20123456789',
+        'contacto' => 'Compras',
+        'telefono' => '999999999',
+        'correo' => 'proveedor-a@test.com',
+        'activo' => true,
+    ]);
+
+    /*
+     * 3. La operación de compra pertenece a Logística.
+     */
+    $logistica = User::factory()->create();
+    $logistica->assignRole('logistica');
+
+    Sanctum::actingAs($logistica);
+
+    /*
+     * No necesitamos requerimiento en este test.
+     * Esto también prueba que una compra puede
+     * existir independientemente de un requerimiento.
+     */
+    $responseCompra = $this->postJson('/api/compras', [
+        'proveedor_id' => $proveedor->id,
+        'modalidad' => 'oc_proveedor',
+        'oc_emitida_id' => $ocEmitidaId,
+        'items' => [
+            [
+                'descripcion' => 'Laptop Lenovo',
+                'producto_id' => $base['items'][0]->producto_id,
+                'cantidad' => 2,
+                'costo_unitario_estimado' => 150,
+            ],
+        ],
+    ])
+        ->assertCreated()
+        ->assertJsonPath(
+            'modalidad',
+            Compra::MODALIDAD_OC_PROVEEDOR
+        )
+        ->assertJsonPath(
+            'estado',
+            Compra::ESTADO_BORRADOR
+        )
+        ->assertJsonPath(
+            'proveedor_id',
+            $proveedor->id
+        )
+        ->assertJsonPath(
+            'oc_emitida_id',
+            $ocEmitidaId
+        );
+
+    $compraId = $responseCompra->json('id');
+
+    /*
+     * También debe poder confirmarse.
+     */
+    $this->patchJson(
+        "/api/compras/{$compraId}/confirmar"
+    )
+        ->assertOk()
+        ->assertJsonPath(
+            'estado',
+            Compra::ESTADO_CONFIRMADA
+        );
+
+    expect(
+        Compra::findOrFail($compraId)->oc_emitida_id
+    )->toBe($ocEmitidaId);
+});
+
+test('rechaza compra si la oc emitida pertenece a otro proveedor', function () {
+    Storage::fake('public');
+
+    $base = crearCotizacionBase();
+
+    /*
+     * Generamos una OC emitida para Proveedor A.
+     */
+    Sanctum::actingAs($base['ventas']);
+
+    $responseOc = $this->postJson('/api/oc-emitidas', [
+        'cotizacion_id' => $base['cotizacion']->id,
+        'proveedor' => 'Proveedor A',
+        'fecha_emision' => '2026-08-12',
+        'items' => [
+            [
+                'cotizacion_item_id' => $base['items'][0]->id,
+                'cantidad' => 2,
+                'precio_unitario' => 150,
+            ],
+        ],
+    ])->assertCreated();
+
+    $ocEmitidaId = $responseOc->json('oc_emitida.id');
+
+    /*
+     * Pero intentamos crear la compra usando
+     * un proveedor completamente diferente.
+     */
+    $otroProveedor = Proveedor::create([
+        'nombre' => 'Proveedor B',
+        'ruc' => '20987654321',
+        'contacto' => 'Compras',
+        'telefono' => '988888888',
+        'correo' => 'proveedor-b@test.com',
+        'activo' => true,
+    ]);
+
+    $logistica = User::factory()->create();
+    $logistica->assignRole('logistica');
+
+    Sanctum::actingAs($logistica);
+
+    $this->postJson('/api/compras', [
+        'proveedor_id' => $otroProveedor->id,
+        'modalidad' => 'oc_proveedor',
+        'oc_emitida_id' => $ocEmitidaId,
+        'items' => [
+            [
+                'descripcion' => 'Laptop Lenovo',
+                'producto_id' => $base['items'][0]->producto_id,
+                'cantidad' => 2,
+                'costo_unitario_estimado' => 150,
+            ],
+        ],
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(
+            'oc_emitida_id'
+        );
+
+    /*
+     * No debe haberse creado absolutamente ninguna compra.
+     */
+    expect(Compra::query()->count())->toBe(0);
 });
 
 /**
