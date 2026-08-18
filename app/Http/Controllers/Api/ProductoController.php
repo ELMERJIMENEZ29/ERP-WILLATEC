@@ -40,22 +40,24 @@ class ProductoController extends Controller
 
         if ($request->filled('search')) {
             $search = $request->string('search')->toString();
+            $normalizedSearch = mb_strtolower($search, 'UTF-8');
+            $searchLike = "%{$normalizedSearch}%";
 
-            $query->where(function ($query) use ($search): void {
-                $query->where('nombre', 'like', "%{$search}%")
-                    ->orWhere('sku', 'like', "%{$search}%")
-                    ->orWhere('codigo', 'like', "%{$search}%")
-                    ->orWhere('marca', 'like', "%{$search}%")
-                    ->orWhere('modelo', 'like', "%{$search}%")
-                    ->orWhere('serie', 'like', "%{$search}%")
-                    ->orWhere('factura_numero', 'like', "%{$search}%")
-                    ->orWhere('ubicacion_almacen', 'like', "%{$search}%")
-                    ->orWhereHas('categoria', function ($categoriaQuery) use ($search): void {
-                        $categoriaQuery->where('nombre', 'like', "%{$search}%");
+            $query->where(function ($query) use ($searchLike): void {
+                $query->whereRaw('LOWER(nombre) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(sku) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(codigo) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(marca) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(modelo) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(serie) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(factura_numero) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(ubicacion_almacen) LIKE ?', [$searchLike])
+                    ->orWhereHas('categoria', function ($categoriaQuery) use ($searchLike): void {
+                        $categoriaQuery->whereRaw('LOWER(nombre) LIKE ?', [$searchLike]);
                     })
-                    ->orWhereHas('series', function ($seriesQuery) use ($search): void {
-                        $seriesQuery->where('serie', 'like', "%{$search}%")
-                            ->orWhere('factura_numero', 'like', "%{$search}%");
+                    ->orWhereHas('series', function ($seriesQuery) use ($searchLike): void {
+                        $seriesQuery->whereRaw('LOWER(serie) LIKE ?', [$searchLike])
+                            ->orWhereRaw('LOWER(factura_numero) LIKE ?', [$searchLike]);
                     });
             });
         }
