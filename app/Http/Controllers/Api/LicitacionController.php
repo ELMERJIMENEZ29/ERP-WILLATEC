@@ -196,6 +196,33 @@ class LicitacionController extends Controller
         return response()->json($this->serializeComentario($comentario), 201);
     }
 
+    public function addArchivo(Request $request, Licitacion $licitacion)
+    {
+        if (! $this->canManageOpportunityFiles($request, $licitacion)) {
+            abort(403, 'No tienes permiso para subir archivos a esta oportunidad.');
+        }
+
+        $archivoPayload = $request->input('archivo');
+        abort_if(! is_array($archivoPayload), 422, 'Debe adjuntar un archivo valido.');
+        abort_if(empty($archivoPayload['nombre']), 422, 'Debe adjuntar un archivo valido.');
+
+        DB::transaction(function () use ($request, $licitacion, $archivoPayload): void {
+            $archivoPayload['creadoPor'] = $archivoPayload['creadoPor'] ?? $this->userDisplayName($request->user());
+            $archivo = $this->createArchivoFromPayload($licitacion, $archivoPayload, 'adjunto');
+
+            if ($archivo) {
+                $licitacion->historial()->create([
+                    'fecha' => now('America/Lima'),
+                    'usuario' => $this->userDisplayName($request->user()),
+                    'tipo' => 'archivo',
+                    'descripcion' => 'Archivo agregado a la oportunidad: '.$archivo->nombre.'.',
+                ]);
+            }
+        });
+
+        return response()->json($this->serialize($this->loadRelations($licitacion->refresh())), 201);
+    }
+
     public function addCotizacion(Request $request, Licitacion $licitacion)
     {
         $this->ensureAssignedExecutive($request, $licitacion);
@@ -206,13 +233,14 @@ class LicitacionController extends Controller
             'estado' => 'nullable|string|max:80',
             'monto' => 'nullable|numeric|min:0',
             'moneda' => 'nullable|string|max:20',
+            'origen' => ['nullable', Rule::in(['vinculada', 'generada'])],
             'userName' => 'nullable|string|max:255',
         ]);
 
         $cotizacionOrigen = Cotizacion::with(['estadoCotizacion', 'moneda'])->findOrFail($validated['cotizacion_id']);
         $userName = $validated['userName'] ?? $this->userDisplayName($request->user());
 
-        $cotizacion = DB::transaction(function () use ($validated, $licitacion, $cotizacionOrigen, $userName): LicitacionCotizacion {
+        $cotizacion = DB::transaction(function () use ($request, $validated, $licitacion, $cotizacionOrigen, $userName): LicitacionCotizacion {
             $relacion = $licitacion->cotizaciones()->updateOrCreate(
                 ['cotizacion_id' => $cotizacionOrigen->id],
                 [
@@ -220,6 +248,8 @@ class LicitacionController extends Controller
                     'estado' => $validated['estado'] ?? $cotizacionOrigen->estadoCotizacion?->nombre ?? 'registrada',
                     'monto' => $validated['monto'] ?? $cotizacionOrigen->total,
                     'moneda' => $validated['moneda'] ?? $cotizacionOrigen->moneda?->codigo,
+                    'origen' => $validated['origen'] ?? 'vinculada',
+                    'creado_por_id' => $request->user()?->id,
                     'creado_por' => $userName,
                     'creado_en' => now('America/Lima'),
                 ]
@@ -253,6 +283,68 @@ class LicitacionController extends Controller
         }
 
         return response()->json($this->serializeCotizacion($cotizacion), 201);
+    }
+
+    public function deleteArchivo(Request $request, Licitacion $licitacion, LicitacionArchivo $archivo)
+    {
+        abort_if((int) $archivo->licitacion_id !== (int) $licitacion->id, 404);
+
+        if (! $this->canDeleteOwnRecord($request, $archivo->creado_por)) {
+            abort(403, 'Solo puedes eliminar archivos subidos por ti.');
+        }
+
+        DB::transaction(function () use ($request, $licitacion, $archivo): void {
+            $archivoNombre = $archivo->nombre;
+            $archivo->delete();
+
+            $licitacion->historial()->create([
+                'fecha' => now('America/Lima'),
+                'usuario' => $this->userDisplayName($request->user()),
+                'tipo' => 'archivo',
+                'descripcion' => 'Archivo eliminado de la oportunidad: '.$archivoNombre.'.',
+            ]);
+        });
+
+        return response()->json($this->serialize($this->loadRelations($licitacion->refresh())));
+    }
+
+    public function deleteCotizacion(Request $request, Licitacion $licitacion, LicitacionCotizacion $cotizacion)
+    {
+        abort_if((int) $cotizacion->licitacion_id !== (int) $licitacion->id, 404);
+
+        if (($cotizacion->origen ?? 'vinculada') !== 'vinculada') {
+            abort(403, 'Solo se pueden desvincular cotizaciones vinculadas manualmente.');
+        }
+
+        if (! $this->canDeleteOwnRecord($request, $cotizacion->creado_por, $cotizacion->creado_por_id)) {
+            abort(403, 'Solo puedes desvincular cotizaciones que vinculaste.');
+        }
+
+        DB::transaction(function () use ($request, $licitacion, $cotizacion): void {
+            $numero = $cotizacion->numero ?: '#'.$cotizacion->cotizacion_id;
+            $cotizacion->delete();
+
+            $licitacion->loadCount('cotizaciones');
+            $updates = [
+                'modificado_por' => $this->userDisplayName($request->user()),
+                'modificado_en' => now('America/Lima'),
+            ];
+
+            if ((int) $licitacion->cotizaciones_count === 0 && $licitacion->estado === 'cotizacion_generada') {
+                $updates['estado'] = 'en_atencion';
+            }
+
+            $licitacion->update($updates);
+
+            $licitacion->historial()->create([
+                'fecha' => now('America/Lima'),
+                'usuario' => $this->userDisplayName($request->user()),
+                'tipo' => 'cotizacion',
+                'descripcion' => 'Cotizacion '.$numero.' desvinculada de la oportunidad.',
+            ]);
+        });
+
+        return response()->json($this->serialize($this->loadRelations($licitacion->refresh())));
     }
 
     /**
@@ -583,6 +675,8 @@ class LicitacionController extends Controller
             'estado' => $estadoReal,
             'monto' => $cotizacion->monto,
             'moneda' => $cotizacion->moneda,
+            'origen' => $cotizacion->origen ?? 'vinculada',
+            'creadoPorId' => $cotizacion->creado_por_id,
             'creadoPor' => $cotizacion->creado_por,
             'creadoEn' => $this->serializeLimaDateTime($cotizacion->creado_en ?? $cotizacion->created_at),
             'tieneModificacionPendiente' => (bool) $modificacionPendiente,
@@ -697,6 +791,41 @@ class LicitacionController extends Controller
         }
 
         return false;
+    }
+
+    private function canDeleteOwnRecord(Request $request, ?string $createdByName = null, mixed $createdById = null): bool
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($createdById && (int) $createdById === (int) $user->id) {
+            return true;
+        }
+
+        $creator = mb_strtolower(trim((string) $createdByName));
+
+        return $creator !== '' && (
+            $creator === mb_strtolower($this->userDisplayName($user)) ||
+            $creator === mb_strtolower((string) $user->email)
+        );
+    }
+
+    private function canManageOpportunityFiles(Request $request, Licitacion $licitacion): bool
+    {
+        $user = $request->user();
+
+        if (! $user || in_array($licitacion->estado, ['ganada', 'perdida', 'no_se_realizara', 'vencida'], true)) {
+            return false;
+        }
+
+        if ($user->hasRole('superadmin') || $this->isCreator($request, $licitacion)) {
+            return true;
+        }
+
+        return (int) ($licitacion->asignado_a ?: $licitacion->ejecutivo_id) === (int) $user->id;
     }
 
     private function canPresentProposal(Request $request, Licitacion $licitacion): bool

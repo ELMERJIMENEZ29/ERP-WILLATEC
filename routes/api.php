@@ -137,7 +137,10 @@ Route::prefix('licitaciones')
         Route::put('/{licitacion}', [LicitacionController::class, 'update']);
         Route::delete('/{licitacion}', [LicitacionController::class, 'destroy']);
         Route::post('/{licitacion}/comentarios', [LicitacionController::class, 'addComentario']);
+        Route::post('/{licitacion}/archivos', [LicitacionController::class, 'addArchivo']);
         Route::post('/{licitacion}/cotizaciones', [LicitacionController::class, 'addCotizacion']);
+        Route::delete('/{licitacion}/archivos/{archivo}', [LicitacionController::class, 'deleteArchivo']);
+        Route::delete('/{licitacion}/cotizaciones/{cotizacion}', [LicitacionController::class, 'deleteCotizacion']);
     });
 
 Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin'])->group(function () {
