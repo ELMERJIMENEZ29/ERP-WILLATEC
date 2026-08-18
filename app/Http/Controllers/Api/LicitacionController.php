@@ -116,9 +116,16 @@ class LicitacionController extends Controller
         $payload['modificado_en'] = $payload['modificado_en'] ?? now('America/Lima');
         $isPresentationTransition = in_array($licitacion->estado, ['cotizacion_generada', 'vencida'], true)
             && ($payload['estado'] ?? null) === 'atendido';
-        $canSyncNestedData = $this->isCreator($request, $licitacion) && ! $isPresentationTransition;
         $previousEstado = $licitacion->estado;
         $previousAsignadoA = $licitacion->asignado_a;
+        $previousEjecutivoId = $licitacion->ejecutivo_id;
+        $isWorkflowOnlyUpdate = $this->contentFieldsAreUnchanged($licitacion, $payload)
+            && (
+                $previousEstado !== ($payload['estado'] ?? $previousEstado)
+                || (string) ($previousAsignadoA ?? '') !== (string) ($payload['asignado_a'] ?? '')
+                || (string) ($previousEjecutivoId ?? '') !== (string) ($payload['ejecutivo_id'] ?? '')
+            );
+        $canSyncNestedData = $this->isCreator($request, $licitacion) && ! $isPresentationTransition && ! $isWorkflowOnlyUpdate;
 
         DB::transaction(function () use ($request, $licitacion, $payload, $canSyncNestedData, $previousEstado, $previousAsignadoA): void {
             $licitacion->update($payload);
