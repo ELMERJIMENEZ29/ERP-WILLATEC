@@ -106,7 +106,29 @@ class LicitacionController extends Controller
     {
         $this->markAsViewed($licitacion, $request->user());
 
-        return response()->json($this->serialize($this->loadRelations($licitacion)));
+        $includeFileData = ! $request->has('include_file_data') || $request->boolean('include_file_data');
+
+        return response()->json($this->serialize($this->loadRelations($licitacion), true, $includeFileData));
+    }
+
+    public function showByCotizacion(Request $request, Cotizacion $cotizacion)
+    {
+        $licitacion = Licitacion::whereHas('cotizaciones', function ($query) use ($cotizacion): void {
+            $query->where('cotizacion_id', $cotizacion->id);
+        })->first();
+
+        if (! $licitacion) {
+            return response()->json([
+                'message' => 'No hay oportunidad vinculada a esta cotizacion.',
+            ], 404);
+        }
+
+        return response()->json($this->serialize($this->loadRelations($licitacion), true, false));
+    }
+
+    public function showArchivo(LicitacionArchivo $archivo)
+    {
+        return response()->json($this->serializeArchivo($archivo));
     }
 
     public function update(Request $request, Licitacion $licitacion)
@@ -574,7 +596,7 @@ class LicitacionController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function serialize(Licitacion $licitacion, bool $withDetails = true): array
+    private function serialize(Licitacion $licitacion, bool $withDetails = true, bool $includeFileData = true): array
     {
         $tdr = null;
         $archivos = collect();
@@ -584,7 +606,7 @@ class LicitacionController extends Controller
             $archivos = $licitacion->archivos
                 ->where('tipo_archivo', '!=', 'tdr')
                 ->values()
-                ->map(fn (LicitacionArchivo $archivo) => $this->serializeArchivo($archivo));
+                ->map(fn (LicitacionArchivo $archivo) => $this->serializeArchivo($archivo, $includeFileData));
         }
 
         return [
@@ -613,7 +635,7 @@ class LicitacionController extends Controller
             'garantia' => $licitacion->garantia,
             'plazo' => $licitacion->plazo,
             'carpeta_servidor' => $licitacion->carpeta_servidor,
-            'tdr' => $withDetails && $tdr ? $this->serializeArchivo($tdr) : null,
+            'tdr' => $withDetails && $tdr ? $this->serializeArchivo($tdr, $includeFileData) : null,
             'forma_pago' => $licitacion->forma_pago,
             'destino_entrega' => $licitacion->destino_entrega,
             'wherex_id' => $licitacion->wherex_id,
@@ -633,14 +655,14 @@ class LicitacionController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function serializeArchivo(LicitacionArchivo $archivo): array
+    private function serializeArchivo(LicitacionArchivo $archivo, bool $includeData = true): array
     {
         return [
             'id' => (string) $archivo->id,
             'nombre' => $archivo->nombre,
             'tipo' => $archivo->mime_type,
             'tamanio' => $archivo->tamanio,
-            'dataUrl' => $archivo->data_url,
+            'dataUrl' => $includeData ? $archivo->data_url : null,
             'path' => $archivo->path,
             'creadoEn' => $this->serializeLimaDateTime($archivo->creado_en ?? $archivo->created_at),
             'creadoPor' => $archivo->creado_por,

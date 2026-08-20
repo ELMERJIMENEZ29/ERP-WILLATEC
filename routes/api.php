@@ -133,6 +133,8 @@ Route::prefix('licitaciones')
     ->group(function () {
         Route::get('/', [LicitacionController::class, 'index']);
         Route::post('/', [LicitacionController::class, 'store']);
+        Route::get('/por-cotizacion/{cotizacion}', [LicitacionController::class, 'showByCotizacion']);
+        Route::get('/archivos/{archivo}', [LicitacionController::class, 'showArchivo']);
         Route::get('/{licitacion}', [LicitacionController::class, 'show']);
         Route::put('/{licitacion}', [LicitacionController::class, 'update']);
         Route::delete('/{licitacion}', [LicitacionController::class, 'destroy']);
