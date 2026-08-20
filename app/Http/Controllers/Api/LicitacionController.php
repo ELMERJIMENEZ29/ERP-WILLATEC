@@ -172,12 +172,29 @@ class LicitacionController extends Controller
     public function destroy(Request $request, Licitacion $licitacion)
     {
         $this->ensureCreator($request, $licitacion);
+        abort_if(
+            ! $this->canDeleteOpportunity($licitacion),
+            422,
+            'Solo se pueden eliminar oportunidades sin atender, sin responsable y sin cotizacion vinculada o generada.'
+        );
 
         $licitacion->delete();
 
         return response()->json([
             'message' => 'Oportunidad eliminada correctamente',
         ]);
+    }
+
+    private function canDeleteOpportunity(Licitacion $licitacion): bool
+    {
+        $hasAssignedExecutive = (int) ($licitacion->asignado_a ?: $licitacion->ejecutivo_id) > 0;
+        $hasQuote = $licitacion->cotizaciones()->exists()
+            || ! empty($licitacion->cotizacion_id)
+            || ! empty($licitacion->cotizacion_numero);
+
+        return $licitacion->estado === 'sin_atender'
+            && ! $hasAssignedExecutive
+            && ! $hasQuote;
     }
 
     public function addComentario(Request $request, Licitacion $licitacion)

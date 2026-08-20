@@ -1059,15 +1059,17 @@ class CotizacionController extends Controller
 
         $payload = $this->buildCotizacionProposalPayload($request, $modificacion->cotizacion);
 
+        $isAlreadyInReview = $modificacion->estado === CotizacionModificacion::ESTADO_EN_REVISION;
+
         $modificacion->update([
-            'estado' => CotizacionModificacion::ESTADO_BORRADOR,
+            'estado' => $isAlreadyInReview ? CotizacionModificacion::ESTADO_EN_REVISION : CotizacionModificacion::ESTADO_BORRADOR,
             'propuesta' => $payload,
-            'comentario_reenvio_revision' => null,
-            'submitted_at' => null,
+            'comentario_reenvio_revision' => $isAlreadyInReview ? $modificacion->comentario_reenvio_revision : null,
+            'submitted_at' => $isAlreadyInReview ? ($modificacion->submitted_at ?? now()) : null,
         ]);
 
         return response()->json([
-            'message' => 'Modificacion guardada como borrador',
+            'message' => $isAlreadyInReview ? 'Modificacion en revision actualizada' : 'Modificacion guardada como borrador',
             'modificacion' => $modificacion->refresh()->load(['cotizacion', 'solicitante']),
         ]);
     }
@@ -2488,9 +2490,10 @@ class CotizacionController extends Controller
     {
         if (! in_array($modificacion->estado, [
             CotizacionModificacion::ESTADO_BORRADOR,
+            CotizacionModificacion::ESTADO_EN_REVISION,
             CotizacionModificacion::ESTADO_RECHAZADA,
         ], true)) {
-            abort(422, 'La modificacion ya fue enviada a revision y no puede editarse.');
+            abort(422, 'La modificacion ya fue aprobada y no puede editarse.');
         }
 
         if ($request->user()->hasRole('superadmin')) {
