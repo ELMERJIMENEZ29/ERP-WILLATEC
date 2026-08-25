@@ -266,6 +266,8 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     .meta td {
         padding: 1px 3px;
         color: #6B7A99;
+        line-height: 1.25;
+        vertical-align: middle;
     }
 
     .meta .value {

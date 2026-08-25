@@ -191,6 +191,21 @@ class LicitacionController extends Controller
         return response()->json($this->serialize($this->loadRelations($licitacion->refresh())));
     }
 
+    public function registrarVista(Request $request, Licitacion $licitacion)
+    {
+        $user = $request->user();
+        $usuario = $this->userDisplayName($user);
+
+        $this->createHistoryIfMissing($licitacion, [
+            'fecha' => now('America/Lima'),
+            'usuario' => $usuario,
+            'tipo' => 'vista',
+            'descripcion' => 'Oportunidad visualizada.',
+        ]);
+
+        return response()->json($this->serialize($this->loadRelations($licitacion->refresh())));
+    }
+
     public function destroy(Request $request, Licitacion $licitacion)
     {
         $this->ensureCreator($request, $licitacion);

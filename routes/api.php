@@ -124,6 +124,8 @@ Route::post('/upload-imagen', [CotizacionController::class, 'uploadImagen'])
 Route::prefix('productos-externos')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [ProductoExternoController::class, 'index'])
         ->middleware('role:superadmin|ventas');
+    Route::get('/{productoExterno}/historial-cotizaciones', [ProductoExternoController::class, 'historialCotizaciones'])
+        ->middleware('role:superadmin|ventas');
     Route::post('/{productoExterno}/convertir-interno', [ProductoExternoController::class, 'convertirAInterno'])
         ->middleware('role:superadmin|admin|ventas');
 });
@@ -136,6 +138,7 @@ Route::prefix('licitaciones')
         Route::get('/por-cotizacion/{cotizacion}', [LicitacionController::class, 'showByCotizacion']);
         Route::get('/archivos/{archivo}', [LicitacionController::class, 'showArchivo']);
         Route::get('/{licitacion}', [LicitacionController::class, 'show']);
+        Route::post('/{licitacion}/registrar-vista', [LicitacionController::class, 'registrarVista']);
         Route::put('/{licitacion}', [LicitacionController::class, 'update']);
         Route::delete('/{licitacion}', [LicitacionController::class, 'destroy']);
         Route::post('/{licitacion}/comentarios', [LicitacionController::class, 'addComentario']);

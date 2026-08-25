@@ -262,6 +262,8 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     .meta td {
         padding: 1px 3px;
         color: #6B7A99;
+        line-height: 1.25;
+        vertical-align: middle;
     }
 
     .meta .value {
@@ -1043,7 +1045,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                 <div class="section-title">Condiciones comerciales</div>
                 <div class="condition"><span>&rsaquo;</span> Forma de Pago: {{ $formaPago }}{{ $formaPagoCalendario }}</div>
                 <div class="condition"><span>&rsaquo;</span> Incluye entrega en oficinas del cliente, {{ $destinoEntrega }}.</div>
-                <div class="condition"><span>&rsaquo;</span> Precios en {{ $nombreMoneda }} y SI incluyen IGV.</div>
+                <div class="condition"><span>&rsaquo;</span> Precios en {{ $nombreMoneda }} y NO incluyen IGV.</div>
                 <div class="condition"><span>&rsaquo;</span> Precios sujetos a cambio sin previo aviso.</div>
                 <div class="condition"><span>&rsaquo;</span> WILLATEC S.A.C, Incorporado al Régimen de Buenos Contribuyentes Resolución de Intendencia N° 0230050266292 (Emitido - Sunat)</div>
                 <div class="note">
