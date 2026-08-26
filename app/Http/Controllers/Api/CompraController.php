@@ -118,7 +118,7 @@ class CompraController extends Controller
         Compra $compra
     ): JsonResponse {
         return response()->json(
-            $this->compraService->confirmar($compra)
+            $this->compraService->confirmar($compra, $request->user()?->id)
         );
     }
 

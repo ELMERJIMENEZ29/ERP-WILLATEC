@@ -5,7 +5,11 @@ namespace App\Services;
 use App\Models\Compra;
 use App\Models\CompraItem;
 use App\Models\OcEmitida;
+use App\Models\Producto;
+use App\Models\ProductoExterno;
 use App\Models\Proveedor;
+use App\Models\RecepcionCompra;
+use App\Models\RecepcionItem;
 use App\Models\RequerimientoCompra;
 use App\Models\RequerimientoCompraItem;
 use Illuminate\Support\Facades\DB;
@@ -72,14 +76,11 @@ class CompraService
                         ]);
                     }
 
-                    $this->validarCantidadDisponibleParaCompra(
-                        $requerimientoItem,
-                        (float) $itemData['cantidad']
-                    );
-
                     $requerimientosAfectados[] =
                         $requerimientoItem->requerimiento_compra_id;
                 }
+
+                $cantidadSolicitada = (float) $itemData['cantidad'];
 
                 $descripcion = $itemData['descripcion']
                     ?? $requerimientoItem?->descripcion;
@@ -90,33 +91,52 @@ class CompraService
                     ]);
                 }
 
-                CompraItem::create([
-                    'compra_id' => $compra->id,
+                $cantidadVinculada = $requerimientoItem
+                    ? $this->cantidadVinculableParaCompra($requerimientoItem, $cantidadSolicitada)
+                    : $cantidadSolicitada;
+                $cantidadExtra = $requerimientoItem
+                    ? max(0, $cantidadSolicitada - $cantidadVinculada)
+                    : 0;
 
-                    'requerimiento_compra_item_id' => $requerimientoItem?->id,
+                if ($cantidadVinculada > 0) {
+                    CompraItem::create([
+                        'compra_id' => $compra->id,
+                        'requerimiento_compra_item_id' => $requerimientoItem?->id,
+                        'oc_emitida_item_id' => $itemData['oc_emitida_item_id'] ?? null,
+                        'producto_id' => $itemData['producto_id']
+                            ?? $requerimientoItem?->producto_id,
+                        'producto_externo_id' => $itemData['producto_externo_id']
+                            ?? $requerimientoItem?->producto_externo_id,
+                        'descripcion' => $descripcion,
+                        'cantidad' => $cantidadVinculada,
+                        'cantidad_recibida' => 0,
+                        'costo_unitario_estimado' => $itemData['costo_unitario_estimado'] ?? null,
+                        'moneda_id' => $itemData['moneda_id']
+                            ?? $data['moneda_id']
+                            ?? null,
+                        'estado' => CompraItem::ESTADO_PENDIENTE,
+                    ]);
+                }
 
-                    'oc_emitida_item_id' => $itemData['oc_emitida_item_id'] ?? null,
-
-                    'producto_id' => $itemData['producto_id']
-                        ?? $requerimientoItem?->producto_id,
-
-                    'producto_externo_id' => $itemData['producto_externo_id']
-                        ?? $requerimientoItem?->producto_externo_id,
-
-                    'descripcion' => $descripcion,
-
-                    'cantidad' => $itemData['cantidad'],
-
-                    'cantidad_recibida' => 0,
-
-                    'costo_unitario_estimado' => $itemData['costo_unitario_estimado'] ?? null,
-
-                    'moneda_id' => $itemData['moneda_id']
-                        ?? $data['moneda_id']
-                        ?? null,
-
-                    'estado' => CompraItem::ESTADO_PENDIENTE,
-                ]);
+                if ($cantidadExtra > 0) {
+                    CompraItem::create([
+                        'compra_id' => $compra->id,
+                        'requerimiento_compra_item_id' => null,
+                        'oc_emitida_item_id' => $itemData['oc_emitida_item_id'] ?? null,
+                        'producto_id' => $itemData['producto_id']
+                            ?? $requerimientoItem?->producto_id,
+                        'producto_externo_id' => $itemData['producto_externo_id']
+                            ?? $requerimientoItem?->producto_externo_id,
+                        'descripcion' => $descripcion.' - adicional para stock',
+                        'cantidad' => $cantidadExtra,
+                        'cantidad_recibida' => 0,
+                        'costo_unitario_estimado' => $itemData['costo_unitario_estimado'] ?? null,
+                        'moneda_id' => $itemData['moneda_id']
+                            ?? $data['moneda_id']
+                            ?? null,
+                        'estado' => CompraItem::ESTADO_PENDIENTE,
+                    ]);
+                }
             }
 
             $this->recalcularTotales($compra);
@@ -141,9 +161,9 @@ class CompraService
      * Aquí recién afecta cantidad_comprada.
      * NO afecta stock.
      */
-    public function confirmar(Compra $compra): Compra
+    public function confirmar(Compra $compra, ?int $userId = null): Compra
     {
-        return DB::transaction(function () use ($compra) {
+        return DB::transaction(function () use ($compra, $userId) {
 
             $compra = Compra::query()
                 ->lockForUpdate()
@@ -216,12 +236,11 @@ class CompraService
                 $cantidadRequerida =
                     (float) $requerimientoItem->cantidad_requerida;
 
-                if (
-                    $compradoAnteriormente + $cantidadEstaCompra
-                    > $cantidadRequerida + 0.00001
-                ) {
+                $cantidadCubierta = min($cantidadEstaCompra, max(0, $cantidadRequerida - $compradoAnteriormente));
+
+                if ($cantidadCubierta <= 0 && $cantidadEstaCompra <= 0) {
                     throw ValidationException::withMessages([
-                        'items' => "La compra supera la cantidad pendiente del requerimiento item {$requerimientoItem->id}.",
+                        'items' => "La compra no contiene cantidad valida para el requerimiento item {$requerimientoItem->id}.",
                     ]);
                 }
             }
@@ -233,6 +252,8 @@ class CompraService
             }
 
             $compra->save();
+
+            $this->crearRecepcionBorradorPendiente($compra, $userId);
 
             $requerimientosAfectados = [];
 
@@ -258,8 +279,173 @@ class CompraService
                 'moneda',
                 'ocEmitida',
                 'creadoPor',
+                'recepciones',
             ]);
         });
+    }
+
+    private function crearRecepcionBorradorPendiente(Compra $compra, ?int $userId = null): void
+    {
+        $compra->loadMissing(['items', 'proveedor']);
+
+        if (
+            $compra->recepciones()
+                ->where('estado', RecepcionCompra::ESTADO_BORRADOR)
+                ->exists()
+        ) {
+            return;
+        }
+
+        $itemsPendientes = $compra->items
+            ->map(function (CompraItem $item): array {
+                $pendiente = max(0, (float) $item->cantidad - (float) $item->cantidad_recibida);
+
+                return [
+                    'item' => $item,
+                    'pendiente' => round($pendiente, 2),
+                ];
+            })
+            ->filter(fn (array $row): bool => $row['pendiente'] > 0)
+            ->values();
+
+        if ($itemsPendientes->isEmpty()) {
+            return;
+        }
+
+        $recepcion = RecepcionCompra::create([
+            'numero' => $this->generarNumeroRecepcion(),
+            'compra_id' => $compra->id,
+            'proveedor_id' => $compra->proveedor_id,
+            'fecha_recepcion' => now()->toDateString(),
+            'estado' => RecepcionCompra::ESTADO_BORRADOR,
+            'observacion' => 'Borrador generado automaticamente al confirmar compra.',
+            'recibido_por' => $userId,
+        ]);
+
+        foreach ($itemsPendientes as $row) {
+            /** @var CompraItem $item */
+            $item = $row['item'];
+            $productoId = $this->productoInternoParaRecepcion($item, $compra);
+
+            if ($productoId <= 0) {
+                throw ValidationException::withMessages([
+                    'producto_id' => "No se pudo resolver el producto interno para {$item->descripcion}.",
+                ]);
+            }
+
+            RecepcionItem::create([
+                'recepcion_compra_id' => $recepcion->id,
+                'compra_item_id' => $item->id,
+                'producto_id' => $productoId,
+                'descripcion' => $item->descripcion,
+                'cantidad' => $row['pendiente'],
+                'costo_unitario_provisional' => $item->costo_unitario_estimado,
+                'moneda_id' => $item->moneda_id ?? $compra->moneda_id,
+                'estado' => RecepcionItem::ESTADO_PENDIENTE,
+            ]);
+        }
+    }
+
+    private function productoInternoParaRecepcion(CompraItem $compraItem, Compra $compra): int
+    {
+        if ($compraItem->producto_id) {
+            return (int) $compraItem->producto_id;
+        }
+
+        if (! $compraItem->producto_externo_id) {
+            return 0;
+        }
+
+        $externo = ProductoExterno::query()
+            ->lockForUpdate()
+            ->find($compraItem->producto_externo_id);
+
+        if (! $externo) {
+            return 0;
+        }
+
+        if ($externo->producto_id) {
+            $compraItem->producto_id = $externo->producto_id;
+            $compraItem->save();
+
+            return (int) $externo->producto_id;
+        }
+
+        $codigo = trim((string) ($externo->codigo ?: ''));
+        $productoExistente = null;
+
+        if ($codigo !== '') {
+            $productoExistente = Producto::query()
+                ->where(function ($query) use ($codigo): void {
+                    $query->where('sku', $codigo)
+                        ->orWhere('codigo', $codigo);
+                })
+                ->first();
+        }
+
+        $costo = $compraItem->costo_unitario_estimado ?? 0;
+        $producto = $productoExistente ?: Producto::create([
+            'nombre' => $externo->descripcion ?: $compraItem->descripcion,
+            'sku' => $this->generarSkuProductoInterno($codigo),
+            'codigo' => $codigo !== '' ? $codigo : null,
+            'marca' => $externo->marca,
+            'descripcion' => $externo->descripcion ?: $compraItem->descripcion,
+            'tipo_producto' => 'stock',
+            'controla_stock' => true,
+            'stock_actual' => 0,
+            'stock_reservado' => 0,
+            'stock_disponible' => 0,
+            'stock_minimo' => 0,
+            'stock' => 0,
+            'costo_unitario' => $costo,
+            'costo_promedio' => $costo,
+            'valor_stock' => 0,
+            'precio_venta' => 0,
+            'precio_referencial' => $externo->costo_base_referencial,
+            'unidad_medida' => $externo->unidad_medida,
+            'moneda_id' => $compraItem->moneda_id ?? $compra->moneda_id ?? $externo->moneda_id,
+            'imagen' => $externo->imagen,
+            'activo' => true,
+            'estado' => 'NUEVO',
+        ]);
+
+        $externo->producto_id = $producto->id;
+        $externo->save();
+
+        $compraItem->producto_id = $producto->id;
+        $compraItem->save();
+
+        return (int) $producto->id;
+    }
+
+    private function generarSkuProductoInterno(?string $codigo): string
+    {
+        $base = trim((string) $codigo);
+
+        if ($base !== '' && ! Producto::query()->where('sku', $base)->exists()) {
+            return $base;
+        }
+
+        $next = (int) (Producto::query()->max('id') ?? 0) + 1;
+
+        do {
+            $sku = 'STK-'.str_pad((string) $next, 6, '0', STR_PAD_LEFT);
+            $next++;
+        } while (Producto::query()->where('sku', $sku)->exists());
+
+        return $sku;
+    }
+
+    private function generarNumeroRecepcion(): string
+    {
+        $next = (int) (RecepcionCompra::query()->max('id') ?? 0) + 1;
+
+        do {
+            $numero = 'RCP-'.str_pad((string) $next, 6, '0', STR_PAD_LEFT);
+            $next++;
+        } while (RecepcionCompra::query()->where('numero', $numero)->exists());
+
+        return $numero;
     }
 
     /**
@@ -438,10 +624,10 @@ class CompraService
      * De esta forma tampoco podemos crear varios borradores
      * que juntos superen el requerimiento.
      */
-    private function validarCantidadDisponibleParaCompra(
+    private function cantidadVinculableParaCompra(
         RequerimientoCompraItem $item,
         float $cantidadNueva
-    ): void {
+    ): float {
         if ($cantidadNueva <= 0) {
             throw ValidationException::withMessages([
                 'cantidad' => 'La cantidad de compra debe ser mayor que cero.',
@@ -466,14 +652,9 @@ class CompraService
         $cantidadRequerida =
             (float) $item->cantidad_requerida;
 
-        if (
-            $cantidadComprometida + $cantidadNueva
-            > $cantidadRequerida + 0.00001
-        ) {
-            throw ValidationException::withMessages([
-                'cantidad' => 'La cantidad supera el saldo disponible del requerimiento.',
-            ]);
-        }
+        $saldoRequerimiento = max(0, $cantidadRequerida - $cantidadComprometida);
+
+        return min($cantidadNueva, $saldoRequerimiento);
     }
 
     private function cantidadCompradaConfirmada(
@@ -510,7 +691,7 @@ class CompraService
         $cantidadRequerida =
             (float) $item->cantidad_requerida;
 
-        $item->cantidad_comprada = $cantidadComprada;
+        $item->cantidad_comprada = min($cantidadComprada, $cantidadRequerida);
 
         if (
             $cantidadComprada >=

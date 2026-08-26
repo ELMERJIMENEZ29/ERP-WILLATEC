@@ -204,10 +204,30 @@ class RecepcionCompraService
             $seriesPorItem = collect($data['items'] ?? [])
                 ->keyBy(fn (array $item): int => (int) $item['recepcion_item_id']);
 
+            $itemsConfirmados = 0;
+
             foreach ($recepcion->items as $item) {
+                $itemPayload = $seriesPorItem->get($item->id);
+                $cantidadConfirmada = array_key_exists('cantidad', $itemPayload ?? [])
+                    ? round((float) $itemPayload['cantidad'], 2)
+                    : (float) $item->cantidad;
+
+                if ($cantidadConfirmada <= 0) {
+                    $item->forceFill([
+                        'cantidad' => 0,
+                        'estado' => RecepcionItem::ESTADO_CANCELADO,
+                    ])->save();
+
+                    continue;
+                }
+
+                if (abs($cantidadConfirmada - (float) $item->cantidad) > 0.00001) {
+                    $item->forceFill(['cantidad' => $cantidadConfirmada])->save();
+                }
+
                 $this->validarCantidadDisponibleRecepcion($item->compraItem, (float) $item->cantidad, $recepcion->id);
 
-                $series = $seriesPorItem->get($item->id)['series'] ?? [];
+                $series = $itemPayload['series'] ?? [];
                 $this->validarSeries($item, $series);
 
                 $idempotencyKey = "recepcion-compra:{$recepcion->id}:item:{$item->id}:entrada";
@@ -241,6 +261,14 @@ class RecepcionCompraService
                     'estado' => RecepcionItem::ESTADO_CONFIRMADO,
                     'inventario_movimiento_id' => $movimiento?->id,
                 ])->save();
+
+                $itemsConfirmados++;
+            }
+
+            if ($itemsConfirmados === 0) {
+                throw ValidationException::withMessages([
+                    'items' => 'Debes confirmar al menos un item con cantidad recibida mayor que cero.',
+                ]);
             }
 
             $recepcion->forceFill([
