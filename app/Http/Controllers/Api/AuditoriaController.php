@@ -278,7 +278,7 @@ class AuditoriaController extends Controller
                 'email' => $activity->causer?->email,
             ],
             'cambios' => $this->formatChanges($attributes, $old),
-            'created_at' => $activity->created_at?->toISOString(),
+            'created_at' => $activity->created_at?->copy()->timezone('America/Lima')->toIso8601String(),
         ];
     }
 

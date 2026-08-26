@@ -20,6 +20,8 @@ class LicitacionCotizacion extends Model
         'estado',
         'monto',
         'moneda',
+        'origen',
+        'creado_por_id',
         'creado_por',
         'creado_en',
     ];
@@ -37,6 +39,11 @@ class LicitacionCotizacion extends Model
     public function cotizacion(): BelongsTo
     {
         return $this->belongsTo(Cotizacion::class);
+    }
+
+    public function creador(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'creado_por_id');
     }
 
     protected function auditModelName(): string

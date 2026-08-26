@@ -40,22 +40,24 @@ class ProductoController extends Controller
 
         if ($request->filled('search')) {
             $search = $request->string('search')->toString();
+            $normalizedSearch = mb_strtolower($search, 'UTF-8');
+            $searchLike = "%{$normalizedSearch}%";
 
-            $query->where(function ($query) use ($search): void {
-                $query->where('nombre', 'like', "%{$search}%")
-                    ->orWhere('sku', 'like', "%{$search}%")
-                    ->orWhere('codigo', 'like', "%{$search}%")
-                    ->orWhere('marca', 'like', "%{$search}%")
-                    ->orWhere('modelo', 'like', "%{$search}%")
-                    ->orWhere('serie', 'like', "%{$search}%")
-                    ->orWhere('factura_numero', 'like', "%{$search}%")
-                    ->orWhere('ubicacion_almacen', 'like', "%{$search}%")
-                    ->orWhereHas('categoria', function ($categoriaQuery) use ($search): void {
-                        $categoriaQuery->where('nombre', 'like', "%{$search}%");
+            $query->where(function ($query) use ($searchLike): void {
+                $query->whereRaw('LOWER(nombre) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(sku) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(codigo) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(marca) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(modelo) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(serie) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(factura_numero) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(ubicacion_almacen) LIKE ?', [$searchLike])
+                    ->orWhereHas('categoria', function ($categoriaQuery) use ($searchLike): void {
+                        $categoriaQuery->whereRaw('LOWER(nombre) LIKE ?', [$searchLike]);
                     })
-                    ->orWhereHas('series', function ($seriesQuery) use ($search): void {
-                        $seriesQuery->where('serie', 'like', "%{$search}%")
-                            ->orWhere('factura_numero', 'like', "%{$search}%");
+                    ->orWhereHas('series', function ($seriesQuery) use ($searchLike): void {
+                        $seriesQuery->whereRaw('LOWER(serie) LIKE ?', [$searchLike])
+                            ->orWhereRaw('LOWER(factura_numero) LIKE ?', [$searchLike]);
                     });
             });
         }
@@ -104,7 +106,28 @@ class ProductoController extends Controller
             $producto->factura_numero = $producto->ultimaEntradaConFactura->documento_numero;
         }
 
+        $this->applySeriesStockSnapshot($producto);
+
         return $producto;
+    }
+
+    private function applySeriesStockSnapshot(Producto $producto): void
+    {
+        if (! $producto->relationLoaded('series') || $producto->series->isEmpty()) {
+            return;
+        }
+
+        $stockActual = $producto->series
+            ->whereIn('estado', [ProductoSerie::ESTADO_DISPONIBLE, ProductoSerie::ESTADO_RESERVADO])
+            ->count();
+        $stockReservado = $producto->series
+            ->where('estado', ProductoSerie::ESTADO_RESERVADO)
+            ->count();
+
+        $producto->stock_actual = $stockActual;
+        $producto->stock_reservado = $stockReservado;
+        $producto->stock_disponible = max(0, $stockActual - $stockReservado);
+        $producto->stock = $stockActual;
     }
 
     // Crear producto
@@ -170,6 +193,7 @@ class ProductoController extends Controller
 
         $producto = Producto::findOrFail($id);
         $series = $this->normalizarSeries($request->input('series', []));
+        $tieneHistorialInventario = $producto->inventarioMovimientos()->exists() || $producto->series()->exists();
 
         $data = $request->only([
             'nombre',
@@ -199,6 +223,16 @@ class ProductoController extends Controller
             'categoria_id',
         ]);
 
+        if ($tieneHistorialInventario) {
+            unset(
+                $data['stock_actual'],
+                $data['stock_reservado'],
+                $data['stock_minimo'],
+                $data['stock'],
+                $data['valor_stock']
+            );
+        }
+
         if (! empty($series) && empty($data['serie'])) {
             $data['serie'] = $series[0];
         }
@@ -207,7 +241,7 @@ class ProductoController extends Controller
             $data['activo'] = filter_var($request->activo, FILTER_VALIDATE_BOOLEAN);
         }
 
-        if ($request->filled('stock_actual') || $request->filled('stock_reservado') || $request->filled('stock')) {
+        if (! $tieneHistorialInventario && ($request->filled('stock_actual') || $request->filled('stock_reservado') || $request->filled('stock'))) {
             $stockActual = (float) ($data['stock_actual'] ?? $request->input('stock', $producto->stock_actual ?? 0));
             $stockReservado = (float) ($data['stock_reservado'] ?? $producto->stock_reservado ?? 0);
 
@@ -222,7 +256,9 @@ class ProductoController extends Controller
         }
 
         if (array_key_exists('costo_promedio', $data) || array_key_exists('stock_actual', $data)) {
-            $stockActual = (float) ($data['stock_actual'] ?? $producto->stock_actual ?? 0);
+            $stockActual = $tieneHistorialInventario
+                ? (float) $producto->stock_actual
+                : (float) ($data['stock_actual'] ?? $producto->stock_actual ?? 0);
             $costoPromedio = (float) ($data['costo_promedio'] ?? $producto->costo_promedio ?? $producto->costo_unitario ?? 0);
             $data['valor_stock'] = round($stockActual * $costoPromedio, 2);
         }
@@ -237,6 +273,7 @@ class ProductoController extends Controller
 
         $producto->update($data);
         $this->syncSeriesProducto($producto, $series);
+        $this->persistSeriesStockSnapshot($producto);
         $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series']);
 
         return response()->json([
@@ -338,6 +375,29 @@ class ProductoController extends Controller
                 'created_by' => auth()->id(),
             ]);
         }
+    }
+
+    private function persistSeriesStockSnapshot(Producto $producto): void
+    {
+        if (! $producto->series()->exists()) {
+            return;
+        }
+
+        $stockActual = $producto->series()
+            ->whereIn('estado', [ProductoSerie::ESTADO_DISPONIBLE, ProductoSerie::ESTADO_RESERVADO])
+            ->count();
+        $stockReservado = $producto->series()
+            ->where('estado', ProductoSerie::ESTADO_RESERVADO)
+            ->count();
+        $costoPromedio = (float) ($producto->costo_promedio ?? $producto->costo_unitario ?? 0);
+
+        $producto->forceFill([
+            'stock_actual' => $stockActual,
+            'stock_reservado' => $stockReservado,
+            'stock_disponible' => max(0, $stockActual - $stockReservado),
+            'stock' => $stockActual,
+            'valor_stock' => round($stockActual * $costoPromedio, 2),
+        ])->save();
     }
 
     private function ensureCanManageInternalProducts(Request $request): void

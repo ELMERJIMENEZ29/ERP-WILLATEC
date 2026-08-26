@@ -130,6 +130,8 @@ Route::post('/upload-imagen', [CotizacionController::class, 'uploadImagen'])
 Route::prefix('productos-externos')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [ProductoExternoController::class, 'index'])
         ->middleware('role:superadmin|ventas');
+    Route::get('/{productoExterno}/historial-cotizaciones', [ProductoExternoController::class, 'historialCotizaciones'])
+        ->middleware('role:superadmin|ventas');
     Route::post('/{productoExterno}/convertir-interno', [ProductoExternoController::class, 'convertirAInterno'])
         ->middleware('role:superadmin|admin|ventas');
 });
@@ -139,11 +141,17 @@ Route::prefix('licitaciones')
     ->group(function () {
         Route::get('/', [LicitacionController::class, 'index']);
         Route::post('/', [LicitacionController::class, 'store']);
+        Route::get('/por-cotizacion/{cotizacion}', [LicitacionController::class, 'showByCotizacion']);
+        Route::get('/archivos/{archivo}', [LicitacionController::class, 'showArchivo']);
         Route::get('/{licitacion}', [LicitacionController::class, 'show']);
+        Route::post('/{licitacion}/registrar-vista', [LicitacionController::class, 'registrarVista']);
         Route::put('/{licitacion}', [LicitacionController::class, 'update']);
         Route::delete('/{licitacion}', [LicitacionController::class, 'destroy']);
         Route::post('/{licitacion}/comentarios', [LicitacionController::class, 'addComentario']);
+        Route::post('/{licitacion}/archivos', [LicitacionController::class, 'addArchivo']);
         Route::post('/{licitacion}/cotizaciones', [LicitacionController::class, 'addCotizacion']);
+        Route::delete('/{licitacion}/archivos/{archivo}', [LicitacionController::class, 'deleteArchivo']);
+        Route::delete('/{licitacion}/cotizaciones/{cotizacion}', [LicitacionController::class, 'deleteCotizacion']);
     });
 
 Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin'])->group(function () {
@@ -433,6 +441,7 @@ Route::prefix('licencias')->middleware(['auth:sanctum', 'token.idle', 'role:supe
     Route::post('/', [LicenciaController::class, 'store']);
     Route::post('/import/preview', [LicenciaController::class, 'previewImport']);
     Route::post('/import/confirm', [LicenciaController::class, 'confirmImport']);
+    Route::post('/{licencia}/renovar', [LicenciaController::class, 'renovar']);
     Route::post('/{licencia}/documentos', [LicenciaController::class, 'documentos']);
     Route::delete('/{licencia}/documentos/{documento}', [LicenciaController::class, 'eliminarDocumento']);
     Route::get('/{licencia}', [LicenciaController::class, 'show']);
@@ -445,6 +454,7 @@ Route::prefix('hostings')->middleware(['auth:sanctum', 'token.idle', 'role:super
     Route::post('/', [HostingController::class, 'store']);
     Route::post('/import/preview', [HostingController::class, 'previewImport']);
     Route::post('/import/confirm', [HostingController::class, 'confirmImport']);
+      Route::post('/{hosting}/renovar', [HostingController::class, 'renovar']);
     Route::post('/{hosting}/documentos', [HostingController::class, 'documentos']);
     Route::delete('/{hosting}/documentos/{documento}', [HostingController::class, 'eliminarDocumento']);
     Route::get('/{hosting}', [HostingController::class, 'show']);

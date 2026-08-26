@@ -12,6 +12,7 @@ use App\Models\ProductoExterno;
 use App\Services\InventarioService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -73,6 +74,72 @@ class ProductoExternoController extends Controller
                 ->latest()
                 ->paginate($request->integer('per_page', 10))
         );
+    }
+
+    public function historialCotizaciones(ProductoExterno $productoExterno)
+    {
+        $items = CotizacionItem::query()
+            ->with([
+                'cotizacion:id,numero,titulo,fecha,user_id,cliente_id,cliente_nombre,moneda_id,estado_cotizacion_id',
+                'cotizacion.user:id,nombres,apellidos,email',
+                'cotizacion.cliente:id,nombre',
+                'cotizacion.moneda:id,codigo,simbolo',
+                'cotizacion.estadoCotizacion:id,nombre',
+                'proveedores:id,cotizacion_item_id,nombre,link,precio,notas,orden',
+            ])
+            ->where('producto_externo_id', $productoExterno->id)
+            ->latest('created_at')
+            ->limit(50)
+            ->get()
+            ->map(function (CotizacionItem $item): array {
+                $cotizacion = $item->cotizacion;
+                $user = $cotizacion?->user;
+                $ejecutivo = trim((string) ($user?->nombres ?? '').' '.(string) ($user?->apellidos ?? ''));
+
+                return [
+                    'id' => $item->id,
+                    'descripcion' => $item->descripcion,
+                    'cantidad' => $item->cantidad,
+                    'costo_base' => $item->costo_base,
+                    'costo_unitario' => $item->costo_unitario,
+                    'precio_venta' => $item->precio_venta,
+                    'subtotal' => $item->subtotal,
+                    'ganancia' => $item->ganancia,
+                    'margen' => $item->margen,
+                    'created_at' => optional($item->created_at)->toIso8601String(),
+                    'proveedores' => $item->proveedores->map(fn ($proveedor): array => [
+                        'id' => $proveedor->id,
+                        'nombre' => $proveedor->nombre,
+                        'link' => $proveedor->link,
+                        'precio' => $proveedor->precio,
+                        'notas' => $proveedor->notas,
+                    ])->values(),
+                    'cotizacion' => [
+                        'id' => $cotizacion?->id,
+                        'numero' => $cotizacion?->numero,
+                        'titulo' => $cotizacion?->titulo,
+                        'fecha' => $cotizacion?->fecha
+                            ? Carbon::parse($cotizacion->fecha)->toDateString()
+                            : null,
+                        'cliente_nombre' => $cotizacion?->cliente_nombre ?: $cotizacion?->cliente?->nombre,
+                        'estado' => $cotizacion?->estadoCotizacion?->nombre,
+                        'moneda' => $cotizacion?->moneda?->codigo,
+                        'simbolo_moneda' => $cotizacion?->moneda?->simbolo,
+                        'ejecutivo' => $ejecutivo !== '' ? $ejecutivo : $user?->email,
+                    ],
+                ];
+            });
+
+        return response()->json([
+            'producto' => [
+                'id' => $productoExterno->id,
+                'descripcion' => $productoExterno->descripcion,
+                'codigo' => $productoExterno->codigo,
+                'marca' => $productoExterno->marca,
+                'veces_cotizado' => $productoExterno->cotizacionItems()->count(),
+            ],
+            'historial' => $items,
+        ]);
     }
 
     public function convertirAInterno(Request $request, ProductoExterno $productoExterno, InventarioService $inventarioService)

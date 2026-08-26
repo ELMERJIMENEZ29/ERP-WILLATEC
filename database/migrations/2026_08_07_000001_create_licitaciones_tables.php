@@ -96,6 +96,8 @@ return new class extends Migration
             $table->string('estado')->nullable();
             $table->decimal('monto', 14, 2)->nullable();
             $table->string('moneda', 20)->nullable();
+            $table->string('origen', 30)->default('vinculada');
+            $table->foreignId('creado_por_id')->nullable()->constrained('users')->nullOnDelete();
             $table->string('creado_por')->nullable();
             $table->timestamp('creado_en')->nullable();
             $table->timestamps();

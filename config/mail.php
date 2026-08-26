@@ -49,6 +49,18 @@ return [
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
+        'hosting' => [
+            'transport' => env('HOSTING_MAIL_MAILER', 'smtp'),
+            'scheme' => env('HOSTING_MAIL_SCHEME'),
+            'url' => env('HOSTING_MAIL_URL'),
+            'host' => env('HOSTING_MAIL_HOST', env('MAIL_HOST', '127.0.0.1')),
+            'port' => env('HOSTING_MAIL_PORT', env('MAIL_PORT', 2525)),
+            'username' => env('HOSTING_MAIL_USERNAME'),
+            'password' => env('HOSTING_MAIL_PASSWORD'),
+            'timeout' => null,
+            'local_domain' => env('HOSTING_MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+        ],
+
         'ses' => [
             'transport' => 'ses',
         ],
@@ -114,5 +126,15 @@ return [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
+
+    'hosting_mailer' => env('HOSTING_MAILER', 'hosting'),
+
+    'hosting_from' => [
+        'address' => env('HOSTING_MAIL_FROM_ADDRESS', env('MAIL_FROM_ADDRESS', 'hello@example.com')),
+        'name' => env('HOSTING_MAIL_FROM_NAME', 'HOSTING - WILLATEC S.A.C'),
+    ],
+
+    'hosting_alert_internal_recipient' => env('HOSTING_ALERT_INTERNAL_RECIPIENT', 'luis.lopez@willatec.com'),
+    'hosting_support_email' => env('HOSTING_SUPPORT_EMAIL', 'ventas@willatec.com'),
 
 ];
