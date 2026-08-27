@@ -7,6 +7,7 @@ use App\Http\Requests\StoreProductoRequest;
 use App\Http\Requests\UpdateProductoRequest;
 use App\Models\Producto;
 use App\Models\ProductoSerie;
+use App\Services\ProductoSkuService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -32,6 +33,7 @@ class ProductoController extends Controller
                     ->select(['id', 'producto_id', 'serie', 'factura_numero', 'documento_path', 'estado', 'fecha_ingreso', 'fecha_salida', 'oc_recibida_id', 'cotizacion_item_id'])
                     ->latest(),
                 'ultimaEntradaConFactura',
+                'woocommerceProducto',
             ]);
 
         if ($request->has('activo')) {
@@ -88,7 +90,7 @@ class ProductoController extends Controller
     // Ver detalle
     public function show(int $id)
     {
-        $producto = Producto::with(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'ultimaEntradaConFactura'])->findOrFail($id);
+        $producto = Producto::with(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'ultimaEntradaConFactura', 'woocommerceProducto'])->findOrFail($id);
         $producto = $this->applyFacturaFallback($producto);
 
         if (! $producto) {
@@ -131,7 +133,7 @@ class ProductoController extends Controller
     }
 
     // Crear producto
-    public function store(StoreProductoRequest $request)
+    public function store(StoreProductoRequest $request, ProductoSkuService $skuService)
     {
         $this->ensureCanManageInternalProducts($request);
 
@@ -140,11 +142,11 @@ class ProductoController extends Controller
         $costoPromedio = (float) $request->input('costo_unitario', 0);
         $series = $this->normalizarSeries($request->input('series', []));
         $seriePrincipal = trim((string) ($request->serie ?: ($series[0] ?? ''))) ?: null;
-        $codigoInterno = trim((string) ($request->input('codigo') ?: $request->input('sku'))) ?: $this->buildNextInternalCode();
+        $codigoInterno = trim((string) $request->input('codigo')) ?: $this->buildNextInternalCode();
 
         $data = [
             'nombre' => $request->nombre,
-            'sku' => $codigoInterno,
+            'sku' => trim((string) $request->input('sku')) ?: null,
             'marca' => $request->marca,
             'modelo' => $request->modelo,
             'codigo' => $codigoInterno,
@@ -177,8 +179,13 @@ class ProductoController extends Controller
         }
 
         $producto = Producto::create($data);
+        if (! $producto->sku) {
+            $producto->forceFill([
+                'sku' => $skuService->generarSkuParaProducto($producto->fresh(['categoria'])),
+            ])->save();
+        }
         $this->syncSeriesProducto($producto, $series);
-        $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series']);
+        $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'woocommerceProducto']);
 
         return response()->json([
             'message' => 'Producto creado correctamente',
@@ -222,6 +229,12 @@ class ProductoController extends Controller
             'stock',
             'categoria_id',
         ]);
+
+        unset($data['codigo']);
+
+        if ($producto->woocommerceProducto()->exists()) {
+            unset($data['sku']);
+        }
 
         if ($tieneHistorialInventario) {
             unset(
@@ -274,7 +287,7 @@ class ProductoController extends Controller
         $producto->update($data);
         $this->syncSeriesProducto($producto, $series);
         $this->persistSeriesStockSnapshot($producto);
-        $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series']);
+        $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'woocommerceProducto']);
 
         return response()->json([
             'message' => 'Producto actualizado correctamente',
@@ -418,10 +431,7 @@ class ProductoController extends Controller
         do {
             $max++;
             $candidate = str_pad((string) $max, 4, '0', STR_PAD_LEFT);
-        } while (
-            Producto::where('codigo', $candidate)->exists()
-            || Producto::where('sku', $candidate)->exists()
-        );
+        } while (Producto::where('codigo', $candidate)->exists());
 
         return $candidate;
     }

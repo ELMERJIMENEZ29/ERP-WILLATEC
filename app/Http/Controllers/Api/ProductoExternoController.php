@@ -10,6 +10,7 @@ use App\Models\OcRecibidaItem;
 use App\Models\Producto;
 use App\Models\ProductoExterno;
 use App\Services\InventarioService;
+use App\Services\ProductoSkuService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
@@ -142,7 +143,7 @@ class ProductoExternoController extends Controller
         ]);
     }
 
-    public function convertirAInterno(Request $request, ProductoExterno $productoExterno, InventarioService $inventarioService)
+    public function convertirAInterno(Request $request, ProductoExterno $productoExterno, InventarioService $inventarioService, ProductoSkuService $skuService)
     {
         $validated = $request->validate([
             'cantidad' => ['required', 'numeric', 'min:0.01'],
@@ -158,13 +159,13 @@ class ProductoExternoController extends Controller
         $monedaId = $validated['moneda_id'] ?? $productoExterno->moneda_id;
         $facturaPath = $this->storeDocumento($request->file('factura'), 'inventario/facturas');
 
-        $producto = DB::transaction(function () use ($request, $validated, $productoExterno, $inventarioService, $facturaPath, $monedaId): Producto {
+        $producto = DB::transaction(function () use ($request, $validated, $productoExterno, $inventarioService, $facturaPath, $monedaId, $skuService): Producto {
             $codigoInterno = $productoExterno->producto_id ? null : $this->buildNextInternalCode();
             $producto = $productoExterno->producto_id
                 ? Producto::query()->lockForUpdate()->findOrFail($productoExterno->producto_id)
                 : Producto::create([
                     'nombre' => $productoExterno->descripcion,
-                    'sku' => $codigoInterno,
+                    'sku' => null,
                     'marca' => $productoExterno->marca,
                     'modelo' => null,
                     'codigo' => $codigoInterno,
@@ -188,6 +189,12 @@ class ProductoExternoController extends Controller
                     'stock' => 0,
                     'categoria_id' => $validated['categoria_id'] ?? 1,
                 ]);
+
+            if (! $producto->sku) {
+                $producto->forceFill([
+                    'sku' => $skuService->generarSkuParaProducto($producto->fresh(['categoria'])),
+                ])->save();
+            }
 
             $productoExterno->forceFill(['producto_id' => $producto->id])->save();
 
@@ -309,7 +316,6 @@ class ProductoExternoController extends Controller
             $candidate = str_pad((string) $max, 4, '0', STR_PAD_LEFT);
         } while (
             Producto::where('codigo', $candidate)->exists()
-            || Producto::where('sku', $candidate)->exists()
         );
 
         return $candidate;

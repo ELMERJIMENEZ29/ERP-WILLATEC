@@ -9,16 +9,18 @@ use App\Http\Controllers\Api\HostingController;
 use App\Http\Controllers\Api\InventarioController;
 use App\Http\Controllers\Api\LicenciaController;
 use App\Http\Controllers\Api\LicitacionController;
-use App\Http\Controllers\Api\OcEmitidaController;
 use App\Http\Controllers\Api\OcAtencionController;
+use App\Http\Controllers\Api\OcEmitidaController;
 use App\Http\Controllers\Api\OcRecibidaController;
 use App\Http\Controllers\Api\OrdenCompraController;
 use App\Http\Controllers\Api\ProductoController;
 use App\Http\Controllers\Api\ProductoExternoController;
+use App\Http\Controllers\Api\ProductoSkuController;
 use App\Http\Controllers\Api\ProveedorController;
 use App\Http\Controllers\Api\RequerimientoCompraController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\WooCommercePedidoController;
 use App\Http\Controllers\Api\WooCommerceProductoController;
 use App\Http\Controllers\Api\WooCommerceWebhookController;
 use Illuminate\Support\Facades\Route;
@@ -104,6 +106,8 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
 Route::prefix('productos')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     // PRODUCTOS
     Route::get('/', [ProductoController::class, 'index']);
+    Route::get('/sku-normalizacion/preview', [ProductoSkuController::class, 'preview'])->middleware('role:superadmin|admin|logistica');
+    Route::post('/sku-normalizacion/apply', [ProductoSkuController::class, 'apply'])->middleware('role:superadmin|logistica');
     Route::get('/{producto}/inventario', [InventarioController::class, 'show'])->middleware('role:superadmin|admin|soporte|logistica');
     Route::get('/{producto}/movimientos', [InventarioController::class, 'movimientos'])->middleware('role:superadmin|admin|soporte|logistica');
     Route::post('/{producto}/ajustar-stock', [InventarioController::class, 'ajustarStock'])->middleware('role:superadmin|admin|soporte|logistica');
@@ -148,8 +152,14 @@ Route::prefix('licitaciones')
         Route::delete('/{licitacion}/cotizaciones/{cotizacion}', [LicitacionController::class, 'deleteCotizacion']);
     });
 
-Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin'])->group(function () {
+Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin|logistica'])->group(function () {
+    Route::get('/pedidos', [WooCommercePedidoController::class, 'index']);
+    Route::post('/pedidos/sincronizar', [WooCommercePedidoController::class, 'sincronizar']);
+    Route::get('/pedidos/{pedido}', [WooCommercePedidoController::class, 'show']);
+    Route::post('/pedidos/{pedido}/reservar', [WooCommercePedidoController::class, 'reservar']);
     Route::post('/productos/mapear', [WooCommerceProductoController::class, 'mapear']);
+    Route::post('/productos/sync-activos', [WooCommerceProductoController::class, 'sincronizarActivos']);
+    Route::post('/productos/{producto}/mapear-sku', [WooCommerceProductoController::class, 'mapearPorSku']);
     Route::post('/productos/{producto}/sync-stock', [WooCommerceProductoController::class, 'sincronizarStock']);
     Route::get('/sync-logs', [WooCommerceProductoController::class, 'logs']);
 });
@@ -345,15 +355,15 @@ Route::prefix('licencias')->middleware(['auth:sanctum', 'token.idle', 'role:supe
     Route::delete('/{licencia}', [LicenciaController::class, 'destroy']);
 });
 
-  Route::prefix('hostings')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin'])->group(function () {
-      Route::get('/', [HostingController::class, 'index']);
-      Route::post('/', [HostingController::class, 'store']);
-      Route::post('/import/preview', [HostingController::class, 'previewImport']);
-      Route::post('/import/confirm', [HostingController::class, 'confirmImport']);
-      Route::post('/{hosting}/renovar', [HostingController::class, 'renovar']);
-      Route::post('/{hosting}/documentos', [HostingController::class, 'documentos']);
-      Route::delete('/{hosting}/documentos/{documento}', [HostingController::class, 'eliminarDocumento']);
-      Route::get('/{hosting}', [HostingController::class, 'show']);
-      Route::put('/{hosting}', [HostingController::class, 'update']);
-      Route::delete('/{hosting}', [HostingController::class, 'destroy']);
-  });
+Route::prefix('hostings')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin'])->group(function () {
+    Route::get('/', [HostingController::class, 'index']);
+    Route::post('/', [HostingController::class, 'store']);
+    Route::post('/import/preview', [HostingController::class, 'previewImport']);
+    Route::post('/import/confirm', [HostingController::class, 'confirmImport']);
+    Route::post('/{hosting}/renovar', [HostingController::class, 'renovar']);
+    Route::post('/{hosting}/documentos', [HostingController::class, 'documentos']);
+    Route::delete('/{hosting}/documentos/{documento}', [HostingController::class, 'eliminarDocumento']);
+    Route::get('/{hosting}', [HostingController::class, 'show']);
+    Route::put('/{hosting}', [HostingController::class, 'update']);
+    Route::delete('/{hosting}', [HostingController::class, 'destroy']);
+});
