@@ -2216,9 +2216,6 @@ class CotizacionController extends Controller
                 ];
             })
             ->filter()
-            ->unique(fn (array $proveedor): string => $proveedor['proveedor_id']
-                ? 'id:'.$proveedor['proveedor_id']
-                : 'nombre:'.$this->normalizeProveedorKey($proveedor['nombre']))
             ->values()
             ->all();
     }

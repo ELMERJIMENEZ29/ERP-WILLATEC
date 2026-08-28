@@ -113,6 +113,7 @@ Route::prefix('productos')->middleware(['auth:sanctum', 'token.idle'])->group(fu
     Route::post('/{producto}/ajustar-stock', [InventarioController::class, 'ajustarStock'])->middleware('role:superadmin|admin|soporte|logistica');
     Route::post('/{producto}/registrar-entrada', [InventarioController::class, 'registrarEntrada'])->middleware('role:superadmin|admin|soporte|logistica');
     Route::post('/{producto}/registrar-salida', [InventarioController::class, 'registrarSalida'])->middleware('role:superadmin|admin|soporte|logistica');
+    Route::get('/{producto}/historial-cotizaciones', [ProductoController::class, 'historialCotizaciones'])->middleware('role:superadmin|ventas|admin|logistica');
     Route::get('/{id}', [ProductoController::class, 'show']);
 
     Route::post('/', [ProductoController::class, 'store'])->middleware('role:superadmin|ventas|admin|soporte|logistica');

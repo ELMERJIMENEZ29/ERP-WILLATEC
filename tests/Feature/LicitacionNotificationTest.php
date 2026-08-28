@@ -151,6 +151,54 @@ test('oportunidad nueva se apaga solo para el usuario que abre el detalle', func
         ->assertJsonPath('0.es_nueva', true);
 });
 
+test('actualizar una oportunidad no apaga nueva para los demas usuarios', function () {
+    seedRolesParaOportunidades();
+
+    $creador = usuarioConRolOportunidad('ventas');
+    $otroEjecutivo = usuarioConRolOportunidad('ventas');
+
+    $oportunidad = Licitacion::create([
+        'tipo' => 'privado',
+        'empresa' => 'Cliente Persistencia Nueva',
+        'requerimiento' => 'Compra de laptops',
+        'vigencia' => now('America/Lima')->addDay(),
+        'categoria' => 'Hardware',
+        'estado' => 'sin_atender',
+        'es_nueva' => true,
+        'created_by' => $creador->id,
+        'creado_por' => trim("{$creador->nombres} {$creador->apellidos}"),
+        'creado_en' => now('America/Lima'),
+        'modificado_en' => now('America/Lima'),
+    ]);
+
+    Sanctum::actingAs($creador);
+
+    $this->getJson("/api/licitaciones/{$oportunidad->id}")
+        ->assertOk()
+        ->assertJsonPath('es_nueva', false);
+
+    $this->putJson("/api/licitaciones/{$oportunidad->id}", [
+        'tipo' => 'privado',
+        'empresa' => $oportunidad->empresa,
+        'requerimiento' => $oportunidad->requerimiento,
+        'vigencia' => $oportunidad->vigencia->toIso8601String(),
+        'categoria' => $oportunidad->categoria,
+        'estado' => 'en_atencion',
+        'asignado_a' => $creador->id,
+        'ejecutivo_id' => $creador->id,
+        'es_nueva' => false,
+    ])->assertOk();
+
+    expect($oportunidad->refresh()->es_nueva)->toBeTrue();
+
+    Sanctum::actingAs($otroEjecutivo);
+
+    $this->getJson('/api/licitaciones')
+        ->assertOk()
+        ->assertJsonPath('0.id', (string) $oportunidad->id)
+        ->assertJsonPath('0.es_nueva', true);
+});
+
 test('pdf de cotizacion desde oportunidad solo se permite aprobada y sin modificacion pendiente', function () {
     seedRolesParaOportunidades();
 

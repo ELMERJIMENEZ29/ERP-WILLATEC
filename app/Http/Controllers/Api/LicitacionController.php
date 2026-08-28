@@ -134,6 +134,8 @@ class LicitacionController extends Controller
     public function update(Request $request, Licitacion $licitacion)
     {
         $payload = $this->validatePayload($request);
+        unset($payload['es_nueva']);
+
         $this->ensureCanUpdate($request, $licitacion, $payload);
         $payload['modificado_en'] = $payload['modificado_en'] ?? now('America/Lima');
         $isPresentationTransition = in_array($licitacion->estado, ['cotizacion_generada', 'vencida'], true)
@@ -195,6 +197,8 @@ class LicitacionController extends Controller
     {
         $user = $request->user();
         $usuario = $this->userDisplayName($user);
+
+        $this->markAsViewed($licitacion, $user);
 
         $this->createHistoryIfMissing($licitacion, [
             'fecha' => now('America/Lima'),
@@ -1139,7 +1143,7 @@ class LicitacionController extends Controller
 
     private function isNewForUser(Licitacion $licitacion, ?User $user): bool
     {
-        if (! $licitacion->es_nueva || ! $user) {
+        if (! $user) {
             return (bool) $licitacion->es_nueva;
         }
 
