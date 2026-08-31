@@ -1537,6 +1537,7 @@ class CotizacionController extends Controller
             'entrega_destino' => 'nullable|string|max:150',
             'cliente_contacto' => 'nullable|string|max:255',
             'comentario' => 'nullable|string|max:1000',
+            'last_known_updated_at' => 'nullable|date',
 
             'items' => 'required|array|min:1',
 
@@ -1590,7 +1591,11 @@ class CotizacionController extends Controller
 
         $estadoAnterior = (int) $cotizacion->estado_cotizacion_id;
 
-        DB::transaction(function () use ($request, $cotizacion, $cliente, $delegadoId, $delegadoCotizacionId, $estadoAnterior) {
+        DB::transaction(function () use ($request, &$cotizacion, $cliente, $delegadoId, $delegadoCotizacionId, $estadoAnterior) {
+            $cotizacion = Cotizacion::whereKey($cotizacion->id)->lockForUpdate()->firstOrFail();
+            $this->ensureCotizacionWasNotUpdatedConcurrently($request, $cotizacion);
+            $this->ensureCanEditCotizacion($request, $cotizacion);
+
             $monedaId = $this->monedaIdParaPlantilla($request->integer('plantilla_id'), $request->integer('moneda_id'));
             $esAlquiler = $this->esPlantillaAlquilerId($request->integer('plantilla_id'));
 
@@ -2439,6 +2444,31 @@ class CotizacionController extends Controller
         }
 
         abort(403, 'No autorizado para editar esta cotización.');
+    }
+
+    private function ensureCotizacionWasNotUpdatedConcurrently(Request $request, Cotizacion $cotizacion): void
+    {
+        $lastKnownUpdatedAt = $request->input('last_known_updated_at');
+
+        if (! is_string($lastKnownUpdatedAt) || trim($lastKnownUpdatedAt) === '' || ! $cotizacion->updated_at) {
+            return;
+        }
+
+        $clientUpdatedAt = Carbon::parse($lastKnownUpdatedAt)->utc();
+        $currentUpdatedAt = $cotizacion->updated_at->copy()->utc();
+
+        if ($currentUpdatedAt->lessThanOrEqualTo($clientUpdatedAt)) {
+            return;
+        }
+
+        abort(response()->json([
+            'message' => 'Esta cotizacion fue modificada por otro usuario mientras la editabas. Recarga la cotizacion antes de guardar para no sobrescribir sus cambios.',
+            'errors' => [
+                'cotizacion' => [
+                    'La version cargada en tu pantalla ya no es la mas reciente.',
+                ],
+            ],
+        ], 409));
     }
 
     private function isCotizacionOwnerOrEditDelegate(Request $request, Cotizacion $cotizacion): bool

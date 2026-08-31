@@ -1,10 +1,10 @@
 <?php
 
-use App\Models\Licitacion;
+use App\Models\Cliente;
 use App\Models\Cotizacion;
 use App\Models\CotizacionModificacion;
-use App\Models\Cliente;
 use App\Models\EstadoCotizacion;
+use App\Models\Licitacion;
 use App\Models\Moneda;
 use App\Models\Plantilla;
 use App\Models\TipoCliente;
@@ -265,7 +265,6 @@ test('pdf de cotizacion desde oportunidad solo se permite aprobada y sin modific
         ->assertUnprocessable()
         ->assertSee('modificacion pendiente');
 });
-
 
 function seedRolesParaOportunidades(): void
 {
