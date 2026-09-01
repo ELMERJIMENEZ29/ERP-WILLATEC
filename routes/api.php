@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\HostingController;
 use App\Http\Controllers\Api\InventarioController;
 use App\Http\Controllers\Api\LicenciaController;
 use App\Http\Controllers\Api\LicitacionController;
+use App\Http\Controllers\Api\NotificationPreferenceController;
 use App\Http\Controllers\Api\OcAtencionController;
 use App\Http\Controllers\Api\OcEmitidaController;
 use App\Http\Controllers\Api\OcRecibidaController;
@@ -62,6 +63,9 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
 
     Route::get('/notifications', [AuthController::class, 'notifications']);
     Route::patch('/notifications/{id}/read', [AuthController::class, 'markNotificationAsRead']);
+    Route::get('/notification-preferences', [NotificationPreferenceController::class, 'show']);
+    Route::put('/notification-preferences', [NotificationPreferenceController::class, 'update']);
+    Route::post('/notification-preferences/sound', [NotificationPreferenceController::class, 'uploadSound']);
 
     Route::get('/users', [UserController::class, 'index']);
 

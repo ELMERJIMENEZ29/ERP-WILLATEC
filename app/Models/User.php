@@ -72,4 +72,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(Cotizacion::class);
     }
+
+    public function notificationPreference(): HasOne
+    {
+        return $this->hasOne(UserNotificationPreference::class);
+    }
 }
