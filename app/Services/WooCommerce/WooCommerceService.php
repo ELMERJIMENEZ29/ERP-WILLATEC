@@ -9,6 +9,7 @@ use App\Services\ProductoSkuService;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 class WooCommerceService
@@ -123,6 +124,8 @@ class WooCommerceService
 
     public function mapearProductoPorSku(Producto $producto): WooCommerceProducto
     {
+        $producto->loadMissing(['categoria']);
+
         if (! $this->estaConfigurado()) {
             throw new RuntimeException('WooCommerce no esta configurado.');
         }
@@ -141,6 +144,8 @@ class WooCommerceService
 
         if (! $wooProducto) {
             $wooProducto = $this->crearProductoWooCommerce($producto, $sku);
+        } else {
+            $wooProducto = $this->sincronizarDatosProductoWooCommerce($producto, $wooProducto, $sku);
         }
 
         $wooProductId = (int) ($wooProducto['id'] ?? 0);
@@ -230,19 +235,12 @@ class WooCommerceService
     {
         $endpoint = '/wp-json/wc/v3/products';
         $payload = [
-            'name' => trim((string) ($producto->nombre ?: $sku)),
+            ...$this->productDataPayload($producto, $sku),
             'type' => 'simple',
-            'sku' => $sku,
             'status' => $this->defaultProductStatus(),
             'manage_stock' => true,
             'stock_quantity' => (float) ($producto->stock_disponible ?? 0),
-            'description' => (string) ($producto->descripcion ?? ''),
         ];
-
-        $regularPrice = $this->regularPrice($producto);
-        if ($regularPrice !== null) {
-            $payload['regular_price'] = $regularPrice;
-        }
 
         $response = $this->request()->post($endpoint, $payload);
 
@@ -264,6 +262,160 @@ class WooCommerceService
         }
 
         return $response->json();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function productDataPayload(Producto $producto, string $sku): array
+    {
+        $payload = [
+            'name' => $this->productName($producto, $sku),
+            'sku' => $sku,
+            'description' => (string) ($producto->descripcion ?? ''),
+            'short_description' => $this->shortDescription($producto),
+            'attributes' => $this->productAttributes($producto),
+            'meta_data' => $this->productMetaData($producto),
+        ];
+
+        $regularPrice = $this->regularPrice($producto);
+        if ($regularPrice !== null) {
+            $payload['regular_price'] = $regularPrice;
+        }
+
+        $imageUrl = $this->productImageUrl($producto);
+        if ($imageUrl) {
+            $payload['images'] = [
+                [
+                    'src' => $imageUrl,
+                    'name' => $this->productName($producto, $sku),
+                    'alt' => $this->productName($producto, $sku),
+                ],
+            ];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $wooProducto
+     * @return array<string, mixed>
+     */
+    private function sincronizarDatosProductoWooCommerce(Producto $producto, array $wooProducto, string $sku): array
+    {
+        $wooProductId = (int) ($wooProducto['id'] ?? 0);
+        $wooParentId = isset($wooProducto['parent_id']) ? (int) $wooProducto['parent_id'] : null;
+        $wooVariationId = ($wooParentId && $wooParentId !== $wooProductId) ? $wooProductId : null;
+
+        if ($wooProductId <= 0) {
+            return $wooProducto;
+        }
+
+        $endpoint = $this->productoEndpoint(
+            $wooVariationId ? $wooParentId : $wooProductId,
+            $wooVariationId,
+            $wooVariationId ? $wooParentId : null
+        );
+
+        $payload = $this->productDataPayload($producto, $sku);
+
+        if (! empty($wooProducto['images'])) {
+            unset($payload['images']);
+        }
+
+        $response = $this->request()->put($endpoint, $payload);
+
+        WooCommerceSyncLog::create([
+            'tipo' => 'producto_update',
+            'direccion' => 'erp_to_woocommerce',
+            'endpoint' => $endpoint,
+            'payload' => $payload,
+            'response' => $response->json(),
+            'status_code' => $response->status(),
+            'estado' => $response->successful() ? 'exitoso' : 'error',
+            'mensaje_error' => $response->successful() ? null : $response->body(),
+            'referencia_tipo' => Producto::class,
+            'referencia_id' => $producto->id,
+        ]);
+
+        return $response->successful() ? $response->json() : $wooProducto;
+    }
+
+    private function productName(Producto $producto, string $sku): string
+    {
+        return trim((string) ($producto->nombre ?: $producto->modelo ?: $sku));
+    }
+
+    private function shortDescription(Producto $producto): string
+    {
+        $parts = array_filter([
+            $producto->marca ? 'Marca: '.$producto->marca : null,
+            $producto->modelo ? 'Modelo: '.$producto->modelo : null,
+            $producto->codigo ? 'Codigo interno: '.$producto->codigo : null,
+            $producto->sku ? 'SKU: '.$producto->sku : null,
+        ]);
+
+        return implode('<br>', $parts);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function productAttributes(Producto $producto): array
+    {
+        return collect([
+            'Marca' => $producto->marca,
+            'Modelo' => $producto->modelo,
+            'Codigo interno' => $producto->codigo,
+        ])
+            ->filter(fn ($value): bool => filled($value))
+            ->map(fn ($value, string $name): array => [
+                'name' => $name,
+                'visible' => true,
+                'variation' => false,
+                'options' => [(string) $value],
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{key: string, value: mixed}>
+     */
+    private function productMetaData(Producto $producto): array
+    {
+        return collect([
+            '_erp_producto_id' => $producto->id,
+            '_erp_codigo_interno' => $producto->codigo,
+            '_erp_modelo' => $producto->modelo,
+            '_erp_marca' => $producto->marca,
+            '_erp_categoria' => $producto->categoria?->nombre,
+            '_erp_unidad_medida' => $producto->unidad_medida,
+        ])
+            ->filter(fn ($value): bool => filled($value))
+            ->map(fn ($value, string $key): array => [
+                'key' => $key,
+                'value' => $value,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function productImageUrl(Producto $producto): ?string
+    {
+        $image = trim((string) $producto->imagen);
+
+        if ($image === '') {
+            return null;
+        }
+
+        if (filter_var($image, FILTER_VALIDATE_URL)) {
+            return $image;
+        }
+
+        $path = preg_replace('#^(public/|storage/)#', '', $image) ?: $image;
+
+        return Storage::disk('public')->url($path);
     }
 
     private function defaultProductStatus(): string

@@ -18,6 +18,7 @@ use App\Notifications\OcRecibidaRegistradaNotification;
 use App\Services\InventarioService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -653,7 +654,7 @@ class OcRecibidaController extends Controller
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, \App\Models\OcRecibidaItem>  $items
+     * @param  Collection<int, OcRecibidaItem>  $items
      * @return array<string, string>
      */
     private function buildOcStatusPayload(OcRecibida $ocRecibida, $items, string $estadoLegacy): array
@@ -1112,7 +1113,7 @@ class OcRecibidaController extends Controller
 
     private function ensureCanCreateOcForCotizacion(Request $request, Cotizacion $cotizacion): void
     {
-        if ($request->user()->hasAnyRole(['superadmin', 'admin', 'logistica'])) {
+        if ($request->user()->hasAnyRole(['superadmin', 'admin', 'contabilidad', 'logistica'])) {
             return;
         }
 

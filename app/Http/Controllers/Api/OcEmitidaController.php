@@ -21,14 +21,17 @@ class OcEmitidaController extends Controller
 {
     public function preview(Cotizacion $cotizacion)
     {
-        $cotizacion->load(['items.proveedores']);
+        $cotizacion->load(['items.proveedores', 'moneda']);
 
         return response()->json([
             'cotizacion' => [
                 'id' => $cotizacion->id,
                 'numero' => $cotizacion->numero,
                 'cliente_nombre' => $cotizacion->cliente_nombre,
+                'estado_cotizacion_id' => $cotizacion->estado_cotizacion_id,
+                'moneda' => $cotizacion->moneda?->codigo,
             ],
+            'items' => $this->buildItemsCotizacion($cotizacion),
             'proveedores' => $this->proveedoresDeCotizacion($cotizacion)
                 ->map(fn (array $proveedor): array => [
                     'id' => $proveedor['proveedor_id'],
@@ -68,7 +71,7 @@ class OcEmitidaController extends Controller
         ]);
 
         $query = OcEmitida::query()
-            ->with(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc', 'documentosAdicionales'])
+            ->with(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc', 'proveedorRelacion', 'documentosAdicionales'])
             ->withCount('items');
 
         if ($request->filled('proveedor')) {
@@ -97,7 +100,7 @@ class OcEmitidaController extends Controller
     public function show(OcEmitida $ocEmitida)
     {
         return response()->json(
-            $ocEmitida->load(['items.cotizacionItem.proveedores', 'cotizacion', 'cliente', 'documentosAdicionales'])
+            $ocEmitida->load(['items.cotizacionItem.proveedores', 'cotizacion', 'cliente', 'proveedorRelacion', 'documentosAdicionales'])
         );
     }
 
@@ -107,6 +110,7 @@ class OcEmitidaController extends Controller
             'cotizacion_id' => 'required|exists:cotizaciones,id',
             'proveedor' => 'required|string|max:255',
             'proveedor_id' => 'nullable|integer|exists:proveedores,id',
+            'moneda' => 'nullable|string|max:10',
             'fecha_emision' => 'nullable|date',
             'observaciones' => 'nullable|string',
             'items' => 'required|array|min:1',
@@ -118,41 +122,19 @@ class OcEmitidaController extends Controller
         $cotizacion = Cotizacion::with(['items.proveedores', 'cliente', 'moneda'])->findOrFail($validated['cotizacion_id']);
         $this->ensureCanCreateOcForCotizacion($request, $cotizacion);
         $proveedorSeleccionado = $this->resolveProveedorSeleccionado($validated);
-        $proveedores = $this->proveedoresDeCotizacion($cotizacion);
-
-        if (! $proveedores->contains(fn (array $proveedor): bool => $this->sameProveedor($proveedor, $proveedorSeleccionado))) {
-            return response()->json([
-                'message' => 'El proveedor no esta asociado a la cotizacion seleccionada.',
-            ], 422);
-        }
-
-        $idsProveedor = $this->itemsPorProveedor($cotizacion, $proveedorSeleccionado)->pluck('id');
+        $idsCotizacion = $cotizacion->items->pluck('id');
         $idsSolicitados = collect($validated['items'])->pluck('cotizacion_item_id');
 
-        if ($idsSolicitados->diff($idsProveedor)->isNotEmpty()) {
+        if ($idsSolicitados->diff($idsCotizacion)->isNotEmpty()) {
             return response()->json([
-                'message' => 'Todos los items deben pertenecer al proveedor seleccionado.',
+                'message' => 'Todos los items deben pertenecer a la cotizacion seleccionada.',
             ], 422);
         }
 
         $ocEmitida = DB::transaction(function () use ($request, $validated, $cotizacion, $proveedorSeleccionado): OcEmitida {
-            $itemsById = $cotizacion->items->keyBy('id');
-            $subtotal = collect($validated['items'])->sum(
-                fn (array $item): float => round((int) $item['cantidad'] * (float) $item['precio_unitario'], 2)
-            );
-            $igv = round($subtotal * 0.18, 2);
-            $total = round($subtotal + $igv, 2);
-
             $ocEmitida = OcEmitida::create([
                 'numero' => $this->generarNumero(),
-                'fecha_emision' => $validated['fecha_emision'] ?? now()->toDateString(),
                 'estado' => OcEmitida::ESTADO_EMITIDA,
-                'proveedor' => $proveedorSeleccionado['nombre'],
-                'observaciones' => $validated['observaciones'] ?? null,
-                'moneda' => $cotizacion->moneda?->codigo ?? 'PEN',
-                'subtotal' => round($subtotal, 2),
-                'igv' => $igv,
-                'total' => $total,
                 'cliente_nombre' => $cotizacion->cliente_nombre,
                 'cliente_ruc' => $cotizacion->cliente_ruc,
                 'cliente_contacto' => $cotizacion->cliente_contacto,
@@ -162,27 +144,7 @@ class OcEmitidaController extends Controller
                 'user_id' => $request->user()->id,
             ]);
 
-            foreach ($validated['items'] as $itemData) {
-                $cotizacionItem = $itemsById->get((int) $itemData['cotizacion_item_id']);
-                $itemSubtotal = round((int) $itemData['cantidad'] * (float) $itemData['precio_unitario'], 2);
-
-                OcEmitidaItem::create([
-                    'oc_emitida_id' => $ocEmitida->id,
-                    'cotizacion_item_id' => $cotizacionItem->id,
-                    'descripcion' => $cotizacionItem->descripcion,
-                    'codigo' => $cotizacionItem->codigo,
-                    'marca' => $cotizacionItem->marca,
-                    'unidad_medida' => $cotizacionItem->unidad_medida,
-                    'cantidad' => (int) $itemData['cantidad'],
-                    'precio_unitario' => round((float) $itemData['precio_unitario'], 2),
-                    'subtotal' => $itemSubtotal,
-                ]);
-            }
-
-            $ocEmitida->load(['items', 'cotizacion', 'cliente']);
-            $ocEmitida->update(['pdf_path' => $this->generarPdf($ocEmitida)]);
-
-            return $ocEmitida->refresh()->load(['items', 'cotizacion']);
+            return $this->guardarOcEmitida($ocEmitida, $validated, $cotizacion, $proveedorSeleccionado);
         });
 
         $this->notifyAdministrators(new OcEmitidaRegistradaNotification($ocEmitida, $request->user()));
@@ -192,6 +154,45 @@ class OcEmitidaController extends Controller
             'oc_emitida' => $ocEmitida,
             'pdf_url' => url("/api/oc-emitidas/{$ocEmitida->id}/pdf"),
         ], 201);
+    }
+
+    public function update(Request $request, OcEmitida $ocEmitida)
+    {
+        $this->ensureCanEditOc($request, $ocEmitida);
+
+        $validated = $request->validate([
+            'cotizacion_id' => 'required|exists:cotizaciones,id',
+            'proveedor' => 'required|string|max:255',
+            'proveedor_id' => 'nullable|integer|exists:proveedores,id',
+            'moneda' => 'nullable|string|max:10',
+            'fecha_emision' => 'nullable|date',
+            'observaciones' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.cotizacion_item_id' => 'required|integer|exists:cotizacion_items,id',
+            'items.*.cantidad' => 'required|integer|min:1',
+            'items.*.precio_unitario' => 'required|numeric|min:0',
+        ]);
+
+        $cotizacion = Cotizacion::with(['items.proveedores', 'cliente', 'moneda'])->findOrFail($validated['cotizacion_id']);
+        $proveedorSeleccionado = $this->resolveProveedorSeleccionado($validated);
+        $idsCotizacion = $cotizacion->items->pluck('id');
+        $idsSolicitados = collect($validated['items'])->pluck('cotizacion_item_id');
+
+        if ($idsSolicitados->diff($idsCotizacion)->isNotEmpty()) {
+            return response()->json([
+                'message' => 'Todos los items deben pertenecer a la cotizacion seleccionada.',
+            ], 422);
+        }
+
+        $ocEmitida = DB::transaction(function () use ($ocEmitida, $validated, $cotizacion, $proveedorSeleccionado): OcEmitida {
+            return $this->guardarOcEmitida($ocEmitida, $validated, $cotizacion, $proveedorSeleccionado);
+        });
+
+        return response()->json([
+            'message' => 'OC emitida actualizada',
+            'oc_emitida' => $ocEmitida,
+            'pdf_url' => url("/api/oc-emitidas/{$ocEmitida->id}/pdf"),
+        ]);
     }
 
     public function documentos(Request $request, OcEmitida $ocEmitida)
@@ -277,7 +278,7 @@ class OcEmitidaController extends Controller
     public function pdf(OcEmitida $ocEmitida)
     {
         if (! $ocEmitida->pdf_path || ! Storage::disk('public')->exists($ocEmitida->pdf_path)) {
-            $ocEmitida->load(['items', 'cotizacion', 'cliente']);
+            $ocEmitida->load(['items', 'cotizacion', 'cliente', 'proveedorRelacion']);
             $ocEmitida->update(['pdf_path' => $this->generarPdf($ocEmitida)]);
             $ocEmitida->refresh();
         }
@@ -364,6 +365,112 @@ class OcEmitidaController extends Controller
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildItemsCotizacion(Cotizacion $cotizacion): array
+    {
+        return $cotizacion->items
+            ->map(function ($item): array {
+                $precio = $item->costo_unitario ?? $item->costo_base ?? 0;
+                $subtotal = round((int) $item->cantidad * (float) $precio, 2);
+
+                return [
+                    'cotizacion_item_id' => $item->id,
+                    'descripcion' => $item->descripcion,
+                    'codigo' => $item->codigo,
+                    'marca' => $item->marca,
+                    'unidad_medida' => $item->unidad_medida,
+                    'cantidad' => $item->cantidad,
+                    'precio_unitario' => round((float) $precio, 2),
+                    'subtotal' => $subtotal,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @param  array{proveedor_id: ?int, nombre: string, key: string}  $proveedorSeleccionado
+     */
+    private function guardarOcEmitida(
+        OcEmitida $ocEmitida,
+        array $validated,
+        Cotizacion $cotizacion,
+        array $proveedorSeleccionado
+    ): OcEmitida {
+        $itemsById = $cotizacion->items->keyBy('id');
+        $subtotal = collect($validated['items'])->sum(
+            fn (array $item): float => round((int) $item['cantidad'] * (float) $item['precio_unitario'], 2)
+        );
+        $igv = round($subtotal * 0.18, 2);
+        $total = round($subtotal + $igv, 2);
+        $proveedorSnapshot = $this->proveedorSnapshot($proveedorSeleccionado);
+
+        $ocEmitida->forceFill([
+            'fecha_emision' => $validated['fecha_emision'] ?? now()->toDateString(),
+            'estado' => $ocEmitida->estado ?: OcEmitida::ESTADO_EMITIDA,
+            'proveedor' => $proveedorSeleccionado['nombre'],
+            'proveedor_id' => $proveedorSnapshot?->id,
+            'proveedor_ruc' => $proveedorSnapshot?->ruc,
+            'proveedor_direccion' => $proveedorSnapshot?->direccion,
+            'proveedor_telefono' => $proveedorSnapshot?->telefono,
+            'proveedor_contacto' => $proveedorSnapshot?->contacto,
+            'proveedor_correo' => $proveedorSnapshot?->correo,
+            'observaciones' => $validated['observaciones'] ?? null,
+            'moneda' => strtoupper((string) ($validated['moneda'] ?? $cotizacion->moneda?->codigo ?? 'PEN')),
+            'subtotal' => round($subtotal, 2),
+            'igv' => $igv,
+            'total' => $total,
+            'cliente_nombre' => $cotizacion->cliente_nombre,
+            'cliente_ruc' => $cotizacion->cliente_ruc,
+            'cliente_contacto' => $cotizacion->cliente_contacto,
+            'cliente_correo' => $cotizacion->cliente_correo,
+            'cotizacion_id' => $cotizacion->id,
+            'cliente_id' => $cotizacion->cliente_id,
+        ])->save();
+
+        $ocEmitida->items()->delete();
+
+        foreach ($validated['items'] as $itemData) {
+            $cotizacionItem = $itemsById->get((int) $itemData['cotizacion_item_id']);
+            $itemSubtotal = round((int) $itemData['cantidad'] * (float) $itemData['precio_unitario'], 2);
+
+            OcEmitidaItem::create([
+                'oc_emitida_id' => $ocEmitida->id,
+                'cotizacion_item_id' => $cotizacionItem->id,
+                'descripcion' => $cotizacionItem->descripcion,
+                'codigo' => $cotizacionItem->codigo,
+                'marca' => $cotizacionItem->marca,
+                'unidad_medida' => $cotizacionItem->unidad_medida,
+                'cantidad' => (int) $itemData['cantidad'],
+                'precio_unitario' => round((float) $itemData['precio_unitario'], 2),
+                'subtotal' => $itemSubtotal,
+            ]);
+        }
+
+        $ocEmitida->load(['items', 'cotizacion', 'cliente', 'proveedorRelacion']);
+        $ocEmitida->update(['pdf_path' => $this->generarPdf($ocEmitida)]);
+
+        return $ocEmitida->refresh()->load(['items', 'cotizacion', 'cliente', 'proveedorRelacion']);
+    }
+
+    /**
+     * @param  array{proveedor_id: ?int, nombre: string, key: string}  $proveedorSeleccionado
+     */
+    private function proveedorSnapshot(array $proveedorSeleccionado): ?Proveedor
+    {
+        if (! empty($proveedorSeleccionado['proveedor_id'])) {
+            return Proveedor::query()->find($proveedorSeleccionado['proveedor_id']);
+        }
+
+        return Proveedor::query()
+            ->where('activo', true)
+            ->get()
+            ->first(fn (Proveedor $row): bool => $this->normalizeProveedorKey($row->nombre) === $proveedorSeleccionado['key']);
+    }
+
+    /**
      * @param  array<string, mixed>  $validated
      * @return array{proveedor_id: ?int, nombre: string, key: string}
      */
@@ -441,7 +548,7 @@ class OcEmitidaController extends Controller
 
     private function ensureCanCreateOcForCotizacion(Request $request, Cotizacion $cotizacion): void
     {
-        if ($request->user()->hasRole('superadmin')) {
+        if ($request->user()->hasAnyRole(['superadmin', 'admin', 'contabilidad'])) {
             return;
         }
 

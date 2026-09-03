@@ -19,6 +19,12 @@ class OcEmitida extends Model
         'fecha_emision',
         'estado',
         'proveedor',
+        'proveedor_id',
+        'proveedor_ruc',
+        'proveedor_direccion',
+        'proveedor_telefono',
+        'proveedor_contacto',
+        'proveedor_correo',
         'observaciones',
         'factura_path',
         'factura_uploaded_by',
@@ -66,6 +72,11 @@ class OcEmitida extends Model
     public function usuario(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function proveedorRelacion(): BelongsTo
+    {
+        return $this->belongsTo(Proveedor::class, 'proveedor_id');
     }
 
     /**

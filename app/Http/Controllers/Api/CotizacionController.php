@@ -234,11 +234,17 @@ class CotizacionController extends Controller
             $query->where('user_id', $request->integer('user_id'));
         }
 
-        return response()->json(
-            $query
-                ->latest()
-                ->paginate($request->integer('per_page', 10))
-        );
+        $cotizaciones = $query
+            ->latest()
+            ->paginate($request->integer('per_page', 10));
+
+        if ($this->shouldHideProfitability($request)) {
+            $cotizaciones->getCollection()->each(
+                fn (Cotizacion $cotizacion) => $this->hideCotizacionProfitability($cotizacion)
+            );
+        }
+
+        return response()->json($cotizaciones);
     }
 
     public function resumenPendientesRevision(Request $request)
@@ -289,7 +295,7 @@ class CotizacionController extends Controller
         ]);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         $cotizacion = Cotizacion::with([
             'cliente',
@@ -310,6 +316,10 @@ class CotizacionController extends Controller
             return response()->json([
                 'message' => 'Cotización no encontrada',
             ], 404);
+        }
+
+        if ($this->shouldHideProfitability($request)) {
+            $this->hideCotizacionProfitability($cotizacion);
         }
 
         return response()->json($cotizacion);
@@ -968,17 +978,32 @@ class CotizacionController extends Controller
     // =========================
     public function versiones(Request $request, Cotizacion $cotizacion)
     {
+        $versiones = $cotizacion->versiones()
+            ->with(['creador:id,nombres,apellidos,email', 'aprobador:id,nombres,apellidos,email'])
+            ->get();
+        $modificaciones = $cotizacion->modificaciones()
+            ->with(['solicitante:id,nombres,apellidos,email', 'revisor:id,nombres,apellidos,email'])
+            ->latest()
+            ->get();
+
+        if ($this->shouldHideProfitability($request)) {
+            $versiones->each(function ($version): void {
+                $snapshot = is_array($version->snapshot) ? $version->snapshot : [];
+                $version->snapshot = $this->hidePayloadProfitability($snapshot);
+            });
+
+            $modificaciones->each(function ($modificacion): void {
+                $propuesta = is_array($modificacion->propuesta) ? $modificacion->propuesta : [];
+                $modificacion->propuesta = $this->hidePayloadProfitability($propuesta);
+            });
+        }
+
         return response()->json([
             'cotizacion_id' => $cotizacion->id,
             'numero' => $cotizacion->numero,
             'version_vigente' => $cotizacion->versiones()->max('version_number') ?: 1,
-            'versiones' => $cotizacion->versiones()
-                ->with(['creador:id,nombres,apellidos,email', 'aprobador:id,nombres,apellidos,email'])
-                ->get(),
-            'modificaciones' => $cotizacion->modificaciones()
-                ->with(['solicitante:id,nombres,apellidos,email', 'revisor:id,nombres,apellidos,email'])
-                ->latest()
-                ->get(),
+            'versiones' => $versiones,
+            'modificaciones' => $modificaciones,
         ]);
     }
 
@@ -2477,6 +2502,45 @@ class CotizacionController extends Controller
 
         return (int) $cotizacion->user_id === $userId
             || ($cotizacion->delegado_cotizacion_id && (int) $cotizacion->delegado_cotizacion_id === $userId);
+    }
+
+    private function shouldHideProfitability(Request $request): bool
+    {
+        return $request->user()?->hasAnyRole(['admin', 'contabilidad']) === true
+            && ! $request->user()?->hasRole('superadmin');
+    }
+
+    private function hideCotizacionProfitability(Cotizacion $cotizacion): Cotizacion
+    {
+        $cotizacion->makeHidden(['ganancia', 'total_gasto']);
+
+        if ($cotizacion->relationLoaded('items')) {
+            $cotizacion->items->each(
+                fn ($item) => $item->makeHidden(['ganancia', 'margen'])
+            );
+        }
+
+        return $cotizacion;
+    }
+
+    private function hidePayloadProfitability(array $payload): array
+    {
+        unset($payload['ganancia'], $payload['total_gasto']);
+
+        if (isset($payload['cotizacion']) && is_array($payload['cotizacion'])) {
+            unset($payload['cotizacion']['ganancia'], $payload['cotizacion']['total_gasto']);
+        }
+
+        if (isset($payload['items']) && is_array($payload['items'])) {
+            foreach ($payload['items'] as &$item) {
+                if (is_array($item)) {
+                    unset($item['ganancia'], $item['margen']);
+                }
+            }
+            unset($item);
+        }
+
+        return $payload;
     }
 
     private function ensureCanRequestModification(Request $request, Cotizacion $cotizacion): void

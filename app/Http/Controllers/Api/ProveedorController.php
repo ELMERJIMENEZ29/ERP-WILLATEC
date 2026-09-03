@@ -13,7 +13,7 @@ class ProveedorController extends Controller
         $validated = $request->validate([
             'search' => 'nullable|string|max:150',
             'activo' => 'nullable|in:true,false,1,0',
-            'per_page' => 'nullable|integer|min:1|max:100',
+            'per_page' => 'nullable|integer|min:1|max:500',
         ]);
 
         $query = Proveedor::query()->orderBy('nombre');
