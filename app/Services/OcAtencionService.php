@@ -376,9 +376,9 @@ class OcAtencionService
         if (Schema::hasColumn('oc_recibidas', 'estado_logistico')) {
             $payload['estado_logistico'] = $this->estadoLogistico($ocRecibida);
             $payload['estado_comercial'] = match ($estado) {
-                OcRecibida::ESTADO_ATENDIDO => OcRecibida::ESTADO_COMERCIAL_CERRADA,
-                OcRecibida::ESTADO_EN_PROCESO, OcRecibida::ESTADO_POR_ENTREGA => OcRecibida::ESTADO_COMERCIAL_EN_ATENCION,
-                default => $ocRecibida->estado_comercial ?: OcRecibida::ESTADO_COMERCIAL_REGISTRADA,
+                OcRecibida::ESTADO_ATENDIDO => 'cerrada',
+                OcRecibida::ESTADO_EN_PROCESO, OcRecibida::ESTADO_POR_ENTREGA => 'en_atencion',
+                default => $ocRecibida->estado_comercial ?: 'registrada',
             };
             $payload['estado_documental'] = $ocRecibida->documentosFaltantes() === []
                 ? OcRecibida::ESTADO_DOCUMENTAL_COMPLETO

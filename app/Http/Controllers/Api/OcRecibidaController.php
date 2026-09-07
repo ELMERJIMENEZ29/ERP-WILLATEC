@@ -671,10 +671,10 @@ class OcRecibidaController extends Controller
         $todosEntregados = $itemsSeleccionados->isNotEmpty() && $itemsSeleccionados->where('entregado', false)->isEmpty();
 
         $payload['estado_comercial'] = match ($estadoLegacy) {
-            OcRecibida::ESTADO_CANCELADO => OcRecibida::ESTADO_COMERCIAL_CANCELADA,
-            OcRecibida::ESTADO_ATENDIDO => OcRecibida::ESTADO_COMERCIAL_CERRADA,
-            OcRecibida::ESTADO_EN_PROCESO, OcRecibida::ESTADO_POR_ENTREGA => OcRecibida::ESTADO_COMERCIAL_EN_ATENCION,
-            default => OcRecibida::ESTADO_COMERCIAL_REGISTRADA,
+            OcRecibida::ESTADO_CANCELADO => 'cancelada',
+            OcRecibida::ESTADO_ATENDIDO => 'cerrada',
+            OcRecibida::ESTADO_EN_PROCESO, OcRecibida::ESTADO_POR_ENTREGA => 'en_atencion',
+            default => 'registrada',
         };
 
         $payload['estado_logistico'] = match (true) {
