@@ -1001,7 +1001,14 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                     <td>
                         <span class="strong">{{ $item->descripcion }}</span><br>
                         @if(!empty($item->nota))
-                        <span class="muted">Nota: {!! nl2br(e($item->nota)) !!}</span><br>
+                        @php
+                            $notaItemHtml = str_replace(
+                                ['&lt;strong&gt;', '&lt;/strong&gt;', '&lt;b&gt;', '&lt;/b&gt;', '&lt;em&gt;', '&lt;/em&gt;', '&lt;i&gt;', '&lt;/i&gt;', '&lt;u&gt;', '&lt;/u&gt;'],
+                                ['<strong>', '</strong>', '<strong>', '</strong>', '<em>', '</em>', '<em>', '</em>', '<u>', '</u>'],
+                                nl2br(e($item->nota))
+                            );
+                        @endphp
+                        <span class="muted">Nota: {!! $notaItemHtml !!}</span><br>
                         @endif
                         @if($item->marca)
                         <span class="muted">Marca: {{ $item->marca }}</span><br>

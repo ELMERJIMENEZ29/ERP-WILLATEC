@@ -303,6 +303,29 @@ class LicitacionController extends Controller
         ]);
 
         $cotizacionOrigen = Cotizacion::with(['estadoCotizacion', 'moneda'])->findOrFail($validated['cotizacion_id']);
+        $existingRelacion = LicitacionCotizacion::with('licitacion:id,tipo,empresa,requerimiento')
+            ->where('cotizacion_id', $cotizacionOrigen->id)
+            ->where('licitacion_id', '<>', $licitacion->id)
+            ->first();
+
+        if ($existingRelacion) {
+            $oportunidad = $existingRelacion->licitacion;
+            $detalleOportunidad = trim(implode(' ', array_filter([
+                $oportunidad?->tipo ? strtoupper((string) $oportunidad->tipo) : null,
+                $oportunidad?->empresa,
+                $oportunidad?->requerimiento ? '- '.$oportunidad->requerimiento : null,
+            ])));
+
+            return response()->json([
+                'message' => $detalleOportunidad
+                    ? "La cotizacion {$cotizacionOrigen->numero} ya esta vinculada a otra oportunidad: {$detalleOportunidad}."
+                    : "La cotizacion {$cotizacionOrigen->numero} ya esta vinculada a otra oportunidad.",
+                'errors' => [
+                    'cotizacion_id' => ['Esta cotizacion ya esta vinculada a otra oportunidad.'],
+                ],
+            ], 422);
+        }
+
         $userName = $validated['userName'] ?? $this->userDisplayName($request->user());
 
         $cotizacion = DB::transaction(function () use ($request, $validated, $licitacion, $cotizacionOrigen, $userName): LicitacionCotizacion {
@@ -377,12 +400,12 @@ class LicitacionController extends Controller
     {
         abort_if((int) $cotizacion->licitacion_id !== (int) $licitacion->id, 404);
 
-        if (($cotizacion->origen ?? 'vinculada') !== 'vinculada') {
-            abort(403, 'Solo se pueden desvincular cotizaciones vinculadas manualmente.');
+        if (! in_array($cotizacion->origen ?? 'vinculada', ['vinculada', 'generada'], true)) {
+            abort(403, 'Solo se pueden desvincular cotizaciones vinculadas o generadas desde la oportunidad.');
         }
 
         if (! $this->canDeleteOwnRecord($request, $cotizacion->creado_por, $cotizacion->creado_por_id)) {
-            abort(403, 'Solo puedes desvincular cotizaciones que vinculaste.');
+            abort(403, 'Solo puedes desvincular cotizaciones que vinculaste o generaste.');
         }
 
         DB::transaction(function () use ($request, $licitacion, $cotizacion): void {
@@ -864,6 +887,10 @@ class LicitacionController extends Controller
 
         if (! $user) {
             return false;
+        }
+
+        if ($user->hasRole('superadmin')) {
+            return true;
         }
 
         if ($createdById && (int) $createdById === (int) $user->id) {
