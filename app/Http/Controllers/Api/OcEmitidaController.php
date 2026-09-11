@@ -132,7 +132,7 @@ class OcEmitidaController extends Controller
         }
 
         $ocEmitida = DB::transaction(function () use ($request, $validated, $cotizacion, $proveedorSeleccionado): OcEmitida {
-            $ocEmitida = OcEmitida::create([
+            $ocEmitida = new OcEmitida([
                 'numero' => $this->generarNumero(),
                 'estado' => OcEmitida::ESTADO_EMITIDA,
                 'cliente_nombre' => $cotizacion->cliente_nombre,
@@ -277,11 +277,9 @@ class OcEmitidaController extends Controller
 
     public function pdf(OcEmitida $ocEmitida)
     {
-        if (! $ocEmitida->pdf_path || ! Storage::disk('public')->exists($ocEmitida->pdf_path)) {
-            $ocEmitida->load(['items', 'cotizacion', 'cliente', 'proveedorRelacion']);
-            $ocEmitida->update(['pdf_path' => $this->generarPdf($ocEmitida)]);
-            $ocEmitida->refresh();
-        }
+        $ocEmitida->load(['items', 'cotizacion', 'cliente', 'proveedorRelacion']);
+        $ocEmitida->update(['pdf_path' => $this->generarPdf($ocEmitida)]);
+        $ocEmitida->refresh();
 
         return Storage::disk('public')->download($ocEmitida->pdf_path, "{$ocEmitida->numero}.pdf");
     }

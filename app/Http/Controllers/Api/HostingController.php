@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\HostingRenovacionGracias;
 use App\Models\Cliente;
 use App\Models\Hosting;
 use App\Models\HostingDocumento;
@@ -11,9 +12,11 @@ use App\Notifications\ServicioRenovacionNotification;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 class HostingController extends Controller
 {
@@ -366,11 +369,35 @@ class HostingController extends Controller
         ]);
 
         $hosting->alertasEnviadas()->delete();
+        $this->sendRenovacionGracias($hosting->refresh());
     }
 
     private function notifyAdmins(ServicioRenovacionNotification $notification): void
     {
         User::role(['superadmin', 'admin'])->get()->each->notify($notification);
+    }
+
+    private function sendRenovacionGracias(Hosting $hosting): void
+    {
+        $customerEmail = $hosting->correo_hosting ?: null;
+        $internalRecipient = config('mail.hosting_alert_internal_recipient');
+
+        if (! $customerEmail) {
+            return;
+        }
+
+        try {
+            $message = Mail::mailer(config('mail.hosting_mailer', 'hosting'))
+                ->to($customerEmail);
+
+            if ($internalRecipient && strtolower($customerEmail) !== strtolower((string) $internalRecipient)) {
+                $message->bcc($internalRecipient);
+            }
+
+            $message->send(new HostingRenovacionGracias($hosting));
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     /**
@@ -517,7 +544,7 @@ class HostingController extends Controller
 
         try {
             return Carbon::parse(trim($value))->toDateString();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }

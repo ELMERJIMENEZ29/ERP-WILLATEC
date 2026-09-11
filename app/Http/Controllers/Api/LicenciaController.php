@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\LicenciaRenovacionGracias;
 use App\Models\Cliente;
 use App\Models\Licencia;
 use App\Models\LicenciaDocumento;
@@ -11,9 +12,11 @@ use App\Notifications\ServicioRenovacionNotification;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 class LicenciaController extends Controller
 {
@@ -343,11 +346,33 @@ class LicenciaController extends Controller
         ]);
 
         $licencia->alertasEnviadas()->delete();
+        $this->sendRenovacionGracias($licencia->refresh());
     }
 
     private function notifyAdmins(ServicioRenovacionNotification $notification): void
     {
         User::role(['superadmin', 'admin'])->get()->each->notify($notification);
+    }
+
+    private function sendRenovacionGracias(Licencia $licencia): void
+    {
+        $customerEmail = $licencia->correo_licencia ?: null;
+
+        if (! $customerEmail) {
+            return;
+        }
+
+        try {
+            $message = Mail::to($customerEmail);
+
+            if (strtolower($customerEmail) !== 'luis.lopez@willatec.com') {
+                $message->bcc('luis.lopez@willatec.com');
+            }
+
+            $message->send(new LicenciaRenovacionGracias($licencia));
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     /**
@@ -482,7 +507,7 @@ class LicenciaController extends Controller
 
         try {
             return Carbon::parse(trim($value))->toDateString();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }
