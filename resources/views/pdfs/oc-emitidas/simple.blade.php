@@ -350,6 +350,30 @@
             line-height: 1.5;
         }
 
+        .observations-box {
+            margin-top: 12px;
+            border: 1px solid #d7d7dd;
+            border-left: 5px solid #5542a0;
+            border-radius: 7px;
+            background: #f7f6fb;
+            padding: 10px 12px;
+        }
+
+        .observations-title {
+            color: #312783;
+            font-size: 10px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .observations-text {
+            color: #17172d;
+            font-size: 10px;
+            line-height: 1.55;
+            white-space: pre-line;
+        }
+
         .payment-box {
             margin-top: 30px;
         }
@@ -1013,15 +1037,17 @@
             </div>
 
 
-            <div class="optional-line">
+            @if(filled($ocEmitida->observaciones))
+                <div class="observations-box">
+                    <div class="observations-title">
+                        Observaciones de la OC
+                    </div>
 
-                @if(!empty($ocEmitida->observacion))
-
-                    {{ $ocEmitida->observacion }}
-
-                @endif
-
-            </div>
+                    <div class="observations-text">
+                        {{ $ocEmitida->observaciones }}
+                    </div>
+                </div>
+            @endif
 
 
             {{-- MODALIDAD DE PAGO --}}
