@@ -48,6 +48,7 @@ class CotizacionController extends Controller
 
     private const FORMAS_PAGO = [
         'AL CONTADO',
+        'CRÉDITO A 7 DÍAS',
         'CRÉDITO A 5 DÍAS',
         'CRÉDITO 15 DÍAS',
         'CRÉDITO 30 DÍAS',

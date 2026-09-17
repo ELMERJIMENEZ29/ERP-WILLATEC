@@ -356,6 +356,8 @@ Route::prefix('licencias')->middleware(['auth:sanctum', 'token.idle', 'role:supe
     Route::post('/{licencia}/renovar', [LicenciaController::class, 'renovar']);
     Route::post('/{licencia}/documentos', [LicenciaController::class, 'documentos']);
     Route::delete('/{licencia}/documentos/{documento}', [LicenciaController::class, 'eliminarDocumento']);
+    Route::post('/{licencia}/cotizaciones', [LicenciaController::class, 'enlazarCotizacion']);
+    Route::delete('/{licencia}/cotizaciones/{cotizacion}', [LicenciaController::class, 'desenlazarCotizacion']);
     Route::get('/{licencia}', [LicenciaController::class, 'show']);
     Route::put('/{licencia}', [LicenciaController::class, 'update']);
     Route::delete('/{licencia}', [LicenciaController::class, 'destroy']);

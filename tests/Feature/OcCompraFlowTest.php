@@ -106,6 +106,44 @@ test('oc recibida acepta seleccionado como texto cuando se envia multipart', fun
         ->assertJsonPath('oc_recibida.items.1.seleccionado', false);
 });
 
+test('oc cancelada bloquea documentos y devuelve cotizacion a aprobada sin oc activa', function () {
+    Storage::fake('public');
+    $base = crearCotizacionBase();
+    Sanctum::actingAs($base['ventas']);
+
+    $response = $this->post('/api/oc-recibidas', [
+        'cotizacion_id' => $base['cotizacion']->id,
+        'fecha_recepcion' => '2026-06-20',
+        'items' => [
+            [
+                'cotizacion_item_id' => $base['items'][0]->id,
+                'seleccionado' => true,
+                'cantidad_recibida' => 1,
+            ],
+        ],
+    ])
+        ->assertCreated()
+        ->assertJsonPath('cotizacion.estado', 'parcialmente_aprobada');
+
+    $ocRecibidaId = $response->json('oc_recibida.id');
+
+    $this->patchJson("/api/oc-recibidas/{$ocRecibidaId}/cancelar")
+        ->assertOk()
+        ->assertJsonPath('estado', 'cancelado')
+        ->assertJsonPath('cotizacion.estado', 'aprobada');
+
+    expect($base['cotizacion']->refresh()->estadoCotizacion->nombre)->toBe('aprobada');
+
+    $this->patchJson("/api/oc-recibidas/{$ocRecibidaId}/cancelar")
+        ->assertOk()
+        ->assertJsonPath('estado', 'cancelado')
+        ->assertJsonPath('cotizacion.estado', 'aprobada');
+
+    $this->post("/api/oc-recibidas/{$ocRecibidaId}/documentos", [
+        'orden_compra_cliente' => UploadedFile::fake()->create('oc.pdf', 10, 'application/pdf'),
+    ])->assertUnprocessable();
+});
+
 test('oc emitida se genera desde proveedor de cotizacion con totales y pdf', function () {
     Storage::fake('public');
     $base = crearCotizacionBase();

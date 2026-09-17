@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -56,6 +57,14 @@ class Licencia extends Model
     public function documentos(): HasMany
     {
         return $this->hasMany(LicenciaDocumento::class);
+    }
+
+    public function cotizaciones(): BelongsToMany
+    {
+        return $this->belongsToMany(Cotizacion::class, 'licencia_cotizaciones')
+            ->withPivot('created_by')
+            ->withTimestamps()
+            ->orderByDesc('licencia_cotizaciones.created_at');
     }
 
     public function moneda(): BelongsTo

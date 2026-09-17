@@ -400,9 +400,20 @@ class OcRecibidaController extends Controller
         }
 
         if ($ocRecibida->estado === OcRecibida::ESTADO_CANCELADO) {
+            if ($ocRecibida->cotizacion) {
+                $this->actualizarEstadoCotizacion($ocRecibida->cotizacion, $ocRecibida);
+            }
+
+            $ocRecibida->refresh()->load(['cotizacion.estadoCotizacion', 'cliente:id,nombre,ruc']);
+
             return response()->json([
                 'message' => 'La OC ya se encuentra cancelada.',
                 'estado' => $ocRecibida->estado,
+                'cotizacion' => [
+                    'id' => $ocRecibida->cotizacion?->id,
+                    'estado' => $ocRecibida->cotizacion?->estadoCotizacion?->nombre,
+                ],
+                'oc_recibida' => $ocRecibida,
             ]);
         }
 
@@ -480,10 +491,16 @@ class OcRecibidaController extends Controller
             }
         });
 
+        $ocRecibida->refresh()->load(['cotizacion.estadoCotizacion', 'cliente:id,nombre,ruc']);
+
         return response()->json([
             'message' => 'OC cancelada y reservas liberadas.',
-            'estado' => $ocRecibida->refresh()->estado,
-            'oc_recibida' => $ocRecibida->load(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc']),
+            'estado' => $ocRecibida->estado,
+            'cotizacion' => [
+                'id' => $ocRecibida->cotizacion?->id,
+                'estado' => $ocRecibida->cotizacion?->estadoCotizacion?->nombre,
+            ],
+            'oc_recibida' => $ocRecibida,
         ]);
     }
 
