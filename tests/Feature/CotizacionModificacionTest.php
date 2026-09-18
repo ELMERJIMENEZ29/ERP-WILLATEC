@@ -6,6 +6,7 @@ use App\Models\CotizacionItem;
 use App\Models\EstadoCotizacion;
 use App\Models\EstadoCotizacionItem;
 use App\Models\Moneda;
+use App\Models\OcRecibida;
 use App\Models\Plantilla;
 use App\Models\Plataforma;
 use App\Models\TipoCliente;
@@ -16,6 +17,105 @@ use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
+
+test('cotizacion parcial con solo oc cancelada se restaura a aprobada al solicitar modificacion', function () {
+    $this->seed(RoleSeeder::class);
+
+    $estadoParcial = EstadoCotizacion::create(['nombre' => 'parcialmente_aprobada']);
+    EstadoCotizacion::create(['nombre' => 'aprobada']);
+    EstadoCotizacion::create(['nombre' => 'borrador']);
+    EstadoCotizacionItem::create(['nombre' => 'pendiente']);
+
+    $moneda = Moneda::create(['codigo' => 'PEN', 'simbolo' => 'S/']);
+    $plantilla = Plantilla::create([
+        'nombre' => 'WILLATEC SOLES',
+        'incluye_igv' => false,
+        'formato_pdf' => 'willatec-soles',
+        'activo' => true,
+    ]);
+    $plataforma = Plataforma::create(['nombre' => 'correo']);
+    $tipoCliente = TipoCliente::create(['nombre' => 'Activo']);
+    $cliente = Cliente::create([
+        'nombre' => 'Cliente Demo',
+        'ruc' => '12345678901',
+        'telefono' => '999999999',
+        'correo' => 'cliente@example.com',
+        'tipo_cliente_id' => $tipoCliente->id,
+        'plantilla_id' => $plantilla->id,
+    ]);
+
+    $ventas = User::factory()->create();
+    $ventas->assignRole('ventas');
+
+    $cotizacion = Cotizacion::create([
+        'numero' => 'COT-PARCIAL-001',
+        'fecha' => now()->toDateString(),
+        'validez_dias' => 10,
+        'forma_pago' => 'AL CONTADO',
+        'tipo_cambio' => 1,
+        'titulo' => 'Cotizacion con OC cancelada',
+        'modo_distribucion' => 'POR_ITEM',
+        'moneda_id' => $moneda->id,
+        'subtotal' => 100,
+        'igv' => 18,
+        'total' => 118,
+        'ganancia' => 10,
+        'total_gasto' => 0,
+        'cliente_id' => $cliente->id,
+        'plantilla_id' => $plantilla->id,
+        'estado_cotizacion_id' => $estadoParcial->id,
+        'user_id' => $ventas->id,
+        'plataforma_id' => $plataforma->id,
+        'cliente_nombre' => $cliente->nombre,
+        'cliente_ruc' => $cliente->ruc,
+        'cliente_contacto' => 'Contacto original',
+        'cliente_telefono' => $cliente->telefono,
+        'cliente_correo' => $cliente->correo,
+    ]);
+
+    CotizacionItem::create([
+        'cotizacion_id' => $cotizacion->id,
+        'descripcion' => 'Item original',
+        'cantidad' => 1,
+        'costo_base' => 100,
+        'costo_unitario' => 100,
+        'margen' => 10,
+        'precio_venta' => 111.11,
+        'subtotal' => 111.11,
+        'costo_total' => 100,
+        'ganancia' => 11.11,
+        'orden' => 1,
+        'tipo' => 'personalizado',
+        'estado_cotizacion_item_id' => 1,
+    ]);
+
+    OcRecibida::create([
+        'numero' => 'OCR-CANCEL-001',
+        'fecha_recepcion' => now()->toDateString(),
+        'estado' => OcRecibida::ESTADO_CANCELADO,
+        'cliente_nombre' => $cliente->nombre,
+        'cliente_ruc' => $cliente->ruc,
+        'cliente_contacto' => 'Contacto original',
+        'cliente_correo' => $cliente->correo,
+        'cotizacion_id' => $cotizacion->id,
+        'cliente_id' => $cliente->id,
+        'user_id' => $ventas->id,
+    ]);
+
+    Sanctum::actingAs($ventas);
+
+    $this->getJson("/api/cotizaciones/{$cotizacion->id}")
+        ->assertOk()
+        ->assertJsonPath('estado_cotizacion.nombre', 'aprobada');
+
+    $this->postJson("/api/cotizaciones/{$cotizacion->id}/solicitar-modificacion", [
+        'motivo' => 'Actualizar cotizacion luego de cancelar OC',
+    ])
+        ->assertCreated()
+        ->assertJsonPath('modificacion.cotizacion_id', $cotizacion->id);
+
+    expect($cotizacion->refresh()->estadoCotizacion->nombre)->toBe('aprobada');
+});
 
 test('una cotizacion aprobada se modifica mediante propuesta versionada', function () {
     $this->seed(RoleSeeder::class);

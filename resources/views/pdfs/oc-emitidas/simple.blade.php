@@ -1,68 +1,82 @@
+@php
+$ptSansRegularBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Regular.ttf')));
+$ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bold.ttf')));
+@endphp
+
 <!doctype html>
 <html lang="es">
+
 <head>
     <meta charset="utf-8">
 
     <title>Orden de Compra {{ $ocEmitida->numero }}</title>
 
     <style>
+        @font-face {
+            font-family: "PT Sans";
+            src: url("data:font/truetype;charset=utf-8;base64,{{ $ptSansRegularBase64 }}") format("truetype");
+            font-weight: 400;
+        }
+
+        @font-face {
+            font-family: "PT Sans";
+            src: url("data:font/truetype;charset=utf-8;base64,{{ $ptSansBoldBase64 }}") format("truetype");
+            font-weight: 700;
+        }
+
         @page {
-            margin: 22px 30px 25px 30px;
+            margin: 10px 30px 8px 30px;
         }
 
         * {
             box-sizing: border-box;
         }
 
+        html,
+        body,
+        table,
+        tr,
+        td,
+        th,
+        div,
+        span {
+            font-family: "PT Sans", DejaVu Sans, sans-serif;
+        }
+
         body {
-            font-family: DejaVu Sans, sans-serif;
-            font-size: 10px;
-            color: #17172d;
             margin: 0;
             padding: 0;
+            color: #17172d;
+            font-size: 9.5px;
+        }
+
+        table {
+            border-collapse: collapse;
         }
 
         /* =========================
-           COLORES
-        ========================== */
-
-        .purple {
-            color: #312783;
-        }
-
-        .teal {
-            color: #008e98;
-        }
-
-        .pink {
-            color: #e50073;
-        }
-
-        /* =========================
-           HEADER
-        ========================== */
+       HEADER
+    ========================= */
 
         .header-table {
             width: 100%;
             border-collapse: collapse;
-            margin: 0;
         }
 
         .header-table td {
+            padding: 0;
             border: none;
             vertical-align: top;
-            padding: 0;
         }
 
         .logo-area {
             width: 48%;
-            padding-top: 7px;
+            padding-top: 8px !important;
         }
 
         .logo {
-            width: 240px;
-            max-height: 75px;
-            object-fit: contain;
+            width: 255px;
+            height: auto;
         }
 
         .order-area {
@@ -70,138 +84,193 @@
             text-align: right;
         }
 
-        .order-title {
-            background: #25236f;
-            color: white;
-            font-size: 24px;
-            font-weight: bold;
-            padding: 16px 20px 12px 20px;
+        .order-title-table {
+            width: 100%;
+            height: 54px;
+            border-collapse: collapse;
+            background: #24246f;
+        }
+
+        .order-title-table td {
+            height: 54px;
+            padding: 0 !important;
+            border: none !important;
+            color: #ffffff;
+            font-size: 25px;
+            font-weight: 700;
             text-align: center;
-            text-transform: uppercase;
+            vertical-align: middle;
+            letter-spacing: .2px;
         }
 
         .order-number-wrapper {
             text-align: center;
-            margin-top: -5px;
+            margin-top: 10px;
         }
 
         .order-number {
             display: inline-block;
-            background: #5a469b;
-            color: white;
-            padding: 7px 28px;
-            border-radius: 18px;
+            min-width: 235px;
+            padding: 7px 25px 8px;
+            background: #58449d;
+            color: #fff;
+            border-radius: 25px;
             font-size: 19px;
-            font-weight: bold;
-            min-width: 210px;
+            font-weight: 700;
+            text-align: center;
         }
 
         .date-box {
+            margin-top: 12px;
             text-align: center;
-            margin-top: 15px;
             font-size: 13px;
         }
 
-        .date-icon {
+        .date-icon-img {
+            width: 25px;
+            height: 25px;
+            object-fit: contain;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+
+        .date-text {
             display: inline-block;
-            background: #5541a0;
-            color: white;
-            padding: 4px 7px;
-            margin-right: 5px;
-            font-weight: bold;
-            border-radius: 3px;
+            vertical-align: middle;
         }
 
         /* =========================
-           LINEA COLORES
-        ========================== */
+       LÍNEA MULTICOLOR
+    ========================= */
 
         .color-line {
-            margin-top: 15px;
-            margin-bottom: 26px;
             width: 100%;
-            border-collapse: collapse;
+            margin-top: 14px;
+            margin-bottom: 27px;
         }
 
         .color-line td {
-            height: 2px;
             border: none;
             padding: 0;
+            height: 2px;
         }
 
         .line-pink {
-            background: #e50073;
             width: 15%;
+            background: #e50073;
         }
 
         .line-cyan {
-            background: #0ea4aa;
             width: 18%;
+            background: #009da5;
         }
 
         .line-green {
-            background: #8ebd21;
             width: 20%;
+            background: #8ebc22;
         }
 
         .line-purple {
-            background: #312783;
             width: 47%;
+            background: #30277d;
         }
 
         /* =========================
-           CAJAS INFORMACION
-        ========================== */
+       INFORMACIÓN
+    ========================= */
 
         .info-layout {
             width: 100%;
+            table-layout: fixed;
             border-collapse: separate;
             border-spacing: 10px 0;
             margin-left: -10px;
             width: calc(100% + 20px);
         }
 
-        .info-layout > tbody > tr > td {
+        .info-layout>tbody>tr>td {
             width: 50%;
-            border: none;
             vertical-align: top;
             padding: 0 10px;
+            border: none;
         }
 
-        .section-title {
-            color: white;
+        .section-header {
+            width: 94%;
+            border-collapse: collapse;
+            position: relative;
+            z-index: 2;
+        }
+
+        .section-header td {
+            border: none;
+            padding: 0;
+            vertical-align: middle;
+        }
+
+        .section-header-icon {
+            width: 45px;
+            height: 38px;
+            text-align: center;
+            border-radius: 8px;
+        }
+
+        .provider-header-icon {
+            background: #49378d;
+        }
+
+        .billing-header-icon {
+            background: #008f98;
+        }
+
+        .section-icon-img {
+            width: 25px;
+            height: 25px;
+            object-fit: contain;
+        }
+
+        .section-header-title {
+            height: 32px;
+            padding-left: 10px !important;
+            color: #ffffff;
             font-size: 11px;
-            font-weight: bold;
-            padding: 8px 13px;
-            width: 74%;
-            text-transform: uppercase;
+            font-weight: 700;
+            white-space: nowrap;
         }
 
-        .section-title.provider {
+        .provider-header-title,
+        .provider-header-tail {
             background: #30277d;
         }
 
-        .section-title.billing {
-            background: #008c96;
+        .billing-header-title,
+        .billing-header-tail {
+            background: #00939b;
+        }
+
+        .section-header-tail {
+            width: 18px;
         }
 
         .info-card {
-            border: 1px solid #d4d4dc;
+            position: relative;
+            z-index: 1;
+            margin-top: -3px;
+            border: 1px solid #d7d7dd;
             border-radius: 8px;
-            padding: 13px 16px;
-            min-height: 205px;
+            padding: 14px 16px 10px 16px;
+            min-height: 210px;
         }
 
         .info-row {
             width: 100%;
-            border-collapse: collapse;
+            table-layout: fixed;
         }
 
         .info-row td {
-            border: none;
-            border-bottom: 1px solid #e5e5e8;
-            padding: 10px 4px;
-            vertical-align: top;
+            padding: 11px 3px;
+            vertical-align: middle;
+            border-bottom: 1px solid #e6e6e9;
         }
 
         .info-row:last-child td {
@@ -209,74 +278,62 @@
         }
 
         .icon-cell {
-            width: 28px;
+            width: 31px;
             text-align: center;
+            vertical-align: middle;
         }
 
-        .info-icon-purple,
-        .info-icon-teal {
-            display: inline-block;
-            width: 19px;
-            height: 19px;
-            line-height: 19px;
-            border-radius: 50%;
-            color: white;
-            text-align: center;
-            font-size: 9px;
-            font-weight: bold;
-        }
-
-        .info-icon-purple {
-            background: #5542a0;
-        }
-
-        .info-icon-teal {
-            background: #008f98;
+        .body-icon {
+            width: 23px;
+            height: 23px;
+            object-fit: contain;
+            vertical-align: middle;
         }
 
         .label-cell {
             width: 105px;
-            font-weight: bold;
+            font-weight: 700;
+            font-size: 10px;
         }
 
         .provider-label {
-            color: #4c3b91;
+            color: #49378d;
         }
 
         .billing-label {
-            color: #008c96;
+            color: #008f98;
         }
 
         .value-cell {
+            font-size: 9.5px;
+            line-height: 1.4;
             color: #17172d;
-            line-height: 1.45;
         }
 
         /* =========================
-           PRODUCTOS
-        ========================== */
+       PRODUCTOS
+    ========================= */
 
         .products-table {
             width: 100%;
+            margin-top: 20px;
             border-collapse: collapse;
-            margin-top: 28px;
-            border-radius: 7px;
-            overflow: hidden;
         }
 
         .products-table th {
-            background: #44368c;
+            background: #44358d;
             color: white;
-            font-size: 10px;
-            font-weight: bold;
+            border: 1px solid #7165aa;
+            padding: 10px 6px;
+            font-size: 9px;
+            font-weight: 700;
             text-align: center;
-            padding: 11px 7px;
-            border: 1px solid #756bac;
         }
 
         .products-table td {
             border: 1px solid #d7d7dd;
             padding: 11px 7px;
+            font-size: 9.5px;
             vertical-align: middle;
         }
 
@@ -310,16 +367,15 @@
         }
 
         /* =========================
-           PARTE INFERIOR
-        ========================== */
+       INFERIOR
+    ========================= */
 
         .bottom-layout {
             width: 100%;
-            border-collapse: collapse;
-            margin-top: 22px;
+            margin-top: 14px;
         }
 
-        .bottom-layout td {
+        .bottom-layout>tbody>tr>td {
             border: none;
             vertical-align: top;
         }
@@ -333,104 +389,124 @@
             width: 45%;
         }
 
-        /* OPCIONALES */
-
         .optional-title {
-            font-weight: bold;
-            color: #008c96;
-            margin-bottom: 7px;
-            font-size: 10px;
+            color: #008f98;
+            font-size: 9px;
+            font-weight: 700;
+            margin-bottom: 5px;
         }
 
         .optional-line {
-            border-bottom: 1px solid #dddddf;
             min-height: 22px;
+            border-bottom: 1px solid #dddde2;
             padding: 4px 0;
-            margin-bottom: 1px;
-            line-height: 1.5;
+            line-height: 1.4;
         }
 
         .observations-box {
-            margin-top: 12px;
-            border: 1px solid #d7d7dd;
-            border-left: 5px solid #5542a0;
-            border-radius: 7px;
-            background: #f7f6fb;
-            padding: 10px 12px;
+            margin-top: 11px;
+            background: #f8f7fc;
+            border: 1px solid #dddce5;
+            border-left: 5px solid #5946a1;
+            border-radius: 6px;
+            padding: 9px 11px;
         }
 
         .observations-title {
-            color: #312783;
-            font-size: 10px;
-            font-weight: bold;
+            color: #392b80;
+            font-weight: 700;
+            font-size: 9px;
+            margin-bottom: 7px;
             text-transform: uppercase;
-            margin-bottom: 6px;
         }
 
         .observations-text {
-            color: #17172d;
-            font-size: 10px;
             line-height: 1.55;
             white-space: pre-line;
         }
 
+        /* =========================
+       MODALIDAD
+    ========================= */
+
         .payment-box {
-            margin-top: 30px;
+            margin-top: 14px;
+            width: 100%;
         }
 
-        .payment-title {
-            color: #e50073;
-            font-weight: bold;
-            font-size: 10px;
-            margin-bottom: 7px;
+        .payment-header-table {
+            width: 100%;
+            border-collapse: collapse;
         }
 
-        .payment-icon {
-            display: inline-block;
+        .payment-header-table td {
+            border: none;
+            padding: 0;
+            vertical-align: middle;
+        }
+
+        .payment-icon-cell {
+            width: 38px;
+        }
+
+        .payment-icon-circle {
+            width: 28px;
+            height: 28px;
+            line-height: 25px;
             border: 2px solid #e50073;
-            color: #e50073;
             border-radius: 50%;
-            width: 25px;
-            height: 25px;
-            line-height: 21px;
+            color: #e50073;
+            font-size: 17px;
+            font-weight: 700;
             text-align: center;
-            font-weight: bold;
-            font-size: 15px;
-            margin-right: 7px;
+        }
+
+        .payment-title-cell {
+            color: #e50073;
+            font-size: 10px;
+            font-weight: 700;
+            padding-left: 5px !important;
+        }
+
+        .payment-value {
+            margin-top: 5px;
+            margin-left: 43px;
+            font-size: 9.5px;
+            color: #17172d;
         }
 
         /* =========================
-           TOTALES
-        ========================== */
+       TOTALES
+    ========================= */
 
         .totals-table {
             width: 100%;
             border-collapse: collapse;
-            border: 1px solid #d6d6dd;
+            border: 1px solid #d7d7dd;
         }
 
         .totals-table td {
+            border: 1px solid #d7d7dd;
             padding: 10px 15px;
-            border: 1px solid #d6d6dd;
         }
 
         .total-label {
             font-size: 11px;
-            font-weight: bold;
+            font-weight: 700;
         }
 
         .total-value {
             text-align: right;
             font-size: 12px;
-            font-weight: bold;
+            font-weight: 700;
         }
 
         .grand-total td {
-            background: #008c96;
+            background: #008e98;
             color: white;
-            border-color: #4fb4ba;
-            padding-top: 11px;
-            padding-bottom: 11px;
+            border-color: #45aeb5;
+            padding-top: 10px;
+            padding-bottom: 10px;
         }
 
         .grand-total .total-label {
@@ -438,107 +514,128 @@
         }
 
         .grand-total .total-value {
-            font-size: 18px;
+            font-size: 19px;
         }
 
         /* =========================
-           FIRMA
-        ========================== */
+       FIRMA
+    ========================= */
 
         .signature {
-            margin-top: 20px;
+            margin-top: 10px;
             text-align: center;
         }
 
         .signature-text {
-            margin-bottom: 4px;
             font-size: 10px;
+            margin-bottom: -5px;
         }
 
         .signature-img {
-            max-width: 100px;
-            max-height: 55px;
-            margin-bottom: 0;
+            height: 90px;
+            width: auto;
+            display: block;
+            margin: -5px auto -13px auto;
         }
 
         .signature-line {
             width: 185px;
             margin: 0 auto;
-            border-top: 1px solid #008c96;
-            padding-top: 5px;
+            border-top: 1px solid #008e98;
+            padding-top: 4px;
         }
 
         .signature-name {
-            font-weight: bold;
             font-size: 11px;
+            line-height: 1.1;
+            font-weight: 700;
         }
 
         .signature-role {
             font-size: 9px;
+            line-height: 1.2;
             margin-top: 2px;
         }
 
         .signature-company {
-            color: #008c96;
-            font-weight: bold;
+            color: #008e98;
             font-size: 9px;
+            font-weight: 700;
+            line-height: 1.2;
             margin-top: 2px;
         }
 
         /* =========================
-           FOOTER
-        ========================== */
+       FOOTER
+    ========================= */
 
         .footer {
-            margin-top: 25px;
-            background: #1f2464;
+            margin-top: 12px;
+            width: 100%;
+            background: #202665;
             color: white;
-            padding: 12px 10px;
+            padding: 10px 9px;
         }
 
         .footer-table {
             width: 100%;
-            border-collapse: collapse;
+            table-layout: fixed;
         }
 
         .footer-table td {
             border: none;
-            vertical-align: top;
-            padding: 2px 9px;
-            font-size: 8px;
-            line-height: 1.5;
-        }
-
-        .footer-title {
-            font-weight: bold;
-            font-size: 8px;
+            color: white;
+            vertical-align: middle;
+            padding: 3px 8px;
         }
 
         .footer-address {
-            width: 29%;
+            width: 30%;
         }
 
         .footer-phone {
             width: 22%;
-            border-left: 1px solid rgba(255,255,255,.25) !important;
+            border-left: 1px solid rgba(255, 255, 255, .35) !important;
         }
 
         .footer-email {
             width: 24%;
-            border-left: 1px solid rgba(255,255,255,.25) !important;
+            border-left: 1px solid rgba(255, 255, 255, .35) !important;
         }
 
         .footer-web {
-            width: 25%;
-            border-left: 1px solid rgba(255,255,255,.25) !important;
+            width: 24%;
+            border-left: 1px solid rgba(255, 255, 255, .35) !important;
+        }
+
+        .footer-icon-img {
+            width: 28px;
+            height: 28px;
+            vertical-align: middle;
+        }
+
+        .footer-content {
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 5px;
+        }
+
+        .footer-title {
+            display: block;
+            font-size: 8.5px;
+            font-weight: 700;
+            line-height: 1.1;
+        }
+
+        .footer-value {
+            display: block;
+            font-size: 7.5px;
+            line-height: 1.35;
+            margin-top: 2px;
         }
 
         .text-center {
             text-align: center;
-        }
-
-        .text-right {
-            text-align: right;
         }
 
         .nowrap {
@@ -549,7 +646,7 @@
 
 <body>
 
-@php
+    @php
     /*
     |--------------------------------------------------------------------------
     | CONFIGURACIÓN / DATOS PARA EL PDF
@@ -557,396 +654,491 @@
     */
 
     $fecha = $ocEmitida->fecha_emision
-        ? \Carbon\Carbon::parse($ocEmitida->fecha_emision)
-            ->locale('es')
-            ->translatedFormat('l, j \d\e F \d\e Y')
-        : null;
+    ? \Carbon\Carbon::parse($ocEmitida->fecha_emision)
+    ->locale('es')
+    ->translatedFormat('l, j \d\e F \d\e Y')
+    : null;
 
     $fecha = $fecha ? ucfirst($fecha) : '-';
 
     /*
-     * Por ahora tu campo proveedor parece ser texto.
-     * Estos campos quedan preparados para cuando tengas
-     * proveedor_ruc, proveedor_direccion, etc.
-     */
+    * Por ahora tu campo proveedor parece ser texto.
+    * Estos campos quedan preparados para cuando tengas
+    * proveedor_ruc, proveedor_direccion, etc.
+    */
 
     $proveedorNombre = $ocEmitida->proveedor ?? '-';
 
     $proveedorRuc =
-        $ocEmitida->proveedor_ruc
-        ?? data_get($ocEmitida, 'proveedorRelacion.ruc')
-        ?? '-';
+    $ocEmitida->proveedor_ruc
+    ?? data_get($ocEmitida, 'proveedorRelacion.ruc')
+    ?? '-';
 
     $proveedorDireccion =
-        $ocEmitida->proveedor_direccion
-        ?? data_get($ocEmitida, 'proveedorRelacion.direccion')
-        ?? '-';
+    $ocEmitida->proveedor_direccion
+    ?? data_get($ocEmitida, 'proveedorRelacion.direccion')
+    ?? '-';
 
     $proveedorTelefono =
-        $ocEmitida->proveedor_telefono
-        ?? data_get($ocEmitida, 'proveedorRelacion.telefono')
-        ?? '-';
+    $ocEmitida->proveedor_telefono
+    ?? data_get($ocEmitida, 'proveedorRelacion.telefono')
+    ?? '-';
 
     $proveedorContacto =
-        $ocEmitida->proveedor_contacto
-        ?? data_get($ocEmitida, 'proveedorRelacion.contacto')
-        ?? '-';
+    $ocEmitida->proveedor_contacto
+    ?? data_get($ocEmitida, 'proveedorRelacion.contacto')
+    ?? '-';
 
 
     /*
-     * DATOS DE WILLATEC
-     *
-     * Estos corresponden al diseño de referencia.
-     * Luego podemos llevarlos a config/company.php para no
-     * tenerlos quemados directamente en el Blade.
-     */
+    * DATOS DE WILLATEC
+    *
+    * Estos corresponden al diseño de referencia.
+    * Luego podemos llevarlos a config/company.php para no
+    * tenerlos quemados directamente en el Blade.
+    */
 
     $empresa = [
-        'ruc' => '20602503331',
-        'direccion' => 'Jr. Jorge Chávez N° 1747 - Int. 1002 - Breña - Lima',
-        'contacto' => 'Luis López',
-        'celular' => '942834089',
-        'email' => 'ventas@willatec.com',
+    'ruc' => '20602503331',
+    'direccion' => 'Jr. Jorge Chávez N° 1747 - Int. 1002 - Breña - Lima',
+    'contacto' => 'Luis López',
+    'celular' => '942834089',
+    'email' => 'ventas@willatec.com',
     ];
 
     /*
-     * Moneda
-     */
+    * Moneda
+    */
 
     $currencyCode =
-        $ocEmitida->moneda
-        ?? data_get($ocEmitida, 'moneda.codigo')
-        ?? 'PEN';
+    $ocEmitida->moneda
+    ?? data_get($ocEmitida, 'moneda.codigo')
+    ?? 'PEN';
 
     $currencySymbol = in_array(strtoupper($currencyCode), ['USD', 'DOLAR', 'DÓLAR'])
-        ? '$'
-        : 'S/';
+    ? '$'
+    : 'S/';
 
     /*
-     * Modalidad de pago
-     */
+    * Modalidad de pago
+    */
 
     $modalidadPago =
-        $ocEmitida->modalidad_pago
-        ?? $ocEmitida->condicion_pago
-        ?? 'Aplicar línea de crédito';
+    $ocEmitida->modalidad_pago
+    ?? $ocEmitida->condicion_pago
+    ?? 'Aplicar línea de crédito';
 
     /*
-     * Logo / firma
-     *
-     * Cambia estas rutas según dónde tengas tus imágenes.
-     */
+    * Logo / firma
+    *
+    * Cambia estas rutas según dónde tengas tus imágenes.
+    */
 
-    $logoPath = public_path('public/img/logoWILLATEC-black.png');
-    $firmaPath = public_path('public/img/firma/firma_gerente.png');
-@endphp
+    $logoPath = public_path('img/logoWILLATEC-black.png');
+    $firmaPath = public_path('img/firma/firma_gerente.png');
+    $iconPhone = public_path('img/icons/footer-phone.png');
+    $iconMail = public_path('img/icons/footer-email.png');
+    $iconWeb = public_path('img/icons/footer-web.png');
+    $iconMap = public_path('img/icons/footer-map.png');
+    // Iconos del cuerpo de la Orden de Compra
+    $iconAtencion = public_path('img/icons/icon-atencion.png');
+    $iconDireccion = public_path('img/icons/icon-direccion.png');
+    $iconEjecutivo = public_path('img/icons/icon-ejecutivo.png');
+    $iconEmail = public_path('img/icons/icon-email.png');
+    $iconEmpresa = public_path('img/icons/icon-empresa.png');
+    $iconFecha = public_path('img/icons/icon-fecha.png');
+    $iconRuc = public_path('img/icons/icon-ruc.png');
+    $iconTelefono = public_path('img/icons/icon-telefono.png');
+
+    $pdfImage = function (?string $path): ?string {
+    if (!$path || !file_exists($path) || !is_file($path)) {
+    return null;
+    }
+
+    $mime = mime_content_type($path) ?: 'image/png';
+
+    return 'data:' . $mime . ';base64,' .
+    base64_encode(file_get_contents($path));
+    };
+
+    $logoSrc = $pdfImage($logoPath);
+    $firmaSrc = $pdfImage($firmaPath);
+
+    $iconPhoneSrc = $pdfImage($iconPhone);
+    $iconMailSrc = $pdfImage($iconMail);
+    $iconWebSrc = $pdfImage($iconWeb);
+    $iconMapSrc = $pdfImage($iconMap);
+    $iconAtencionSrc = $pdfImage($iconAtencion);
+    $iconDireccionSrc = $pdfImage($iconDireccion);
+    $iconEjecutivoSrc = $pdfImage($iconEjecutivo);
+    $iconEmailSrc = $pdfImage($iconEmail);
+    $iconEmpresaSrc = $pdfImage($iconEmpresa);
+    $iconFechaSrc = $pdfImage($iconFecha);
+    $iconRucSrc = $pdfImage($iconRuc);
+    $iconTelefonoSrc = $pdfImage($iconTelefono);
+    @endphp
 
 
-{{-- =========================================================
+    {{-- =========================================================
      HEADER
 ========================================================= --}}
 
-<table class="header-table">
-    <tr>
-        <td class="logo-area">
+    <table class="header-table">
+        <tr>
+            <td class="logo-area">
 
-            @if(file_exists($logoPath))
+                @if($logoSrc)
                 <img
-                    src="{{ $logoPath }}"
+                    src="{{ $logoSrc }}"
                     class="logo"
-                    alt="Willatec"
-                >
-            @else
-                <div style="font-size:30px;font-weight:bold;">
+                    alt="Willatec">
+                @else
+                <div style="font-size:30px;font-weight:700;">
                     WILLATEC
                 </div>
 
                 <div style="font-size:14px;margin-left:70px;">
                     Soluciones Digitales
                 </div>
-            @endif
+                @endif
 
-        </td>
+            </td>
 
-        <td class="order-area">
+            <td class="order-area">
 
-            <div class="order-title">
-                ORDEN DE COMPRA
-            </div>
+                <table class="order-title-table">
+                    <tr>
+                        <td>ORDEN DE COMPRA</td>
+                    </tr>
+                </table>
 
-            <div class="order-number-wrapper">
-                <span class="order-number">
-                    N° {{ $ocEmitida->numero }}
-                </span>
-            </div>
+                <div class="order-number-wrapper">
+                    <span class="order-number">
+                        N° {{ $ocEmitida->numero }}
+                    </span>
+                </div>
 
-            <div class="date-box">
-                <span class="date-icon">D</span>
-                {{ $fecha }}
-            </div>
+                <div class="date-box">
 
-        </td>
-    </tr>
-</table>
+                    @if($iconFechaSrc)
+                    <img
+                        src="{{ $iconFechaSrc }}"
+                        class="date-icon-img"
+                        alt="Fecha">
+                    @endif
 
+                    <span class="date-text">
+                        {{ $fecha }}
+                    </span>
 
-{{-- Línea multicolor --}}
+                </div>
 
-<table class="color-line">
-    <tr>
-        <td class="line-pink"></td>
-        <td class="line-cyan"></td>
-        <td class="line-green"></td>
-        <td class="line-purple"></td>
-    </tr>
-</table>
+            </td>
+        </tr>
+    </table>
 
 
-{{-- =========================================================
+    {{-- Línea multicolor --}}
+
+    <table class="color-line">
+        <tr>
+            <td class="line-pink"></td>
+            <td class="line-cyan"></td>
+            <td class="line-green"></td>
+            <td class="line-purple"></td>
+        </tr>
+    </table>
+
+
+    {{-- =========================================================
      PROVEEDOR / FACTURAR A
 ========================================================= --}}
 
-<table class="info-layout">
-    <tr>
+    <table class="info-layout">
+        <tr>
 
-        {{-- PROVEEDOR --}}
-        <td>
+            {{-- PROVEEDOR --}}
+            <td>
 
-            <div class="section-title provider">
-                DATOS DEL PROVEEDOR
-            </div>
-
-            <div class="info-card">
-
-                <table class="info-row">
+                <table class="section-header">
                     <tr>
-                        <td class="icon-cell">
-                            <span class="info-icon-purple">P</span>
+                        <td class="section-header-icon provider-header-icon">
+                            @if($iconEjecutivoSrc)
+                            <img src="{{ $iconEjecutivoSrc }}" class="section-icon-img" alt="">
+                            @endif
                         </td>
 
-                        <td class="label-cell provider-label">
-                            Señores:
+                        <td class="section-header-title provider-header-title">
+                            DATOS DEL PROVEEDOR
                         </td>
 
-                        <td class="value-cell">
-                            {{ $proveedorNombre }}
-                        </td>
+                        <td class="section-header-tail provider-header-tail"></td>
                     </tr>
                 </table>
 
+                <div class="info-card">
 
-                <table class="info-row">
+                    <table class="info-row">
+                        <tr>
+                            <td class="icon-cell">
+                                @if($iconEmpresaSrc)
+                                <img src="{{ $iconEmpresaSrc }}" class="body-icon" alt="">
+                                @endif
+                            </td>
+
+                            <td class="label-cell provider-label">
+                                Señores:
+                            </td>
+
+                            <td class="value-cell">
+                                {{ $proveedorNombre }}
+                            </td>
+                        </tr>
+                    </table>
+
+
+                    <table class="info-row">
+                        <tr>
+                            <td class="icon-cell">
+                                @if($iconRucSrc)
+                                <img src="{{ $iconRucSrc }}" class="body-icon" alt="">
+                                @endif
+                            </td>
+
+                            <td class="label-cell provider-label">
+                                RUC:
+                            </td>
+
+                            <td class="value-cell">
+                                {{ $proveedorRuc }}
+                            </td>
+                        </tr>
+                    </table>
+
+
+                    <table class="info-row">
+                        <tr>
+                            <td class="icon-cell">
+                                @if($iconDireccionSrc)
+                                <img src="{{ $iconDireccionSrc }}" class="body-icon" alt="">
+                                @endif
+                            </td>
+
+                            <td class="label-cell provider-label">
+                                Dirección:
+                            </td>
+
+                            <td class="value-cell">
+                                {{ $proveedorDireccion }}
+                            </td>
+                        </tr>
+                    </table>
+
+
+                    <table class="info-row">
+                        <tr>
+                            <td class="icon-cell">
+                                @if($iconTelefonoSrc)
+                                <img src="{{ $iconTelefonoSrc }}" class="body-icon" alt="">
+                                @endif
+                            </td>
+
+                            <td class="label-cell provider-label">
+                                Teléfono:
+                            </td>
+
+                            <td class="value-cell">
+                                {{ $proveedorTelefono }}
+                            </td>
+                        </tr>
+                    </table>
+
+
+                    <table class="info-row">
+                        <tr>
+                            <td class="icon-cell">
+                                @if($iconAtencionSrc)
+                                <img src="{{ $iconAtencionSrc }}" class="body-icon" alt="">
+                                @endif
+                            </td>
+
+                            <td class="label-cell provider-label">
+                                Atención:
+                            </td>
+
+                            <td class="value-cell">
+                                {{ $proveedorContacto }}
+                            </td>
+                        </tr>
+                    </table>
+
+                </div>
+
+            </td>
+
+
+            {{-- FACTURAR A --}}
+            <td>
+
+                <table class="section-header">
                     <tr>
-                        <td class="icon-cell">
-                            <span class="info-icon-purple">R</span>
+                        <td class="section-header-icon billing-header-icon">
+                            @if($iconEmpresaSrc)
+                            <img src="{{ $iconEmpresaSrc }}" class="section-icon-img" alt="">
+                            @endif
                         </td>
 
-                        <td class="label-cell provider-label">
-                            RUC:
+                        <td class="section-header-title billing-header-title">
+                            FACTURAR A
                         </td>
 
-                        <td class="value-cell">
-                            {{ $proveedorRuc }}
-                        </td>
+                        <td class="section-header-tail billing-header-tail"></td>
                     </tr>
                 </table>
 
+                <div class="info-card">
 
-                <table class="info-row">
-                    <tr>
-                        <td class="icon-cell">
-                            <span class="info-icon-purple">D</span>
-                        </td>
+                    <table class="info-row">
+                        <tr>
+                            <td class="icon-cell">
+                                @if($iconRucSrc)
+                                <img src="{{ $iconRucSrc }}" class="body-icon" alt="">
+                                @endif
+                            </td>
 
-                        <td class="label-cell provider-label">
-                            Dirección:
-                        </td>
+                            <td class="label-cell billing-label">
+                                RUC:
+                            </td>
 
-                        <td class="value-cell">
-                            {{ $proveedorDireccion }}
-                        </td>
-                    </tr>
-                </table>
-
-
-                <table class="info-row">
-                    <tr>
-                        <td class="icon-cell">
-                            <span class="info-icon-purple">T</span>
-                        </td>
-
-                        <td class="label-cell provider-label">
-                            Teléfono:
-                        </td>
-
-                        <td class="value-cell">
-                            {{ $proveedorTelefono }}
-                        </td>
-                    </tr>
-                </table>
+                            <td class="value-cell">
+                                {{ $empresa['ruc'] }}
+                            </td>
+                        </tr>
+                    </table>
 
 
-                <table class="info-row">
-                    <tr>
-                        <td class="icon-cell">
-                            <span class="info-icon-purple">A</span>
-                        </td>
+                    <table class="info-row">
+                        <tr>
+                            <td class="icon-cell">
+                                @if($iconDireccionSrc)
+                                <img src="{{ $iconDireccionSrc }}" class="body-icon" alt="">
+                                @endif
+                            </td>
 
-                        <td class="label-cell provider-label">
-                            Atención:
-                        </td>
+                            <td class="label-cell billing-label">
+                                Dirección:
+                            </td>
 
-                        <td class="value-cell">
-                            {{ $proveedorContacto }}
-                        </td>
-                    </tr>
-                </table>
-
-            </div>
-
-        </td>
+                            <td class="value-cell">
+                                {{ $empresa['direccion'] }}
+                            </td>
+                        </tr>
+                    </table>
 
 
-        {{-- FACTURAR A --}}
-        <td>
+                    <table class="info-row">
+                        <tr>
+                            <td class="icon-cell">
+                                @if($iconEjecutivoSrc)
+                                <img src="{{ $iconEjecutivoSrc }}" class="body-icon" alt="">
+                                @endif
+                            </td>
 
-            <div class="section-title billing">
-                FACTURAR A
-            </div>
+                            <td class="label-cell billing-label">
+                                Contacto:
+                            </td>
 
-            <div class="info-card">
-
-                <table class="info-row">
-                    <tr>
-                        <td class="icon-cell">
-                            <span class="info-icon-teal">R</span>
-                        </td>
-
-                        <td class="label-cell billing-label">
-                            RUC:
-                        </td>
-
-                        <td class="value-cell">
-                            {{ $empresa['ruc'] }}
-                        </td>
-                    </tr>
-                </table>
+                            <td class="value-cell">
+                                {{ $empresa['contacto'] }}
+                            </td>
+                        </tr>
+                    </table>
 
 
-                <table class="info-row">
-                    <tr>
-                        <td class="icon-cell">
-                            <span class="info-icon-teal">D</span>
-                        </td>
+                    <table class="info-row">
+                        <tr>
+                            <td class="icon-cell">
+                                @if($iconTelefonoSrc)
+                                <img src="{{ $iconTelefonoSrc }}" class="body-icon" alt="">
+                                @endif
+                            </td>
 
-                        <td class="label-cell billing-label">
-                            Dirección:
-                        </td>
+                            <td class="label-cell billing-label">
+                                Celular:
+                            </td>
 
-                        <td class="value-cell">
-                            {{ $empresa['direccion'] }}
-                        </td>
-                    </tr>
-                </table>
-
-
-                <table class="info-row">
-                    <tr>
-                        <td class="icon-cell">
-                            <span class="info-icon-teal">C</span>
-                        </td>
-
-                        <td class="label-cell billing-label">
-                            Contacto:
-                        </td>
-
-                        <td class="value-cell">
-                            {{ $empresa['contacto'] }}
-                        </td>
-                    </tr>
-                </table>
+                            <td class="value-cell">
+                                {{ $empresa['celular'] }}
+                            </td>
+                        </tr>
+                    </table>
 
 
-                <table class="info-row">
-                    <tr>
-                        <td class="icon-cell">
-                            <span class="info-icon-teal">T</span>
-                        </td>
+                    <table class="info-row">
+                        <tr>
+                            <td class="icon-cell">
+                                @if($iconEmailSrc)
+                                <img src="{{ $iconEmailSrc }}" class="body-icon" alt="">
+                                @endif
+                            </td>
 
-                        <td class="label-cell billing-label">
-                            Celular:
-                        </td>
+                            <td class="label-cell billing-label">
+                                Email:
+                            </td>
 
-                        <td class="value-cell">
-                            {{ $empresa['celular'] }}
-                        </td>
-                    </tr>
-                </table>
+                            <td class="value-cell">
+                                {{ $empresa['email'] }}
+                            </td>
+                        </tr>
+                    </table>
 
+                </div>
 
-                <table class="info-row">
-                    <tr>
-                        <td class="icon-cell">
-                            <span class="info-icon-teal">@</span>
-                        </td>
+            </td>
 
-                        <td class="label-cell billing-label">
-                            Email:
-                        </td>
-
-                        <td class="value-cell">
-                            {{ $empresa['email'] }}
-                        </td>
-                    </tr>
-                </table>
-
-            </div>
-
-        </td>
-
-    </tr>
-</table>
+        </tr>
+    </table>
 
 
-{{-- =========================================================
+    {{-- =========================================================
      ITEMS
 ========================================================= --}}
 
-<table class="products-table">
+    <table class="products-table">
 
-    <thead>
-        <tr>
-            <th class="item">
-                ITEM
-            </th>
+        <thead>
+            <tr>
+                <th class="item">
+                    ITEM
+                </th>
 
-            <th class="code">
-                CÓDIGO
-            </th>
+                <th class="code">
+                    CÓDIGO
+                </th>
 
-            <th class="description">
-                DESCRIPCIÓN
-            </th>
+                <th class="description">
+                    DESCRIPCIÓN
+                </th>
 
-            <th class="quantity">
-                CANTIDAD
-            </th>
+                <th class="quantity">
+                    CANTIDAD
+                </th>
 
-            <th class="unit-price">
-                P.UNITARIO
-                {{ $currencySymbol }}
-            </th>
+                <th class="unit-price">
+                    P.UNITARIO
+                    {{ $currencySymbol }}
+                </th>
 
-            <th class="total-price">
-                P.TOTAL
-                {{ $currencySymbol }}
-            </th>
-        </tr>
-    </thead>
+                <th class="total-price">
+                    P.TOTAL
+                    {{ $currencySymbol }}
+                </th>
+            </tr>
+        </thead>
 
-    <tbody>
+        <tbody>
 
-        @forelse($ocEmitida->items as $item)
+            @forelse($ocEmitida->items as $item)
 
             <tr>
 
@@ -978,7 +1170,7 @@
 
             </tr>
 
-        @empty
+            @empty
 
             <tr>
                 <td colspan="6" class="text-center">
@@ -986,58 +1178,58 @@
                 </td>
             </tr>
 
-        @endforelse
+            @endforelse
 
-    </tbody>
-</table>
+        </tbody>
+    </table>
 
 
-{{-- =========================================================
+    {{-- =========================================================
      DATOS OPCIONALES + TOTALES
 ========================================================= --}}
 
-<table class="bottom-layout">
+    <table class="bottom-layout">
 
-    <tr>
+        <tr>
 
-        {{-- IZQUIERDA --}}
-        <td class="bottom-left">
+            {{-- IZQUIERDA --}}
+            <td class="bottom-left">
 
-            <div class="optional-title">
-                DATOS OPCIONALES:
-            </div>
+                <div class="optional-title">
+                    DATOS OPCIONALES:
+                </div>
 
 
-            <div class="optional-line">
+                <div class="optional-line">
 
-                @if($ocEmitida->cotizacion?->numero)
+                    @if($ocEmitida->cotizacion?->numero)
 
                     <strong>Cotización:</strong>
                     {{ $ocEmitida->cotizacion->numero }}
 
-                @endif
+                    @endif
 
-            </div>
+                </div>
 
 
-            <div class="optional-line">
+                <div class="optional-line">
 
-                @if($ocEmitida->cliente_nombre)
+                    @if($ocEmitida->cliente_nombre)
 
                     <strong>Cliente:</strong>
 
                     {{ $ocEmitida->cliente_nombre }}
 
                     @if($ocEmitida->cliente_ruc)
-                        - RUC {{ $ocEmitida->cliente_ruc }}
+                    - RUC {{ $ocEmitida->cliente_ruc }}
                     @endif
 
-                @endif
+                    @endif
 
-            </div>
+                </div>
 
 
-            @if(filled($ocEmitida->observaciones))
+                @if(filled($ocEmitida->observaciones))
                 <div class="observations-box">
                     <div class="observations-title">
                         Observaciones de la OC
@@ -1047,177 +1239,113 @@
                         {{ $ocEmitida->observaciones }}
                     </div>
                 </div>
-            @endif
-
-
-            {{-- MODALIDAD DE PAGO --}}
-
-            <div class="payment-box">
-
-                <div class="payment-title">
-
-                    <span class="payment-icon">
-                        $
-                    </span>
-
-                    MODALIDAD DE PAGO:
-
-                </div>
-
-                <div style="padding-left:38px;font-size:10px;">
-                    {{ $modalidadPago }}
-                </div>
-
-            </div>
-
-        </td>
-
-
-        {{-- DERECHA --}}
-        <td class="bottom-right">
-
-            <table class="totals-table">
-
-                <tr>
-                    <td class="total-label">
-                        SUB TOTAL
-                    </td>
-
-                    <td class="total-value nowrap">
-                        {{ $currencySymbol }}
-                        {{ number_format((float) $ocEmitida->subtotal, 2) }}
-                    </td>
-                </tr>
-
-
-                <tr>
-                    <td class="total-label">
-                        I.G.V 18%
-                    </td>
-
-                    <td class="total-value nowrap">
-                        {{ $currencySymbol }}
-                        {{ number_format((float) $ocEmitida->igv, 2) }}
-                    </td>
-                </tr>
-
-
-                <tr class="grand-total">
-
-                    <td class="total-label">
-                        TOTAL
-                    </td>
-
-                    <td class="total-value nowrap">
-                        {{ $currencySymbol }}
-                        {{ number_format((float) $ocEmitida->total, 2) }}
-                    </td>
-
-                </tr>
-
-            </table>
-
-
-            {{-- FIRMA --}}
-
-            <div class="signature">
-
-                <div class="signature-text">
-                    Atentamente,
-                </div>
-
-
-                @if(file_exists($firmaPath))
-
-                    <img
-                        src="{{ $firmaPath }}"
-                        class="signature-img"
-                        alt="Firma"
-                    >
-
-                @else
-
-                    <div style="height:48px;"></div>
-
                 @endif
 
 
-                <!-- <div class="signature-line">
+                {{-- MODALIDAD DE PAGO --}}
 
-                    <div class="signature-name">
-                        ING. LUIS LÓPEZ
+                <div class="payment-box">
+
+                    <table class="payment-header-table">
+                        <tr>
+                            <td class="payment-icon-cell">
+                                <div class="payment-icon-circle">$</div>
+                            </td>
+
+                            <td class="payment-title-cell">
+                                MODALIDAD DE PAGO:
+                            </td>
+                        </tr>
+                    </table>
+
+                    <div class="payment-value">
+                        {{ $modalidadPago }}
                     </div>
 
-                    <div class="signature-role">
-                        GERENTE GENERAL
-                    </div>
-
-                    <div class="signature-company">
-                        WILLATEC S.A.C.
-                    </div>
-
-                </div> -->
-
-            </div>
-
-        </td>
-
-    </tr>
-
-</table>
-
-
-{{-- =========================================================
-     FOOTER
-========================================================= --}}
-
-<div class="footer">
-
-    <table class="footer-table">
-
-        <tr>
-
-            <td class="footer-address">
-
-                <div class="footer-title">
-                    Dirección Comercial:
                 </div>
-
-                Jr. Jorge Chávez N° 1747 - Int. 1002<br>
-                Breña - Lima
 
             </td>
 
 
-            <td class="footer-phone">
+            {{-- DERECHA --}}
+            <td class="bottom-right">
 
-                <div class="footer-title">
-                    Central Telefónica:
+                <table class="totals-table">
+
+                    <tr>
+                        <td class="total-label">
+                            SUB TOTAL
+                        </td>
+
+                        <td class="total-value nowrap">
+                            {{ $currencySymbol }}
+                            {{ number_format((float) $ocEmitida->subtotal, 2) }}
+                        </td>
+                    </tr>
+
+
+                    <tr>
+                        <td class="total-label">
+                            I.G.V 18%
+                        </td>
+
+                        <td class="total-value nowrap">
+                            {{ $currencySymbol }}
+                            {{ number_format((float) $ocEmitida->igv, 2) }}
+                        </td>
+                    </tr>
+
+
+                    <tr class="grand-total">
+
+                        <td class="total-label">
+                            TOTAL
+                        </td>
+
+                        <td class="total-value nowrap">
+                            {{ $currencySymbol }}
+                            {{ number_format((float) $ocEmitida->total, 2) }}
+                        </td>
+
+                    </tr>
+
+                </table>
+
+
+                {{-- FIRMA --}}
+
+                <div class="signature">
+
+                    <div class="signature-text">
+                        Atentamente,
+                    </div>
+
+                    @if($firmaSrc)
+                    <img
+                        src="{{ $firmaSrc }}"
+                        class="signature-img"
+                        alt="Firma">
+                    @else
+                    <div style="height:62px;"></div>
+                    @endif
+
+                    <!-- <div class="signature-line">
+
+                        <div class="signature-name">
+                            ING. LUIS LÓPEZ
+                        </div>
+
+                        <div class="signature-role">
+                            GERENTE GENERAL
+                        </div>
+
+                        <div class="signature-company">
+                            WILLATEC S.A.C.
+                        </div>
+
+                    </div> -->
+
                 </div>
-
-                (511) 757 - 1253
-
-            </td>
-
-
-            <td class="footer-email">
-
-                <div class="footer-title">
-                    E-mail:
-                </div>
-
-                ventas@willatec.com
-
-            </td>
-
-
-            <td class="footer-web">
-
-                <div class="footer-title">
-                    Web:
-                </div>
-
-                https://www.willatec.com
 
             </td>
 
@@ -1225,7 +1353,110 @@
 
     </table>
 
-</div>
+
+    {{-- =========================================================
+     FOOTER
+========================================================= --}}
+
+    <div class="footer">
+
+        <table class="footer-table">
+            <tr>
+
+                {{-- DIRECCIÓN --}}
+                <td class="footer-address">
+
+                    @if($iconMapSrc)
+                    <img
+                        src="{{ $iconMapSrc }}"
+                        class="footer-icon-img"
+                        alt="">
+                    @endif
+
+                    <span class="footer-content">
+                        <span class="footer-title">
+                            Dirección Comercial:
+                        </span>
+
+                        <span class="footer-value">
+                            Jr. Jorge Chávez N° 1747 - Int. 1002<br>
+                            Breña - Lima
+                        </span>
+                    </span>
+
+                </td>
+
+                {{-- TELÉFONO --}}
+                <td class="footer-phone">
+
+                    @if($iconPhoneSrc)
+                    <img
+                        src="{{ $iconPhoneSrc }}"
+                        class="footer-icon-img"
+                        alt="">
+                    @endif
+
+                    <span class="footer-content">
+                        <span class="footer-title">
+                            Central Telefónica:
+                        </span>
+
+                        <span class="footer-value">
+                            (511) 757 - 1253
+                        </span>
+                    </span>
+
+                </td>
+
+                {{-- EMAIL --}}
+                <td class="footer-email">
+
+                    @if($iconMailSrc)
+                    <img
+                        src="{{ $iconMailSrc }}"
+                        class="footer-icon-img"
+                        alt="">
+                    @endif
+
+                    <span class="footer-content">
+                        <span class="footer-title">
+                            E-mail:
+                        </span>
+
+                        <span class="footer-value">
+                            ventas@willatec.com
+                        </span>
+                    </span>
+
+                </td>
+
+                {{-- WEB --}}
+                <td class="footer-web">
+
+                    @if($iconWebSrc)
+                    <img
+                        src="{{ $iconWebSrc }}"
+                        class="footer-icon-img"
+                        alt="">
+                    @endif
+
+                    <span class="footer-content">
+                        <span class="footer-title">
+                            Web:
+                        </span>
+
+                        <span class="footer-value">
+                            www.willatec.com
+                        </span>
+                    </span>
+
+                </td>
+
+            </tr>
+        </table>
+
+    </div>
 
 </body>
+
 </html>
