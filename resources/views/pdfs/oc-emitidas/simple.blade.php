@@ -1,6 +1,34 @@
 @php
-$ptSansRegularBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Regular.ttf')));
-$ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bold.ttf')));
+
+$ptSansRegularBase64 = base64_encode(
+file_get_contents(public_path('fonts/PTSans-Regular.ttf'))
+);
+
+$ptSansBoldBase64 = base64_encode(
+file_get_contents(public_path('fonts/PTSans-Bold.ttf'))
+);
+
+/*
+|--------------------------------------------------------------------------
+| Ángulo izquierdo del encabezado
+|--------------------------------------------------------------------------
+|
+| Usamos SVG y no bordes CSS porque Dompdf interpreta mejor
+| esta figura como una imagen.
+|
+*/
+
+$orderAngleSvg = 'data:image/svg+xml;base64,' . base64_encode('
+<svg xmlns="http://www.w3.org/2000/svg"
+    width="34"
+    height="68"
+    viewBox="0 0 34 68">
+    <polygon
+        points="34,0 34,68 0,68"
+        fill="#24246f" />
+</svg>
+');
+
 @endphp
 
 <!doctype html>
@@ -25,7 +53,7 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
         }
 
         @page {
-            margin: 10px 30px 8px 30px;
+            margin: 10px 30px 64px 30px;
         }
 
         * {
@@ -71,11 +99,11 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
 
         .logo-area {
             width: 48%;
-            padding-top: 8px !important;
+            padding-top: 5px !important;
         }
 
         .logo {
-            width: 255px;
+            width: 290px;
             height: auto;
         }
 
@@ -84,52 +112,85 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
             text-align: right;
         }
 
-        .order-title-table {
+        .order-box {
             width: 100%;
-            height: 54px;
+            position: relative;
+        }
+
+        .order-title-table {
+            width: 96%;
+            margin-left: auto;
             border-collapse: collapse;
-            background: #24246f;
         }
 
         .order-title-table td {
-            height: 54px;
-            padding: 0 !important;
             border: none !important;
+            padding: 0 !important;
+        }
+
+        .order-angle-cell {
+            width: 34px;
+            height: 68px;
+
+            padding: 0 !important;
+            margin: 0;
+
+            vertical-align: top;
+
+            background: transparent;
+        }
+
+        .order-angle-img {
+            display: block;
+
+            width: 34px;
+            height: 68px;
+
+            margin: 0;
+            padding: 0;
+        }
+
+        .order-title-main {
+            height: 68px;
+            background: #24246f;
             color: #ffffff;
-            font-size: 25px;
-            font-weight: 700;
             text-align: center;
-            vertical-align: middle;
+            vertical-align: top;
+            font-size: 26px;
+            font-weight: 700;
+            padding-top: 10px !important;
             letter-spacing: .2px;
         }
 
         .order-number-wrapper {
+            width: 70%;
+            margin: -18px auto 0 auto;
             text-align: center;
-            margin-top: 10px;
         }
 
         .order-number {
-            display: inline-block;
-            min-width: 235px;
-            padding: 7px 25px 8px;
-            background: #58449d;
-            color: #fff;
-            border-radius: 25px;
+            display: block;
+            width: 100%;
+            padding: 8px 18px 10px;
+            background: #5d47a6;
+            color: #ffffff;
+            border-radius: 24px;
             font-size: 19px;
             font-weight: 700;
             text-align: center;
         }
 
         .date-box {
+            width: 96%;
+            margin-left: auto;
             margin-top: 12px;
             text-align: center;
             font-size: 13px;
         }
 
         .date-icon-img {
-            width: 25px;
-            height: 25px;
-            object-fit: contain;
+            width: 24px;
+            height: 24px;
             vertical-align: middle;
             margin-right: 8px;
         }
@@ -209,7 +270,7 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
         }
 
         .section-header-icon {
-            width: 45px;
+            width: 39px;
             height: 38px;
             text-align: center;
             border-radius: 8px;
@@ -231,7 +292,7 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
 
         .section-header-title {
             height: 32px;
-            padding-left: 10px !important;
+            padding-left: 6px !important;
             color: #ffffff;
             font-size: 11px;
             font-weight: 700;
@@ -258,56 +319,77 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
             margin-top: -3px;
             border: 1px solid #d7d7dd;
             border-radius: 8px;
-            padding: 14px 16px 10px 16px;
+
+            /* antes: 14px 16px 10px */
+            padding: 14px 6px 10px 6px;
+
             min-height: 210px;
         }
 
         .info-row {
             width: 100%;
-            table-layout: fixed;
+
+            /*
+     * IMPORTANTE:
+     * Dejamos que Dompdf ajuste las columnas por contenido.
+     */
+            table-layout: auto;
         }
 
         .info-row td {
-            padding: 11px 3px;
+            padding-top: 11px;
+            padding-bottom: 11px;
             vertical-align: middle;
             border-bottom: 1px solid #e6e6e9;
         }
 
-        .info-row:last-child td {
-            border-bottom: none;
-        }
-
         .icon-cell {
-            width: 31px;
-            text-align: center;
+            width: 27px;
+
+            padding-left: 0 !important;
+            padding-right: 3px !important;
+
+            text-align: left;
             vertical-align: middle;
         }
 
         .body-icon {
-            width: 23px;
-            height: 23px;
+            width: 22px;
+            height: 22px;
             object-fit: contain;
             vertical-align: middle;
         }
 
         .label-cell {
-            width: 105px;
+            width: 64px;
+
+            padding-left: 0 !important;
+            padding-right: 5px !important;
+
             font-weight: 700;
             font-size: 10px;
+
+            white-space: nowrap;
         }
 
+        .value-cell {
+            width: auto;
+
+            padding-left: 0 !important;
+            padding-right: 1px !important;
+
+            font-size: 9.5px;
+            line-height: 1.4;
+            color: #17172d;
+        }
+
+        /* Recuperamos también los colores de las etiquetas */
         .provider-label {
             color: #49378d;
         }
 
         .billing-label {
             color: #008f98;
-        }
-
-        .value-cell {
-            font-size: 9.5px;
-            line-height: 1.4;
-            color: #17172d;
         }
 
         /* =========================
@@ -327,43 +409,48 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
             padding: 10px 6px;
             font-size: 9px;
             font-weight: 700;
-            text-align: center;
+
+            text-align: center !important;
+            vertical-align: middle !important;
         }
 
         .products-table td {
             border: 1px solid #d7d7dd;
             padding: 11px 7px;
             font-size: 9.5px;
-            vertical-align: middle;
+
+            text-align: center !important;
+            vertical-align: middle !important;
         }
 
         .products-table .item {
             width: 7%;
-            text-align: center;
+            text-align: center !important;
         }
 
         .products-table .code {
             width: 16%;
-            text-align: center;
+            text-align: center !important;
         }
 
         .products-table .description {
             width: 36%;
+            text-align: center !important;
         }
 
         .products-table .quantity {
             width: 11%;
-            text-align: center;
+            text-align: center !important;
         }
 
         .products-table .unit-price {
             width: 15%;
-            text-align: right;
+            text-align: center !important;
         }
 
         .products-table .total-price {
             width: 15%;
-            text-align: right;
+            text-align: center !important;
         }
 
         /* =========================
@@ -381,12 +468,12 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
         }
 
         .bottom-left {
-            width: 55%;
-            padding-right: 25px;
+            width: 53%;
+            padding-right: 22px;
         }
 
         .bottom-right {
-            width: 45%;
+            width: 47%;
         }
 
         .optional-title {
@@ -409,20 +496,30 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
             border: 1px solid #dddce5;
             border-left: 5px solid #5946a1;
             border-radius: 6px;
-            padding: 9px 11px;
+            padding: 9px 11px 10px 11px;
         }
 
         .observations-title {
             color: #392b80;
             font-weight: 700;
             font-size: 9px;
-            margin-bottom: 7px;
+            margin: 0 0 5px 0;
+            padding: 0;
+
+            line-height: 1.2;
             text-transform: uppercase;
         }
 
         .observations-text {
-            line-height: 1.55;
-            white-space: pre-line;
+            margin: 0;
+            padding: 0;
+
+            font-size: 9.5px;
+            line-height: 1.35;
+
+            color: #17172d;
+
+            white-space: normal;
         }
 
         /* =========================
@@ -430,49 +527,78 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
     ========================= */
 
         .payment-box {
-            margin-top: 14px;
+            margin-top: 16px;
             width: 100%;
         }
 
-        .payment-header-table {
-            width: 100%;
+        .payment-table {
+            width: auto;
             border-collapse: collapse;
         }
 
-        .payment-header-table td {
-            border: none;
+        .payment-table>tbody>tr>td {
+            border: none !important;
             padding: 0;
-            vertical-align: middle;
+            vertical-align: middle !important;
         }
 
-        .payment-icon-cell {
-            width: 38px;
-        }
 
-        .payment-icon-circle {
-            width: 28px;
-            height: 28px;
-            line-height: 25px;
+        /*
+ * Usamos una tabla dentro del círculo porque
+ * vertical-align funciona mejor que line-height
+ * para centrar "$" en Dompdf.
+ */
+        .payment-icon-table {
+            width: 31px;
+            height: 31px;
+            border-collapse: separate;
+            border-spacing: 0;
+
             border: 2px solid #e50073;
             border-radius: 50%;
-            color: #e50073;
-            font-size: 17px;
-            font-weight: 700;
-            text-align: center;
         }
 
-        .payment-title-cell {
+        .payment-icon-table td {
+            width: 31px;
+            height: 31px;
+
+            padding: 0 !important;
+            border: none !important;
+
             color: #e50073;
+
+            text-align: center;
+            vertical-align: middle !important;
+
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .payment-content-cell {
+            padding-left: 7px !important;
+            vertical-align: middle !important;
+        }
+
+        .payment-title {
+            margin: 0;
+
+            color: #e50073;
+
             font-size: 10px;
             font-weight: 700;
-            padding-left: 5px !important;
+            line-height: 1.1;
+
+            white-space: nowrap;
         }
 
         .payment-value {
-            margin-top: 5px;
-            margin-left: 43px;
-            font-size: 9.5px;
+            margin-top: 6px;
+
             color: #17172d;
+
+            font-size: 9.5px;
+            line-height: 1.25;
         }
 
         /* =========================
@@ -522,20 +648,21 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
     ========================= */
 
         .signature {
-            margin-top: 10px;
+            margin-top: 28px;
             text-align: center;
+            min-height: 140px;
         }
 
         .signature-text {
             font-size: 10px;
-            margin-bottom: -5px;
+            margin-bottom: 2px;
         }
 
         .signature-img {
-            height: 90px;
+            height: 125px;
             width: auto;
             display: block;
-            margin: -5px auto -13px auto;
+            margin: 0 auto;
         }
 
         .signature-line {
@@ -570,31 +697,56 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
     ========================= */
 
         .footer {
-            margin-top: 12px;
-            width: 100%;
+            position: fixed;
+
+            /*
+     * Sacamos el footer del área útil y lo llevamos
+     * hasta los bordes físicos de la página.
+     */
+            left: -30px;
+            right: -30px;
+            bottom: -64px;
+
+            width: auto;
+            height: 64px;
+
             background: #202665;
-            color: white;
-            padding: 10px 9px;
+            color: #ffffff;
+
+            /*
+     * Compensamos los -30px para que el contenido
+     * siga alineado con el resto del documento.
+     */
+            padding: 10px 30px;
+
+            margin: 0;
         }
 
         .footer-table {
             width: 100%;
+            height: 100%;
             table-layout: fixed;
+            border-collapse: collapse;
         }
 
-        .footer-table td {
-            border: none;
-            color: white;
-            vertical-align: middle;
-            padding: 3px 8px;
+        .footer-table>tbody>tr>td {
+
+            color: #ffffff;
+
+            padding: 0 8px !important;
+
+            vertical-align: middle !important;
+            height: 44px;
         }
 
         .footer-address {
-            width: 30%;
+            width: 29%;
+            padding-left: 4px !important;
+            padding-right: 6px !important;
         }
 
         .footer-phone {
-            width: 22%;
+            width: 23%;
             border-left: 1px solid rgba(255, 255, 255, .35) !important;
         }
 
@@ -608,30 +760,96 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
             border-left: 1px solid rgba(255, 255, 255, .35) !important;
         }
 
-        .footer-icon-img {
-            width: 28px;
-            height: 28px;
-            vertical-align: middle;
+
+        /* Separadores */
+
+        .footer-phone,
+        .footer-email,
+        .footer-web {
+            border-left: 1px solid rgba(255, 255, 255, .35) !important;
         }
 
-        .footer-content {
-            display: inline-block;
-            vertical-align: middle;
-            margin-left: 5px;
+
+        /* Estructura interna */
+
+        .footer-inner {
+            width: 100%;
+            height: 44px;
+
+            /* IMPORTANTE:
+       no usar fixed aquí */
+            table-layout: auto;
+
+            border-collapse: collapse;
         }
+
+        .footer-inner>tbody>tr {
+            height: 44px;
+        }
+
+        .footer-inner td {
+            border: none !important;
+            padding: 0 !important;
+
+            vertical-align: middle !important;
+        }
+
+
+        /* ICONO */
+
+        .footer-inner-icon {
+            width: 30px;
+            min-width: 30px;
+
+            padding: 0 !important;
+
+            text-align: center;
+            vertical-align: middle !important;
+        }
+
+
+        /* TEXTO */
+
+        .footer-inner-text {
+            padding-left: 4px !important;
+            padding-right: 1px !important;
+
+            text-align: left;
+            vertical-align: middle !important;
+        }
+
+
+        /* Iconos */
+
+        .footer-icon-img {
+            display: block;
+
+            width: 25px;
+            height: 25px;
+
+            margin: 0 auto;
+        }
+
+
+        /* Texto */
 
         .footer-title {
-            display: block;
-            font-size: 8.5px;
+            margin: 0;
+            padding: 0;
+
+            font-size: 8.8px;
             font-weight: 700;
-            line-height: 1.1;
+            line-height: 1.15;
+
+            white-space: nowrap;
         }
 
         .footer-value {
-            display: block;
-            font-size: 7.5px;
-            line-height: 1.35;
-            margin-top: 2px;
+            margin: 3px 0 0 0;
+            padding: 0;
+
+            font-size: 7.8px;
+            line-height: 1.25;
         }
 
         .text-center {
@@ -806,30 +1024,45 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
 
             <td class="order-area">
 
-                <table class="order-title-table">
-                    <tr>
-                        <td>ORDEN DE COMPRA</td>
-                    </tr>
-                </table>
+                <div class="order-box">
 
-                <div class="order-number-wrapper">
-                    <span class="order-number">
-                        N° {{ $ocEmitida->numero }}
-                    </span>
-                </div>
+                    <table class="order-title-table">
+                        <tr>
 
-                <div class="date-box">
+                            <td class="order-angle-cell">
+                                <img
+                                    src="{{ $orderAngleSvg }}"
+                                    class="order-angle-img"
+                                    alt="">
+                            </td>
 
-                    @if($iconFechaSrc)
-                    <img
-                        src="{{ $iconFechaSrc }}"
-                        class="date-icon-img"
-                        alt="Fecha">
-                    @endif
+                            <td class="order-title-main">
+                                ORDEN DE COMPRA
+                            </td>
 
-                    <span class="date-text">
-                        {{ $fecha }}
-                    </span>
+                        </tr>
+                    </table>
+
+                    <div class="order-number-wrapper">
+                        <span class="order-number">
+                            N° {{ $ocEmitida->numero }}
+                        </span>
+                    </div>
+
+                    <div class="date-box">
+
+                        @if($iconFechaSrc)
+                        <img
+                            src="{{ $iconFechaSrc }}"
+                            class="date-icon-img"
+                            alt="Fecha">
+                        @endif
+
+                        <span class="date-text">
+                            {{ $fecha }}
+                        </span>
+
+                    </div>
 
                 </div>
 
@@ -1235,9 +1468,7 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
                         Observaciones de la OC
                     </div>
 
-                    <div class="observations-text">
-                        {{ $ocEmitida->observaciones }}
-                    </div>
+                    <div class="observations-text">{{ trim((string) $ocEmitida->observaciones) }}</div>
                 </div>
                 @endif
 
@@ -1246,21 +1477,35 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
 
                 <div class="payment-box">
 
-                    <table class="payment-header-table">
+                    <table class="payment-table">
                         <tr>
+
                             <td class="payment-icon-cell">
-                                <div class="payment-icon-circle">$</div>
+
+                                <table class="payment-icon-table">
+                                    <tr>
+                                        <td>
+                                            $
+                                        </td>
+                                    </tr>
+                                </table>
+
                             </td>
 
-                            <td class="payment-title-cell">
-                                MODALIDAD DE PAGO:
+                            <td class="payment-content-cell">
+
+                                <div class="payment-title">
+                                    MODALIDAD DE PAGO:
+                                </div>
+
+                                <div class="payment-value">
+                                    {{ $modalidadPago }}
+                                </div>
+
                             </td>
+
                         </tr>
                     </table>
-
-                    <div class="payment-value">
-                        {{ $modalidadPago }}
-                    </div>
 
                 </div>
 
@@ -1365,91 +1610,110 @@ $ptSansBoldBase64 = base64_encode(file_get_contents(public_path('fonts/PTSans-Bo
 
                 {{-- DIRECCIÓN --}}
                 <td class="footer-address">
+                    <table class="footer-inner">
+                        <tr>
+                            <td class="footer-inner-icon">
+                                @if($iconMapSrc)
+                                <img
+                                    src="{{ $iconMapSrc }}"
+                                    class="footer-icon-img"
+                                    alt="">
+                                @endif
+                            </td>
 
-                    @if($iconMapSrc)
-                    <img
-                        src="{{ $iconMapSrc }}"
-                        class="footer-icon-img"
-                        alt="">
-                    @endif
+                            <td class="footer-inner-text">
+                                <div class="footer-title">
+                                    Dirección Comercial:
+                                </div>
 
-                    <span class="footer-content">
-                        <span class="footer-title">
-                            Dirección Comercial:
-                        </span>
-
-                        <span class="footer-value">
-                            Jr. Jorge Chávez N° 1747 - Int. 1002<br>
-                            Breña - Lima
-                        </span>
-                    </span>
-
+                                <div class="footer-value">
+                                    Jr. Jorge Chávez N° 1747 - Int. 1002<br>
+                                    Breña - Lima
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
                 </td>
+
 
                 {{-- TELÉFONO --}}
                 <td class="footer-phone">
+                    <table class="footer-inner">
+                        <tr>
+                            <td class="footer-inner-icon">
+                                @if($iconPhoneSrc)
+                                <img
+                                    src="{{ $iconPhoneSrc }}"
+                                    class="footer-icon-img"
+                                    alt="">
+                                @endif
+                            </td>
 
-                    @if($iconPhoneSrc)
-                    <img
-                        src="{{ $iconPhoneSrc }}"
-                        class="footer-icon-img"
-                        alt="">
-                    @endif
+                            <td class="footer-inner-text">
+                                <div class="footer-title">
+                                    Central Telefónica:
+                                </div>
 
-                    <span class="footer-content">
-                        <span class="footer-title">
-                            Central Telefónica:
-                        </span>
-
-                        <span class="footer-value">
-                            (511) 757 - 1253
-                        </span>
-                    </span>
-
+                                <div class="footer-value">
+                                    (511) 757 - 1253
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
                 </td>
+
 
                 {{-- EMAIL --}}
                 <td class="footer-email">
+                    <table class="footer-inner">
+                        <tr>
+                            <td class="footer-inner-icon">
+                                @if($iconMailSrc)
+                                <img
+                                    src="{{ $iconMailSrc }}"
+                                    class="footer-icon-img"
+                                    alt="">
+                                @endif
+                            </td>
 
-                    @if($iconMailSrc)
-                    <img
-                        src="{{ $iconMailSrc }}"
-                        class="footer-icon-img"
-                        alt="">
-                    @endif
+                            <td class="footer-inner-text">
+                                <div class="footer-title">
+                                    E-mail:
+                                </div>
 
-                    <span class="footer-content">
-                        <span class="footer-title">
-                            E-mail:
-                        </span>
-
-                        <span class="footer-value">
-                            ventas@willatec.com
-                        </span>
-                    </span>
-
+                                <div class="footer-value">
+                                    ventas@willatec.com
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
                 </td>
+
 
                 {{-- WEB --}}
                 <td class="footer-web">
+                    <table class="footer-inner">
+                        <tr>
+                            <td class="footer-inner-icon">
+                                @if($iconWebSrc)
+                                <img
+                                    src="{{ $iconWebSrc }}"
+                                    class="footer-icon-img"
+                                    alt="">
+                                @endif
+                            </td>
 
-                    @if($iconWebSrc)
-                    <img
-                        src="{{ $iconWebSrc }}"
-                        class="footer-icon-img"
-                        alt="">
-                    @endif
+                            <td class="footer-inner-text">
+                                <div class="footer-title">
+                                    Web:
+                                </div>
 
-                    <span class="footer-content">
-                        <span class="footer-title">
-                            Web:
-                        </span>
-
-                        <span class="footer-value">
-                            www.willatec.com
-                        </span>
-                    </span>
-
+                                <div class="footer-value">
+                                    www.willatec.com
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
                 </td>
 
             </tr>
