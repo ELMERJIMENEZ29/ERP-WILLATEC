@@ -371,6 +371,8 @@ Route::prefix('hostings')->middleware(['auth:sanctum', 'token.idle', 'role:super
     Route::post('/{hosting}/renovar', [HostingController::class, 'renovar']);
     Route::post('/{hosting}/documentos', [HostingController::class, 'documentos']);
     Route::delete('/{hosting}/documentos/{documento}', [HostingController::class, 'eliminarDocumento']);
+    Route::post('/{hosting}/cotizaciones', [HostingController::class, 'enlazarCotizacion']);
+    Route::delete('/{hosting}/cotizaciones/{cotizacion}', [HostingController::class, 'desenlazarCotizacion']);
     Route::get('/{hosting}', [HostingController::class, 'show']);
     Route::put('/{hosting}', [HostingController::class, 'update']);
     Route::delete('/{hosting}', [HostingController::class, 'destroy']);

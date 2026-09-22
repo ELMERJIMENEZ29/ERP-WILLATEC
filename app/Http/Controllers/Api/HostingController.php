@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Mail\HostingRenovacionGracias;
 use App\Models\Cliente;
+use App\Models\Cotizacion;
 use App\Models\Hosting;
 use App\Models\HostingDocumento;
 use App\Models\User;
@@ -33,6 +34,8 @@ class HostingController extends Controller
             'clienteRelacionado:id,nombre,ruc,correo',
             'moneda:id,codigo,simbolo',
             'documentos',
+            'cotizaciones:id,numero,fecha,titulo,cliente_nombre,moneda_id,subtotal,igv,total',
+            'cotizaciones.moneda:id,codigo,simbolo',
             'alertasEnviadas' => fn ($query) => $query->latest('sent_at'),
         ])
             ->withCount('alertasEnviadas')
@@ -83,12 +86,17 @@ class HostingController extends Controller
     public function store(Request $request)
     {
         $payload = $this->validatePayload($request);
+        $cotizacionNumero = $payload['cotizacion_numero'] ?? null;
+        unset($payload['cotizacion_numero']);
+        $cotizacion = $this->findCotizacionByNumero($cotizacionNumero);
+
         $payload['fecha_renovacion'] = $this->calculateFechaRenovacion(
             $payload['fecha_inicio'],
             $payload['suscripcion']
         );
 
         $hosting = Hosting::create($payload);
+        $this->attachCotizacion($hosting, $cotizacion, $request->user()?->id);
 
         return response()->json([
             'message' => 'Hosting registrado correctamente',
@@ -106,12 +114,17 @@ class HostingController extends Controller
     public function update(Request $request, Hosting $hosting)
     {
         $payload = $this->validatePayload($request);
+        $cotizacionNumero = $payload['cotizacion_numero'] ?? null;
+        unset($payload['cotizacion_numero']);
+        $cotizacion = $this->findCotizacionByNumero($cotizacionNumero);
+
         $payload['fecha_renovacion'] = $this->calculateFechaRenovacion(
             $payload['fecha_inicio'],
             $payload['suscripcion']
         );
 
         $hosting->update($payload);
+        $this->attachCotizacion($hosting, $cotizacion, $request->user()?->id);
 
         return response()->json([
             'message' => 'Hosting actualizado correctamente',
@@ -228,6 +241,31 @@ class HostingController extends Controller
         ]);
     }
 
+    public function enlazarCotizacion(Request $request, Hosting $hosting)
+    {
+        $validated = $request->validate([
+            'cotizacion_numero' => 'required|string|max:50',
+        ]);
+
+        $cotizacion = $this->findCotizacionByNumero($validated['cotizacion_numero']);
+        $this->attachCotizacion($hosting, $cotizacion, $request->user()?->id);
+
+        return response()->json([
+            'message' => 'Cotizacion enlazada correctamente',
+            'hosting' => $this->loadHostingRelations($hosting->refresh()),
+        ]);
+    }
+
+    public function desenlazarCotizacion(Hosting $hosting, Cotizacion $cotizacion)
+    {
+        $hosting->cotizaciones()->detach($cotizacion->id);
+
+        return response()->json([
+            'message' => 'Cotizacion desenlazada correctamente',
+            'hosting' => $this->loadHostingRelations($hosting->refresh()),
+        ]);
+    }
+
     public function previewImport(Request $request)
     {
         $validated = $request->validate([
@@ -297,6 +335,7 @@ class HostingController extends Controller
             'contacto' => 'nullable|string|max:255',
             'cliente' => 'nullable|string|max:255',
             'correo_hosting' => 'nullable|email|max:255',
+            'cotizacion_numero' => 'nullable|string|max:50',
         ]);
     }
 
@@ -306,10 +345,42 @@ class HostingController extends Controller
             'clienteRelacionado:id,nombre,ruc,correo',
             'moneda:id,codigo,simbolo',
             'documentos',
+            'cotizaciones:id,numero,fecha,titulo,cliente_nombre,moneda_id,subtotal,igv,total',
+            'cotizaciones.moneda:id,codigo,simbolo',
             'alertasEnviadas' => fn ($query) => $query->latest('sent_at'),
         ])
             ->loadCount('alertasEnviadas')
             ->loadMax('alertasEnviadas', 'sent_at');
+    }
+
+    private function findCotizacionByNumero(?string $numero): ?Cotizacion
+    {
+        $numero = $this->nullableTrim($numero);
+
+        if (! $numero) {
+            return null;
+        }
+
+        $cotizacion = Cotizacion::query()
+            ->where('numero', $numero)
+            ->first();
+
+        if (! $cotizacion) {
+            abort(422, "No se encontro una cotizacion con el numero {$numero}.");
+        }
+
+        return $cotizacion;
+    }
+
+    private function attachCotizacion(Hosting $hosting, ?Cotizacion $cotizacion, ?int $userId): void
+    {
+        if (! $cotizacion) {
+            return;
+        }
+
+        $hosting->cotizaciones()->syncWithoutDetaching([
+            $cotizacion->id => ['created_by' => $userId],
+        ]);
     }
 
     private function nullableTrim(mixed $value): ?string

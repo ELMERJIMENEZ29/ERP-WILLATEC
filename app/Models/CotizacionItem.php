@@ -22,6 +22,7 @@ class CotizacionItem extends Model
         'descripcion',
         'cantidad',
         'aplica_costos_adicionales',
+        'destino_entrega',
         'nota',
         'marca',
         'codigo',

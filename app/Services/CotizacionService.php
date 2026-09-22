@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\DB;
 
 class CotizacionService
 {
+    private const DESTINO_DEFAULT = 'Lima Metropolitana';
+
     private function esPlantillaAlquiler(Cotizacion $cotizacion): bool
     {
         $descriptor = strtoupper(
@@ -49,40 +51,47 @@ class CotizacionService
         $esAlquiler = $this->esPlantillaAlquiler($cotizacion);
 
         // Sumar Costos Adicionales
-        $totalCostosAdicionales = $cotizacion->costosAdicionales->sum('monto');
+        $entregaMultidestino = (bool) ($cotizacion->entrega_multidestino ?? false);
+        $costosPorDestino = $entregaMultidestino
+            ? $cotizacion->costosAdicionales
+                ->groupBy(fn ($costo): string => $this->normalizeDestino($costo->destino_entrega))
+                ->map(fn ($costos) => (float) $costos->sum('monto'))
+            : collect(['__GLOBAL__' => (float) $cotizacion->costosAdicionales->sum('monto')]);
+        $itemsPorDestino = $entregaMultidestino
+            ? $items->groupBy(fn ($item): string => $this->normalizeDestino($item->destino_entrega))
+            : collect(['__GLOBAL__' => $items]);
+        $costoExtraUnitarioPorDestino = [];
+        $itemIdsConCostosAdicionalesPorDestino = [];
 
-        // CALCULAR BASE DE DISTRIBUCION
-        $totalCantidad = $items->sum('cantidad');
-        $itemsConCostosAdicionales = $items;
+        foreach ($itemsPorDestino as $destino => $itemsDestino) {
+            $totalCostosAdicionales = (float) ($costosPorDestino[$destino] ?? 0);
+            $itemsConCostosAdicionales = $itemsDestino;
 
-        // =====================================
-        // DEFINIR DIVISOR SEGUN MODO
-        // =====================================
+            if ($modoDistribucion === 'POR_CANTIDAD') {
+                $totalCantidadDestino = $itemsDestino->sum('cantidad');
+                $divisor = $totalCantidadDestino > 0 ? $totalCantidadDestino : 1;
+            } else {
+                $itemsConCostosAdicionales = $itemsDestino->where('aplica_costos_adicionales', true);
 
-        // POR_ITEM = distribuir por líneas/items
-        // POR_CANTIDAD = distribuir por unidades totales
-        if ($modoDistribucion === 'POR_CANTIDAD') {
-            $divisor = $totalCantidad > 0 ? $totalCantidad : 1; // Evitar división por cero
-        } else {
-            $itemsConCostosAdicionales = $items->where('aplica_costos_adicionales', true);
+                if ($itemsConCostosAdicionales->isEmpty()) {
+                    $itemsConCostosAdicionales = $itemsDestino;
+                }
 
-            if ($itemsConCostosAdicionales->isEmpty()) {
-                $itemsConCostosAdicionales = $items;
+                $totalCantidadSeleccionada = $itemsConCostosAdicionales->sum('cantidad');
+                $divisor = $totalCantidadSeleccionada > 0 ? $totalCantidadSeleccionada : 1;
             }
 
-            $totalCantidadSeleccionada = $itemsConCostosAdicionales->sum('cantidad');
-            $divisor = $totalCantidadSeleccionada > 0 ? $totalCantidadSeleccionada : 1; // Evitar división por cero
+            $costoExtraUnitarioPorDestino[$destino] = $totalCostosAdicionales / $divisor;
+            $itemIdsConCostosAdicionalesPorDestino[$destino] = $itemsConCostosAdicionales->pluck('id')->all();
         }
-        // Calcular costo extra unitario, igual que el helper del frontend.
-        $costoExtraUnitario = $totalCostosAdicionales / $divisor;
-        $itemIdsConCostosAdicionales = $itemsConCostosAdicionales->pluck('id')->all();
 
         // Recalcular cada item
         foreach ($items as $item) {
             $costoBase = $item->costo_base; // Costo base del item
 
-            $costoExtraItem = in_array($item->id, $itemIdsConCostosAdicionales, true)
-                ? $costoExtraUnitario
+            $destinoItem = $entregaMultidestino ? $this->normalizeDestino($item->destino_entrega) : '__GLOBAL__';
+            $costoExtraItem = in_array($item->id, $itemIdsConCostosAdicionalesPorDestino[$destinoItem] ?? [], true)
+                ? ($costoExtraUnitarioPorDestino[$destinoItem] ?? 0)
                 : 0;
 
             $costoFinal = $costoBase + $costoExtraItem;
@@ -167,6 +176,13 @@ class CotizacionService
         $cotizacion->refresh()->load('items');
         // Llamar al estado desde recalcular
         $this->actualizarEstado($cotizacion);
+    }
+
+    private function normalizeDestino(?string $destino): string
+    {
+        $destino = trim((string) $destino);
+
+        return $destino !== '' ? $destino : self::DESTINO_DEFAULT;
     }
 
     private function actualizarEstado(Cotizacion $cotizacion): void

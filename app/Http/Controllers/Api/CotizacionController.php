@@ -340,6 +340,7 @@ class CotizacionController extends Controller
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
+            'entrega_multidestino' => 'sometimes|boolean',
             'cliente_contacto' => 'nullable|string|max:255',
         ]);
 
@@ -365,6 +366,7 @@ class CotizacionController extends Controller
             'entrega_destino' => $request->boolean('entrega_provincia')
                 ? $request->input('entrega_destino')
                 : null,
+            'entrega_multidestino' => $request->boolean('entrega_multidestino'),
 
             'cliente_id' => $cliente->id,
             'plantilla_id' => $request->plantilla_id,
@@ -410,6 +412,7 @@ class CotizacionController extends Controller
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
+            'entrega_multidestino' => 'sometimes|boolean',
             'cliente_contacto' => 'nullable|string|max:255',
             'comentario' => 'nullable|string|max:1000',
         ]);
@@ -463,6 +466,7 @@ class CotizacionController extends Controller
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
+                'entrega_multidestino' => $request->boolean('entrega_multidestino'),
             ]);
 
             $this->service->recalcular($cotizacion);
@@ -568,6 +572,7 @@ class CotizacionController extends Controller
             'descripcion' => 'required|string',
             'cantidad' => 'required|numeric|min:1',
             'aplica_costos_adicionales' => 'sometimes|boolean',
+            'destino_entrega' => 'nullable|string|max:150',
             'costo_base' => 'required|numeric|min:0',
             'margen' => 'required|numeric|min:0',
             'nota' => 'nullable|string',
@@ -614,6 +619,7 @@ class CotizacionController extends Controller
                 'descripcion' => $request->descripcion,
                 'cantidad' => $cantidad,
                 'aplica_costos_adicionales' => $request->boolean('aplica_costos_adicionales', true),
+                'destino_entrega' => $cotizacion->entrega_multidestino ? $request->input('destino_entrega') : null,
                 'costo_base' => $costoBase,
                 'margen' => $margen,
                 'nota' => $request->nota,
@@ -673,6 +679,7 @@ class CotizacionController extends Controller
             'descripcion' => 'nullable|string',
             'cantidad' => 'nullable|numeric|min:1',
             'aplica_costos_adicionales' => 'sometimes|boolean',
+            'destino_entrega' => 'nullable|string|max:150',
             'costo_base' => 'nullable|numeric|min:0',
             'margen' => 'nullable|numeric|min:0',
             'nota' => 'nullable|string',
@@ -715,6 +722,7 @@ class CotizacionController extends Controller
                     'descripcion',
                     'cantidad',
                     'aplica_costos_adicionales',
+                    'destino_entrega',
                     'costo_base',
                     'margen',
                     'nota',
@@ -904,6 +912,7 @@ class CotizacionController extends Controller
         $request->validate([
             'tipo' => 'required|string',
             'monto' => 'required|numeric|min:0',
+            'destino_entrega' => 'nullable|string|max:150',
         ]);
 
         $cotizacion = Cotizacion::findOrFail($cotizacionId);
@@ -915,6 +924,7 @@ class CotizacionController extends Controller
                 'cotizacion_id' => $cotizacionId,
                 'tipo' => $request->tipo,
                 'monto' => $request->monto,
+                'destino_entrega' => Cotizacion::findOrFail($cotizacionId)->entrega_multidestino ? $request->input('destino_entrega') : null,
             ]);
 
             $cotizacion = Cotizacion::findOrFail($cotizacionId);
@@ -1375,6 +1385,7 @@ class CotizacionController extends Controller
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
+            'entrega_multidestino' => 'sometimes|boolean',
             'cliente_contacto' => 'nullable|string|max:255',
             'comentario' => 'nullable|string|max:1000',
 
@@ -1383,6 +1394,7 @@ class CotizacionController extends Controller
             'items.*.descripcion' => 'required|string',
             'items.*.cantidad' => 'required|numeric|min:1',
             'items.*.aplica_costos_adicionales' => 'sometimes|boolean',
+            'items.*.destino_entrega' => 'nullable|string|max:150',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.nota' => 'nullable|string',
@@ -1400,6 +1412,7 @@ class CotizacionController extends Controller
             'costos' => 'nullable|array',
 
             'costos.*.tipo' => 'required|string',
+            'costos.*.destino_entrega' => 'nullable|string|max:150',
             'costos.*.monto' => 'required|numeric|min:0',
         ]);
 
@@ -1429,6 +1442,7 @@ class CotizacionController extends Controller
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
+                'entrega_multidestino' => $request->boolean('entrega_multidestino'),
 
                 'cliente_id' => $cliente->id,
                 'plantilla_id' => $request->plantilla_id,
@@ -1472,6 +1486,7 @@ class CotizacionController extends Controller
                     'descripcion' => $item['descripcion'],
                     'cantidad' => $item['cantidad'],
                     'aplica_costos_adicionales' => $item['aplica_costos_adicionales'] ?? true,
+                    'destino_entrega' => $request->boolean('entrega_multidestino') ? ($item['destino_entrega'] ?? null) : null,
                     'costo_base' => $item['costo_base'],
                     'margen' => $item['margen'],
                     'orden' => $index + 1,
@@ -1515,6 +1530,7 @@ class CotizacionController extends Controller
                     'cotizacion_id' => $cotizacion->id,
                     'tipo' => $costo['tipo'],
                     'descripcion' => $costo['descripcion'] ?? null,
+                    'destino_entrega' => $request->boolean('entrega_multidestino') ? ($costo['destino_entrega'] ?? null) : null,
                     'monto' => $costo['monto'],
                 ]);
             }
@@ -1570,6 +1586,7 @@ class CotizacionController extends Controller
             'items.*.descripcion' => 'required|string',
             'items.*.cantidad' => 'required|numeric|min:1',
             'items.*.aplica_costos_adicionales' => 'sometimes|boolean',
+            'items.*.destino_entrega' => 'nullable|string|max:150',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.nota' => 'nullable|string',
@@ -1587,6 +1604,7 @@ class CotizacionController extends Controller
             'costos' => 'nullable|array',
 
             'costos.*.tipo' => 'required|string',
+            'costos.*.destino_entrega' => 'nullable|string|max:150',
             'costos.*.monto' => 'required|numeric|min:0',
         ]);
 
@@ -1652,6 +1670,7 @@ class CotizacionController extends Controller
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
+                'entrega_multidestino' => $request->boolean('entrega_multidestino'),
             ]);
 
             // ELIMINAR SNAPSHOT VIEJO
@@ -1675,6 +1694,7 @@ class CotizacionController extends Controller
                     'descripcion' => $item['descripcion'],
                     'cantidad' => $item['cantidad'],
                     'aplica_costos_adicionales' => $item['aplica_costos_adicionales'] ?? true,
+                    'destino_entrega' => $request->boolean('entrega_multidestino') ? ($item['destino_entrega'] ?? null) : null,
                     'costo_base' => $item['costo_base'],
                     'margen' => $item['margen'],
                     'orden' => $index + 1,
@@ -1717,6 +1737,7 @@ class CotizacionController extends Controller
                     'cotizacion_id' => $cotizacion->id,
                     'tipo' => $costo['tipo'],
                     'descripcion' => $costo['descripcion'] ?? null,
+                    'destino_entrega' => $request->boolean('entrega_multidestino') ? ($costo['destino_entrega'] ?? null) : null,
                     'monto' => $costo['monto'],
                 ]);
             }
@@ -1759,6 +1780,7 @@ class CotizacionController extends Controller
         $data['entrega_destino'] = $data['entrega_provincia']
             ? ($data['entrega_destino'] ?? null)
             : null;
+        $data['entrega_multidestino'] = (bool) ($data['entrega_multidestino'] ?? false);
         $data['cliente_telefono'] = $cliente->telefono;
         $data['cliente_correo'] = $cliente->correo;
 
@@ -1798,6 +1820,7 @@ class CotizacionController extends Controller
                 'forma_pago',
                 'entrega_provincia',
                 'entrega_destino',
+                'entrega_multidestino',
                 'tipo_cambio',
                 'titulo',
                 'modo_distribucion',
@@ -1828,6 +1851,7 @@ class CotizacionController extends Controller
                         'descripcion',
                         'cantidad',
                         'aplica_costos_adicionales',
+                        'destino_entrega',
                         'nota',
                         'marca',
                         'codigo',
@@ -1871,6 +1895,7 @@ class CotizacionController extends Controller
                 ->map(fn (CotizacionCostosAdicional $costo): array => $costo->only([
                     'tipo',
                     'descripcion',
+                    'destino_entrega',
                     'monto',
                 ]))
                 ->all(),
@@ -1898,6 +1923,7 @@ class CotizacionController extends Controller
             'forma_pago' => $header['forma_pago'],
             'entrega_provincia' => $header['entrega_provincia'] ?? false,
             'entrega_destino' => $header['entrega_destino'] ?? null,
+            'entrega_multidestino' => $header['entrega_multidestino'] ?? false,
             'cliente_contacto' => $header['cliente_contacto'],
             'items' => $snapshot['items'],
             'costos' => $snapshot['costos'],
@@ -1946,6 +1972,7 @@ class CotizacionController extends Controller
             'entrega_destino' => ! empty($payload['entrega_provincia'])
                 ? ($payload['entrega_destino'] ?? null)
                 : null,
+            'entrega_multidestino' => (bool) ($payload['entrega_multidestino'] ?? false),
         ]);
 
         $cotizacion->items()->delete();
@@ -1968,6 +1995,7 @@ class CotizacionController extends Controller
                 'descripcion' => $item['descripcion'],
                 'cantidad' => $cantidad,
                 'aplica_costos_adicionales' => $item['aplica_costos_adicionales'] ?? true,
+                'destino_entrega' => ! empty($payload['entrega_multidestino']) ? ($item['destino_entrega'] ?? null) : null,
                 'costo_base' => $costoBase,
                 'margen' => $margen,
                 'orden' => $index + 1,
@@ -2006,6 +2034,7 @@ class CotizacionController extends Controller
                 'cotizacion_id' => $cotizacion->id,
                 'tipo' => $costo['tipo'],
                 'descripcion' => $costo['descripcion'] ?? null,
+                'destino_entrega' => ! empty($payload['entrega_multidestino']) ? ($costo['destino_entrega'] ?? null) : null,
                 'monto' => $costo['monto'],
             ]);
         }
@@ -2031,11 +2060,13 @@ class CotizacionController extends Controller
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
+            'entrega_multidestino' => 'sometimes|boolean',
             'cliente_contacto' => 'nullable|string|max:255',
             'items' => 'required|array|min:1',
             'items.*.descripcion' => 'required|string',
             'items.*.cantidad' => 'required|numeric|min:1',
             'items.*.aplica_costos_adicionales' => 'sometimes|boolean',
+            'items.*.destino_entrega' => 'nullable|string|max:150',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.nota' => 'nullable|string',
@@ -2062,6 +2093,7 @@ class CotizacionController extends Controller
             'costos' => 'nullable|array',
             'costos.*.tipo' => 'required|string',
             'costos.*.descripcion' => 'nullable|string',
+            'costos.*.destino_entrega' => 'nullable|string|max:150',
             'costos.*.monto' => 'required|numeric|min:0',
         ];
     }

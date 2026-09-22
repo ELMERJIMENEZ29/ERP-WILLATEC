@@ -21,6 +21,10 @@ $formaPagoCalendario = in_array($formaPago, ['CRÉDITO A 5 DÍAS', 'CRÉDITO 15 
 $destinoEntrega = $cotizacion->entrega_provincia && filled($cotizacion->entrega_destino)
 ? $cotizacion->entrega_destino
 : 'Lima Metropolitana';
+$esMultidestino = (bool) ($cotizacion->entrega_multidestino ?? false);
+$condicionEntrega = $esMultidestino
+? 'Incluye entrega en oficinas del cliente.'
+: 'Incluye entrega en oficinas del cliente, ' . $destinoEntrega . '.';
 $direccionEmpresaConfigurada = trim((string) data_get($empresaConfiguracion ?? null, 'direccion', ''));
 $direccionEmpresaDetalle = $direccionEmpresaConfigurada !== '' ? $direccionEmpresaConfigurada : 'Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña - Lima';
 $direccionEmpresaFooter = $direccionEmpresaConfigurada !== '' ? $direccionEmpresaConfigurada : 'Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña';
@@ -984,6 +988,9 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                     <th class="center" style="width:20px">#</th>
                     <th>Producto / Servicio</th>
                     <th class="center" style="width:48px">Imagen</th>
+                    @if($esMultidestino)
+                    <th class="center" style="width:76px">Destino</th>
+                    @endif
                     <th class="right" style="width:32px">Cant.</th>
                     <th class="center" style="width:46px">Periodo</th>
                     <th class="right" style="width:76px">Precio Unit Mensual</th>
@@ -1035,6 +1042,9 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                         <span class="muted">Sin imagen</span>
                         @endif
                     </td>
+                    @if($esMultidestino)
+                    <td class="center"><span class="muted">{{ $item->destino_entrega ?: 'Lima Metropolitana' }}</span></td>
+                    @endif
                     <td class="right">{{ $item->cantidad }}</td>
                     <td class="center">{{ $periodoMeses ?: '-' }} meses</td>
                     <td class="right">{{ $simbolo }} {{ number_format($precioUnitMensual, 2) }}</td>
@@ -1050,7 +1060,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="9" class="center muted">Sin items registrados</td>
+                    <td colspan="{{ $esMultidestino ? 10 : 9 }}" class="center muted">Sin items registrados</td>
                 </tr>
                 @endforelse
             </tbody>
@@ -1062,7 +1072,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
             <td class="conditions">
                 <div class="section-title">Condiciones comerciales</div>
 <div class="condition"><span>&rsaquo;</span> Forma de Pago: {{ $formaPago }}{{ $formaPagoCalendario }}</div>
-                <div class="condition"><span>&rsaquo;</span> Incluye entrega en oficinas del cliente, {{ $destinoEntrega }}.</div>
+                <div class="condition"><span>&rsaquo;</span> {{ $condicionEntrega }}</div>
                 <div class="condition"><span>&rsaquo;</span> Precios en {{ $nombreMoneda }} y {{ $cotizacion->plantilla->incluye_igv ? 'SI incluyen IGV' : 'NO incluyen IGV' }}.</div>
                 <div class="condition"><span>&rsaquo;</span> Precios sujetos a cambio sin previo aviso.</div>
                 <div class="condition"><span>&rsaquo;</span> WILLATEC S.A.C, Incorporado al Régimen de Buenos Contribuyentes Resolución de Intendencia N° 0230050266292 (Emitido - Sunat)</div>

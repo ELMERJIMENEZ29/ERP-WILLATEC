@@ -22,6 +22,7 @@ class Cotizacion extends Model
         'forma_pago',
         'entrega_provincia',
         'entrega_destino',
+        'entrega_multidestino',
         'tipo_cambio',
         'titulo',
         'modo_distribucion',
@@ -154,6 +155,7 @@ class Cotizacion extends Model
             'ganancia' => 'decimal:2',
             'total_gasto' => 'decimal:2',
             'entrega_provincia' => 'boolean',
+            'entrega_multidestino' => 'boolean',
         ];
     }
 
