@@ -30,9 +30,7 @@ class CotizacionService
 
     public function recalcular(Cotizacion $cotizacion, string $modoDistribucion = 'POR_ITEM'): void
     {
-
-        $cotizacion->load(['items', 'costosAdicionales', 'plantilla']);
-
+        $cotizacion->load(['items.destinosEntrega', 'costosAdicionales', 'plantilla']);
         $items = $cotizacion->items;
 
         if ($items->isEmpty()) {
@@ -49,132 +47,137 @@ class CotizacionService
 
         $modoDistribucion = $cotizacion->modo_distribucion ?? $modoDistribucion;
         $esAlquiler = $this->esPlantillaAlquiler($cotizacion);
-
-        // Sumar Costos Adicionales
         $entregaMultidestino = (bool) ($cotizacion->entrega_multidestino ?? false);
         $costosPorDestino = $entregaMultidestino
             ? $cotizacion->costosAdicionales
                 ->groupBy(fn ($costo): string => $this->normalizeDestino($costo->destino_entrega))
                 ->map(fn ($costos) => (float) $costos->sum('monto'))
             : collect(['__GLOBAL__' => (float) $cotizacion->costosAdicionales->sum('monto')]);
+        $lineasDestino = $items->flatMap(function ($item) use ($entregaMultidestino) {
+            if ($entregaMultidestino && $item->destinosEntrega->isNotEmpty()) {
+                return $item->destinosEntrega->map(fn ($destino) => [
+                    'item' => $item,
+                    'destino_model' => $destino,
+                    'destino' => $this->normalizeDestino($destino->destino_entrega),
+                    'cantidad' => (int) ($destino->cantidad ?: 0),
+                    'margen' => $destino->margen,
+                ]);
+            }
+
+            return [[
+                'item' => $item,
+                'destino_model' => null,
+                'destino' => $entregaMultidestino ? $this->normalizeDestino($item->destino_entrega) : '__GLOBAL__',
+                'cantidad' => (int) ($item->cantidad ?: 0),
+                'margen' => null,
+            ]];
+        });
         $itemsPorDestino = $entregaMultidestino
-            ? $items->groupBy(fn ($item): string => $this->normalizeDestino($item->destino_entrega))
-            : collect(['__GLOBAL__' => $items]);
+            ? $lineasDestino->groupBy('destino')
+            : collect(['__GLOBAL__' => $lineasDestino]);
         $costoExtraUnitarioPorDestino = [];
         $itemIdsConCostosAdicionalesPorDestino = [];
 
-        foreach ($itemsPorDestino as $destino => $itemsDestino) {
+        foreach ($itemsPorDestino as $destino => $lineas) {
             $totalCostosAdicionales = (float) ($costosPorDestino[$destino] ?? 0);
-            $itemsConCostosAdicionales = $itemsDestino;
 
             if ($modoDistribucion === 'POR_CANTIDAD') {
-                $totalCantidadDestino = $itemsDestino->sum('cantidad');
-                $divisor = $totalCantidadDestino > 0 ? $totalCantidadDestino : 1;
+                $lineasConCostosAdicionales = $lineas;
             } else {
-                $itemsConCostosAdicionales = $itemsDestino->where('aplica_costos_adicionales', true);
-
-                if ($itemsConCostosAdicionales->isEmpty()) {
-                    $itemsConCostosAdicionales = $itemsDestino;
+                $lineasConCostosAdicionales = $lineas->filter(fn ($linea) => (bool) $linea['item']->aplica_costos_adicionales);
+                if ($lineasConCostosAdicionales->isEmpty()) {
+                    $lineasConCostosAdicionales = $lineas;
                 }
-
-                $totalCantidadSeleccionada = $itemsConCostosAdicionales->sum('cantidad');
-                $divisor = $totalCantidadSeleccionada > 0 ? $totalCantidadSeleccionada : 1;
             }
 
+            $divisor = max(1, (int) $lineasConCostosAdicionales->sum('cantidad'));
             $costoExtraUnitarioPorDestino[$destino] = $totalCostosAdicionales / $divisor;
-            $itemIdsConCostosAdicionalesPorDestino[$destino] = $itemsConCostosAdicionales->pluck('id')->all();
+            $itemIdsConCostosAdicionalesPorDestino[$destino] = $lineasConCostosAdicionales
+                ->map(fn ($linea) => $linea['item']->id)
+                ->unique()
+                ->values()
+                ->all();
         }
 
-        // Recalcular cada item
         foreach ($items as $item) {
-            $costoBase = $item->costo_base; // Costo base del item
+            $lineasItem = $lineasDestino->filter(fn ($linea) => $linea['item']->id === $item->id)->values();
+            $costoBase = (float) $item->costo_base;
+            $subtotalItem = 0;
+            $costoTotalItem = 0;
+            $gananciaTotalItem = 0;
+            $precioVentaPonderado = 0;
+            $costoUnitarioPonderado = 0;
 
-            $destinoItem = $entregaMultidestino ? $this->normalizeDestino($item->destino_entrega) : '__GLOBAL__';
-            $costoExtraItem = in_array($item->id, $itemIdsConCostosAdicionalesPorDestino[$destinoItem] ?? [], true)
-                ? ($costoExtraUnitarioPorDestino[$destinoItem] ?? 0)
-                : 0;
+            foreach ($lineasItem as $linea) {
+                $destinoItem = $linea['destino'];
+                $cantidadLinea = max(0, (int) $linea['cantidad']);
+                $costoExtraItem = in_array($item->id, $itemIdsConCostosAdicionalesPorDestino[$destinoItem] ?? [], true)
+                    ? ($costoExtraUnitarioPorDestino[$destinoItem] ?? 0)
+                    : 0;
+                $costoFinal = $costoBase + $costoExtraItem;
+                $margen = $linea['margen'] !== null ? (float) $linea['margen'] : (float) ($item->margen ?? 0);
+                $periodoMeses = max(0, (int) ($item->garantia_meses ?? 0));
+                $precioVenta = round($margen < 100 ? $costoFinal / (1 - ($margen / 100)) : $costoFinal, 2);
+                $costoUnitario = round($costoFinal, 2);
+                $subtotal = round($cantidadLinea * $precioVenta * ($esAlquiler ? $periodoMeses : 1), 2);
+                $costoTotal = round($cantidadLinea * $costoUnitario, 2);
+                $ganancia = $cotizacion->plantilla->incluye_igv
+                    ? round(($subtotal - $costoTotal) / 1.18, 2)
+                    : round($subtotal - $costoTotal, 2);
 
-            $costoFinal = $costoBase + $costoExtraItem;
+                if ($linea['destino_model']) {
+                    $linea['destino_model']->update([
+                        'costo_unitario' => $costoUnitario,
+                        'margen' => $margen,
+                        'precio_venta' => $precioVenta,
+                        'subtotal' => $subtotal,
+                        'costo_total' => $costoTotal,
+                        'ganancia' => $ganancia,
+                    ]);
+                }
 
-            $margen = (float) ($item->margen ?? 0);
-            $periodoMeses = max(0, (int) ($item->garantia_meses ?? 0));
-            $precioVentaBase = $margen < 100
-                ? $costoFinal / (1 - ($margen / 100))
-                : $costoFinal;
-            $precioVenta = $precioVentaBase;
-
-            // Redondear precio unitario antes de multiplicar
-            $precioVentaRedondeado = round($precioVenta, 2);
-            $costoFinalRedondeado = round($costoFinal, 2);
-            // / ==========================
-            // CALCULO GANANCIA POR ITEM
-            // ==========================
-
-            // PVT (precio venta total del item)
-            $pvt = round(
-                $item->cantidad * $precioVentaRedondeado * ($esAlquiler ? $periodoMeses : 1),
-                2
-            );
-
-            // PTC (precio total compra del item)
-            $ptc = round($item->cantidad * $costoFinalRedondeado, 2);
-
-            // Diferencia base
-            $diferencia = $pvt - $ptc;
-
-            // Detectar plantilla
-            $incluyeIgv = $cotizacion->plantilla->incluye_igv;
-
-            if ($incluyeIgv) {
-                // 🟣 SOLES-ESTADO (con IGV)
-                $ganancia = $diferencia / 1.18;
-            } else {
-                // 🟢 DOLARES / SOLES (sin IGV)
-                $ganancia = $diferencia;
+                $subtotalItem += $subtotal;
+                $costoTotalItem += $costoTotal;
+                $gananciaTotalItem += $ganancia;
+                $precioVentaPonderado += $precioVenta * $cantidadLinea;
+                $costoUnitarioPonderado += $costoUnitario * $cantidadLinea;
             }
 
-            // Redondeo final
-            $ganancia = round($ganancia, 2);
+            $cantidadItem = max(1, (int) ($item->cantidad ?: $lineasItem->sum('cantidad') ?: 1));
 
             $item->update([
-                'costo_unitario' => $costoFinalRedondeado, // Costo final del item
-                'precio_venta' => $precioVentaRedondeado, // Precio de venta del item
-                'subtotal' => $pvt,
-                'costo_total' => $ptc,
-                'ganancia' => round($ganancia, 2),
+                'costo_unitario' => round($costoUnitarioPonderado / $cantidadItem, 2),
+                'precio_venta' => round($precioVentaPonderado / $cantidadItem, 2),
+                'subtotal' => round($subtotalItem, 2),
+                'costo_total' => round($costoTotalItem, 2),
+                'ganancia' => round($gananciaTotalItem, 2),
             ]);
         }
 
-        // Recalcular totales de la cotización
         $cotizacion->refresh()->load('items');
         $items = $cotizacion->items;
         $sumSubtotales = round($items->sum('subtotal'), 2);
         $gananciaTotal = round($items->sum('ganancia'), 2);
 
         if ($cotizacion->plantilla->incluye_igv) {
-            // Los subtotales de los items ya incluyen IGV.
             $total = round($sumSubtotales, 2);
             $igv = round($total - ($total / 1.18), 2);
             $subtotal = round($total / 1.18, 2);
         } else {
-            // LOS PRECIOS NO INCLUYEN IGV, POR LO TANTO SE CALCULA EL IGV Y SE SUMA AL TOTAL
             $subtotal = round($sumSubtotales, 2);
-            $igv = round($subtotal * 0.18, 2); // IGV al 18%
+            $igv = round($subtotal * 0.18, 2);
             $total = round($subtotal + $igv, 2);
         }
-
-        $totalGasto = round($items->sum('costo_total'), 2);
 
         $cotizacion->update([
             'subtotal' => round($subtotal, 2),
             'igv' => round($igv, 2),
             'total' => round($total, 2),
             'ganancia' => round($gananciaTotal, 2),
-            'total_gasto' => round($totalGasto, 2),
+            'total_gasto' => round($items->sum('costo_total'), 2),
         ]);
 
         $cotizacion->refresh()->load('items');
-        // Llamar al estado desde recalcular
         $this->actualizarEstado($cotizacion);
     }
 
@@ -187,10 +190,8 @@ class CotizacionService
 
     private function actualizarEstado(Cotizacion $cotizacion): void
     {
-        // Actualizar Estado de la cotización
-        $aprobados = $cotizacion->items->where('estado_cotizacion_item_id', 2)->count(); // Aprobado
-        $rechazados = $cotizacion->items->where('estado_cotizacion_item_id', 3)->count(); // Rechazado
-
+        $aprobados = $cotizacion->items->where('estado_cotizacion_item_id', 2)->count();
+        $rechazados = $cotizacion->items->where('estado_cotizacion_item_id', 3)->count();
         $totalItems = $cotizacion->items()->count();
 
         if ($aprobados === $totalItems && $totalItems > 0) {
@@ -215,9 +216,7 @@ class CotizacionService
     public function generarNumero()
     {
         return DB::transaction(function () {
-
             $anio = now()->year;
-
             $correlativo = DB::table('correlativos')
                 ->where('tipo', 'cotizacion')
                 ->where('anio', $anio)

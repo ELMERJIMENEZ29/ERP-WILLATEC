@@ -76,6 +76,11 @@ class CotizacionItem extends Model
         return $this->hasMany(CotizacionItemProveedor::class)->orderBy('orden');
     }
 
+    public function destinosEntrega(): HasMany
+    {
+        return $this->hasMany(CotizacionItemDestino::class, 'cotizacion_item_id')->orderBy('id');
+    }
+
     protected function imagenUrl(): Attribute
     {
         return Attribute::get(

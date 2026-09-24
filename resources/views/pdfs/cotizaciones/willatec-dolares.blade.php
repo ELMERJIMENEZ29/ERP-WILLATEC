@@ -738,11 +738,36 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .items tr {
-        page-break-inside: avoid;
+        page-break-inside: avoid !important;
     }
 
     .items thead {
         display: table-header-group;
+    }
+
+    /* Un producto puede continuar en otra página */
+    .items tbody.item-group {
+        page-break-inside: auto !important;
+    }
+
+    /*
+ * Estas celdas simulan el rowspan:
+ * #, Producto, Imagen y Disponibilidad.
+ */
+    .items .item-merge-cell {
+        border-bottom: none !important;
+        vertical-align: middle !important;
+    }
+
+    /* Las filas siguientes quedan vacías en esas columnas */
+    .items .item-merge-empty {
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
+
+    /* La última fila vuelve a cerrar visualmente el bloque */
+    .items tr.item-row-last .item-merge-cell {
+        border-bottom: 1px solid #E0E6F0 !important;
     }
 
     .partners {
@@ -936,85 +961,461 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                         <th class="center" style="width:20px">#</th>
                         <th>Producto / Servicio</th>
                         <th class="center" style="width:60px">Imagen</th>
-                    @if($esMultidestino)
-                    <th class="center" style="width:76px">Destino</th>
-                    @endif
+                        @if($esMultidestino)
+                        <th class="center" style="width:76px">Destino</th>
+                        @endif
                         <th class="right" style="width:35px">Cant.</th>
                         <th class="right" style="width:72px">P. Unit.</th>
                         <th class="right" style="width:72px">Subtotal</th>
                         <th class="center" style="width:95px">Disponibilidad</th>
                     </tr>
                 </thead>
-                <tbody>
-                    @forelse($cotizacion->items as $item)
-                    @php
-                    $itemImage = null;
-                    if ($item->imagen) {
-                    $imagen = ltrim(str_replace('\\', '/', $item->imagen), '/');
-                    // Limpiar si viene con prefijos de URL
-                    foreach (['storage/app/public/', 'public/storage/', 'storage/'] as $prefix) {
-                    if (str_starts_with($imagen, $prefix)) {
-                    $imagen = substr($imagen, strlen($prefix));
-                    break;
-                    }
-                    }
-                    $rutaLocal = public_path('storage/' . $imagen);
-                    if (file_exists($rutaLocal)) {
-                    $itemImage = $rutaLocal;
-                    }
-                    }
-                    $itemImageSrc = $itemImage ? $pdfImage($itemImage) : null;
-                    @endphp
-                    <tr class="{{ $loop->even ? 'even' : '' }}">
-                        <td class="center">{{ $loop->iteration }}</td>
-                        <td>
-                            <span class="strong">{{ $item->descripcion }}</span><br>
-                            @if(!empty($item->nota))
-                            @php
-                                $notaItemHtml = str_replace(
-                                    ['&lt;strong&gt;', '&lt;/strong&gt;', '&lt;b&gt;', '&lt;/b&gt;', '&lt;em&gt;', '&lt;/em&gt;', '&lt;i&gt;', '&lt;/i&gt;', '&lt;u&gt;', '&lt;/u&gt;'],
-                                    ['<strong>', '</strong>', '<strong>', '</strong>', '<em>', '</em>', '<em>', '</em>', '<u>', '</u>'],
-                                    nl2br(e($item->nota))
-                                );
-                            @endphp
-                            <span class="muted">Nota: {!! $notaItemHtml !!}</span><br>
-                            @endif
-                            @if($item->marca)
-                            <span class="muted">Marca: {{ $item->marca }}</span><br>
+                @forelse($cotizacion->items as $item)
+
+                @php
+                $itemImage = null;
+
+                if ($item->imagen) {
+
+                $imagen = ltrim(
+                str_replace('\\', '/', $item->imagen),
+                '/'
+                );
+
+                foreach (
+                [
+                'storage/app/public/',
+                'public/storage/',
+                'storage/'
+                ] as $prefix
+                ) {
+
+                if (str_starts_with($imagen, $prefix)) {
+
+                $imagen = substr(
+                $imagen,
+                strlen($prefix)
+                );
+
+                break;
+                }
+
+                }
+
+                $rutaLocal = public_path(
+                'storage/' . $imagen
+                );
+
+                if (file_exists($rutaLocal)) {
+                $itemImage = $rutaLocal;
+                }
+                }
+
+                $itemImageSrc =
+                $itemImage
+                ? $pdfImage($itemImage)
+                : null;
+
+
+                $destinosItem =
+                $esMultidestino
+                && $item->destinosEntrega->isNotEmpty()
+
+                ? $item->destinosEntrega
+
+                : collect([
+                (object) [
+                'destino_entrega' =>
+                $item->destino_entrega
+                ?: 'Lima Metropolitana',
+
+                'detalle_variante' => null,
+
+                'cantidad' =>
+                $item->cantidad,
+
+                'precio_venta' =>
+                $item->precio_venta,
+
+                'subtotal' =>
+                $item->subtotal,
+                ]
+                ]);
+
+
+                /*
+                * Guardamos estos valores antes de entrar
+                * al foreach de destinos.
+                *
+                * Dentro del foreach, $loop ya será
+                * el loop de los destinos.
+                */
+                $itemNumero = $loop->iteration;
+                $itemEsPar = $loop->even;
+
+                @endphp
+
+
+                <tbody class="item-group">
+
+                    @foreach($destinosItem as $destino)
+
+                    <tr
+                        class="
+                    {{ $itemEsPar ? 'even' : '' }}
+                    {{ $loop->last ? 'item-row-last' : '' }}
+                ">
+
+                        {{-- ==================================
+                     #
+                =================================== --}}
+
+                        <td
+                            class="
+                        center
+                        item-merge-cell
+                        {{ !$loop->first ? 'item-merge-empty' : '' }}
+                    ">
+
+                            @if($loop->first)
+
+                            {{ $itemNumero }}
+
                             @endif
 
-                            @if(!empty($item->codigo) && trim($item->codigo) !== '-')
-                            <span class="muted">Modelo / Código: {{ $item->codigo }}</span><br>
-                            @endif
-                            <span class="muted">Garantia: {{ $item->garantia_meses ?? '-' }} meses</span>
                         </td>
-                        <td class="center">
+
+
+                        {{-- ==================================
+                     PRODUCTO / SERVICIO
+                =================================== --}}
+
+                        <td
+                            class="
+                        item-merge-cell
+                        {{ !$loop->first ? 'item-merge-empty' : '' }}
+                    ">
+
+                            @if($loop->first)
+
+                            <span class="strong">
+                                {{ $item->descripcion }}
+                            </span>
+
+                            <br>
+
+
+                            @if(!empty($item->nota))
+
+                            @php
+
+                            $notaItemHtml =
+                            str_replace(
+
+                            [
+                            '&lt;strong&gt;',
+                            '&lt;/strong&gt;',
+                            '&lt;b&gt;',
+                            '&lt;/b&gt;',
+                            '&lt;em&gt;',
+                            '&lt;/em&gt;',
+                            '&lt;i&gt;',
+                            '&lt;/i&gt;',
+                            '&lt;u&gt;',
+                            '&lt;/u&gt;'
+                            ],
+
+                            [
+                            '<strong>',
+                                '</strong>',
+                            '<strong>',
+                                '</strong>',
+                            '<em>',
+                                '</em>',
+                            '<em>',
+                                '</em>',
+                            '<u>',
+                                '</u>'
+                            ],
+
+                            nl2br(
+                            e($item->nota)
+                            )
+                            );
+
+                            @endphp
+
+
+                            <span class="muted">
+
+                                Nota:
+                                {!! $notaItemHtml !!}
+
+                            </span>
+
+                            <br>
+
+                            @endif
+
+
+                            @if($item->marca)
+
+                            <span class="muted">
+
+                                Marca:
+                                {{ $item->marca }}
+
+                            </span>
+
+                            <br>
+
+                            @endif
+
+
+                            @if(
+                            !empty($item->codigo)
+                            && trim($item->codigo) !== '-'
+                            )
+
+                            <span class="muted">
+
+                                Modelo / Código:
+                                {{ $item->codigo }}
+
+                            </span>
+
+                            <br>
+
+                            @endif
+
+
+                            <span class="muted">
+
+                                Garantia:
+                                {{ $item->garantia_meses ?? '-' }}
+                                meses
+
+                            </span>
+
+                            @endif
+
+                        </td>
+
+
+                        {{-- ==================================
+                     IMAGEN
+                =================================== --}}
+
+                        <td
+                            class="
+                        center
+                        item-merge-cell
+                        {{ !$loop->first ? 'item-merge-empty' : '' }}
+                    ">
+
+                            @if($loop->first)
+
                             @if($itemImageSrc)
-                            <img src="{{ $itemImageSrc }}" class="prod-img" alt="">
+
+                            <img
+                                src="{{ $itemImageSrc }}"
+                                class="prod-img"
+                                alt="">
+
                             @else
-                            <span class="muted">Sin imagen</span>
+
+                            <span class="muted">
+                                Sin imagen
+                            </span>
+
                             @endif
+
+                            @endif
+
                         </td>
-                    @if($esMultidestino)
-                    <td class="center"><span class="muted">{{ $item->destino_entrega ?: 'Lima Metropolitana' }}</span></td>
-                    @endif
-                        <td class="right">{{ $item->cantidad }}</td>
-                        <td class="right">{{ $simbolo }} {{ number_format((float) $item->precio_venta, 2) }}</td>
-                        <td class="right strong">{{ $simbolo }} {{ number_format((float) $item->subtotal, 2) }}</td>
+
+
+                        {{-- ==================================
+                     DESTINO
+                =================================== --}}
+
+                        @if($esMultidestino)
+
                         <td class="center">
-                            @if($item->disponibilidad_tipo === 'importacion')
-                            <div class="import">IMPORTACION<br>{{ $item->disponibilidad_dias }} dias c.<br>Puesta la OC.</div>
-                            @else
-                            <div class="stock">STOCK DISP.<br>{{ $item->disponibilidad_dias }} dias c.<br>Puesta la OC.</div>
+
+                            <span class="muted">
+
+                                {{
+                                $destino->destino_entrega
+                                ?: 'Lima Metropolitana'
+                            }}
+
+                            </span>
+
+
+                            @if(
+                            !empty(
+                            $destino->detalle_variante
+                            )
+                            )
+
+                            <br>
+
+                            <span
+                                style="
+                                    font-size:7.4px;
+                                    color:#374151;
+                                ">
+
+                                {{
+                                    $destino
+                                        ->detalle_variante
+                                }}
+
+                            </span>
+
                             @endif
+
                         </td>
+
+                        @endif
+
+
+                        {{-- ==================================
+                     CANTIDAD
+                =================================== --}}
+
+                        <td class="right">
+
+                            {{ $destino->cantidad }}
+
+                        </td>
+
+
+                        {{-- ==================================
+                     PRECIO UNITARIO
+                =================================== --}}
+
+                        <td class="right">
+
+                            {{ $simbolo }}
+                            {{
+                        number_format(
+                            (float)
+                            $destino->precio_venta,
+                            2
+                        )
+                    }}
+
+                        </td>
+
+
+                        {{-- ==================================
+                     SUBTOTAL
+                =================================== --}}
+
+                        <td class="right strong">
+
+                            {{ $simbolo }}
+                            {{
+                        number_format(
+                            (float)
+                            $destino->subtotal,
+                            2
+                        )
+                    }}
+
+                        </td>
+
+
+                        {{-- ==================================
+                     DISPONIBILIDAD
+                =================================== --}}
+
+                        <td
+                            class="
+                        center
+                        item-merge-cell
+                        {{ !$loop->first ? 'item-merge-empty' : '' }}
+                    ">
+
+                            @if($loop->first)
+
+                            @if(
+                            $item->disponibilidad_tipo
+                            === 'importacion'
+                            )
+
+                            <div class="import">
+
+                                IMPORTACION
+
+                                <br>
+
+                                {{
+                                    $item
+                                        ->disponibilidad_dias
+                                }}
+                                dias c.
+
+                                <br>
+
+                                Puesta la OC.
+
+                            </div>
+
+                            @else
+
+                            <div class="stock">
+
+                                STOCK DISP.
+
+                                <br>
+
+                                {{
+                                    $item
+                                        ->disponibilidad_dias
+                                }}
+                                dias c.
+
+                                <br>
+
+                                Puesta la OC.
+
+                            </div>
+
+                            @endif
+
+                            @endif
+
+                        </td>
+
                     </tr>
-                    @empty
-                    <tr>
-                        <td colspan="{{ $esMultidestino ? 8 : 7 }}" class="center muted">Sin items registrados</td>
-                    </tr>
-                    @endforelse
+
+                    @endforeach
+
                 </tbody>
+
+
+                @empty
+
+                <tbody>
+
+                    <tr>
+
+                        <td
+                            colspan="{{ $esMultidestino ? 8 : 7 }}"
+                            class="center muted">
+
+                            Sin items registrados
+
+                        </td>
+
+                    </tr>
+
+                </tbody>
+
+                @endforelse
             </table>
         </div>
 
