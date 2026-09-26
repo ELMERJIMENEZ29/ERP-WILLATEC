@@ -20,6 +20,8 @@ class Cotizacion extends Model
         'fecha',
         'validez_dias',
         'forma_pago',
+        'adelanto',
+        'adelanto_porcentaje',
         'entrega_provincia',
         'entrega_destino',
         'entrega_multidestino',
@@ -154,6 +156,8 @@ class Cotizacion extends Model
             'total' => 'decimal:2',
             'ganancia' => 'decimal:2',
             'total_gasto' => 'decimal:2',
+            'adelanto' => 'boolean',
+            'adelanto_porcentaje' => 'decimal:2',
             'entrega_provincia' => 'boolean',
             'entrega_multidestino' => 'boolean',
         ];

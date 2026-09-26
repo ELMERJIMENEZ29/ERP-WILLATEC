@@ -18,6 +18,11 @@ $codigoMoneda = $cotizacion->moneda->codigo ?? 'USD';
 $nombreMoneda = $codigoMoneda === 'PEN' ? 'Soles Peruanos (PEN)' : 'Dolares Americanos (USD)';
 $formaPago = $cotizacion->forma_pago ?? 'AL CONTADO';
 $formaPagoCalendario = in_array($formaPago, ['CRÉDITO 15 DÍAS', 'CRÉDITO 30 DÍAS', 'CRÃ‰DITO 15 DÃAS', 'CRÃ‰DITO 30 DÃAS'], true) ? ' calendario' : '';
+$adelantoPorcentajeRaw = $cotizacion->adelanto_porcentaje ?? null;
+$adelantoPorcentaje = $adelantoPorcentajeRaw !== null ? rtrim(rtrim(number_format((float) $adelantoPorcentajeRaw, 2, '.', ''), '0'), '.') : null;
+if ((bool) ($cotizacion->adelanto ?? false) && $adelantoPorcentaje !== null && (float) $adelantoPorcentajeRaw > 0) {
+    $formaPago = 'Adelanto del '.$adelantoPorcentaje.'%, lo restante '.$formaPago;
+}
 $destinoEntrega = $cotizacion->entrega_provincia && filled($cotizacion->entrega_destino)
 ? $cotizacion->entrega_destino
 : 'Lima Metropolitana';
@@ -936,9 +941,9 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                     <div class="name">{{ $cotizacion->cliente_nombre ?? 'Cliente' }}</div>
                     <div class="detail">
                         RUC / DNI: <b>{{ $cotizacion->cliente_ruc ?? '-' }}</b><br>
-                        Contacto: <b>{{ $cotizacion->cliente_contacto ?? '-' }}</b><br>
-                        Teléfono: <b>{{ $cotizacion->cliente_telefono ?? '-' }}</b><br>
-                        Correo: <b>{{ $cotizacion->cliente_correo ?? '-' }}</b>
+                        Contacto: <b>{{ $cotizacion->cliente_contacto ?? '-' }}</b> &nbsp; Teléfono: <b>{{ $cotizacion->cliente_telefono ?? '-' }}</b><br>
+                        Correo: <b>{{ $cotizacion->cliente_correo ?? '-' }}</b><br>
+                        Asunto: <b>{{ $cotizacion->titulo ?? '-' }}</b>
                     </div>
                 </td>
                 <td class="info-cell">

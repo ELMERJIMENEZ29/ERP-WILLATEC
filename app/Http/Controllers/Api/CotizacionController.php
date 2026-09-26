@@ -340,6 +340,8 @@ class CotizacionController extends Controller
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'adelanto' => 'sometimes|boolean',
+            'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
@@ -364,6 +366,10 @@ class CotizacionController extends Controller
             'tipo_cambio' => 1, // luego lo conectamos a API
             'validez_dias' => $request->integer('validez_dias') ?: 10,
             'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
+            'adelanto' => $request->boolean('adelanto'),
+            'adelanto_porcentaje' => $request->boolean('adelanto')
+                ? $request->input('adelanto_porcentaje')
+                : null,
             'entrega_provincia' => $request->boolean('entrega_provincia'),
             'entrega_destino' => $request->boolean('entrega_provincia')
                 ? $request->input('entrega_destino')
@@ -412,6 +418,8 @@ class CotizacionController extends Controller
             'delegado_id' => 'nullable|exists:users,id',
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'adelanto' => 'sometimes|boolean',
+            'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
@@ -464,6 +472,10 @@ class CotizacionController extends Controller
                 'delegado_id' => $delegadoId,
                 'delegado_cotizacion_id' => $delegadoCotizacionId,
                 'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
+                'adelanto' => $request->boolean('adelanto'),
+                'adelanto_porcentaje' => $request->boolean('adelanto')
+                    ? $request->input('adelanto_porcentaje')
+                    : null,
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
@@ -1409,6 +1421,8 @@ class CotizacionController extends Controller
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'estado_cotizacion_id' => 'nullable|exists:estado_cotizaciones,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'adelanto' => 'sometimes|boolean',
+            'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
@@ -1470,6 +1484,10 @@ class CotizacionController extends Controller
                 'tipo_cambio' => 1, // luego lo conectamos a API
                 'validez_dias' => $request->integer('validez_dias') ?: 10,
                 'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
+                'adelanto' => $request->boolean('adelanto'),
+                'adelanto_porcentaje' => $request->boolean('adelanto')
+                    ? $request->input('adelanto_porcentaje')
+                    : null,
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
@@ -1609,6 +1627,8 @@ class CotizacionController extends Controller
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'estado_cotizacion_id' => 'nullable|exists:estado_cotizaciones,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'adelanto' => 'sometimes|boolean',
+            'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'cliente_contacto' => 'nullable|string|max:255',
@@ -1706,6 +1726,10 @@ class CotizacionController extends Controller
                 'delegado_id' => $delegadoId,
                 'delegado_cotizacion_id' => $delegadoCotizacionId,
                 'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
+                'adelanto' => $request->boolean('adelanto'),
+                'adelanto_porcentaje' => $request->boolean('adelanto')
+                    ? $request->input('adelanto_porcentaje')
+                    : null,
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
@@ -1820,6 +1844,10 @@ class CotizacionController extends Controller
             ? $data['cliente_contacto']
             : $cotizacion->cliente_contacto;
         $data['entrega_provincia'] = (bool) ($data['entrega_provincia'] ?? false);
+        $data['adelanto'] = (bool) ($data['adelanto'] ?? false);
+        $data['adelanto_porcentaje'] = $data['adelanto']
+            ? ($data['adelanto_porcentaje'] ?? null)
+            : null;
         $data['entrega_destino'] = $data['entrega_provincia']
             ? ($data['entrega_destino'] ?? null)
             : null;
@@ -1862,6 +1890,8 @@ class CotizacionController extends Controller
                 'fecha',
                 'validez_dias',
                 'forma_pago',
+                'adelanto',
+                'adelanto_porcentaje',
                 'entrega_provincia',
                 'entrega_destino',
                 'entrega_multidestino',
@@ -1979,6 +2009,8 @@ class CotizacionController extends Controller
             'delegado_cotizacion_id' => null,
             'validez_dias' => $header['validez_dias'],
             'forma_pago' => $header['forma_pago'],
+            'adelanto' => $header['adelanto'] ?? false,
+            'adelanto_porcentaje' => $header['adelanto_porcentaje'] ?? null,
             'entrega_provincia' => $header['entrega_provincia'] ?? false,
             'entrega_destino' => $header['entrega_destino'] ?? null,
             'entrega_multidestino' => $header['entrega_multidestino'] ?? false,
@@ -2026,6 +2058,10 @@ class CotizacionController extends Controller
             'delegado_id' => $delegadoId,
             'delegado_cotizacion_id' => $delegadoCotizacionId,
             'forma_pago' => $payload['forma_pago'] ?? $cotizacion->forma_pago,
+            'adelanto' => (bool) ($payload['adelanto'] ?? false),
+            'adelanto_porcentaje' => ! empty($payload['adelanto'])
+                ? ($payload['adelanto_porcentaje'] ?? null)
+                : null,
             'entrega_provincia' => (bool) ($payload['entrega_provincia'] ?? false),
             'entrega_destino' => ! empty($payload['entrega_provincia'])
                 ? ($payload['entrega_destino'] ?? null)
@@ -2117,6 +2153,8 @@ class CotizacionController extends Controller
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'adelanto' => 'sometimes|boolean',
+            'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
