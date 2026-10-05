@@ -429,22 +429,27 @@ $orderAngleSvg = 'data:image/svg+xml;base64,' . base64_encode('
         }
 
         .products-table .code {
-            width: 16%;
+            width: 14%;
             text-align: center !important;
         }
 
         .products-table .description {
-            width: 36%;
+            width: 34%;
             text-align: center !important;
         }
 
         .products-table .quantity {
-            width: 11%;
+            width: 9%;
+            text-align: center !important;
+        }
+
+        .products-table .unit-measure {
+            width: 8%;
             text-align: center !important;
         }
 
         .products-table .unit-price {
-            width: 15%;
+            width: 14%;
             text-align: center !important;
         }
 
@@ -1357,6 +1362,10 @@ $orderAngleSvg = 'data:image/svg+xml;base64,' . base64_encode('
                     CANTIDAD
                 </th>
 
+                <th class="unit-measure">
+                    UND.
+                </th>
+
                 <th class="unit-price">
                     P.UNITARIO
                     {{ $currencySymbol }}
@@ -1391,6 +1400,10 @@ $orderAngleSvg = 'data:image/svg+xml;base64,' . base64_encode('
                     {{ number_format((float) $item->cantidad, 0) }}
                 </td>
 
+                <td class="unit-measure">
+                    {{ $item->unidad_medida ?: 'UND' }}
+                </td>
+
                 <td class="unit-price">
                     {{ $currencySymbol }}
                     {{ number_format((float) $item->precio_unitario, 2) }}
@@ -1406,7 +1419,7 @@ $orderAngleSvg = 'data:image/svg+xml;base64,' . base64_encode('
             @empty
 
             <tr>
-                <td colspan="6" class="text-center">
+                <td colspan="7" class="text-center">
                     No existen productos registrados en la orden de compra.
                 </td>
             </tr>

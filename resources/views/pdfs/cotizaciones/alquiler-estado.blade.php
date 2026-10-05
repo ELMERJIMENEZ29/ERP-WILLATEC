@@ -992,16 +992,17 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                     <tr>
                         <th class="center" style="width:20px">#</th>
                         <th>Producto / Servicio</th>
-                        <th class="center" style="width:48px">Imagen</th>
+                        <th class="center" style="width:42px">Imagen</th>
                         @if($esMultidestino)
-                        <th class="center" style="width:76px">Destino</th>
+                        <th class="center" style="width:68px">Destino</th>
                         @endif
-                        <th class="right" style="width:32px">Cant.</th>
-                        <th class="center" style="width:46px">Periodo</th>
-                        <th class="right" style="width:76px">Precio Unit Mensual</th>
-                        <th class="right" style="width:86px">Precio Cantidad Mensual</th>
-                        <th class="right" style="width:78px">Precio Total x Meses</th>
-                        <th class="center" style="width:82px">Disponibilidad</th>
+                        <th class="right" style="width:28px">Cant.</th>
+                        <th class="center" style="width:34px">Und.</th>
+                        <th class="center" style="width:42px">Periodo</th>
+                        <th class="right" style="width:70px">Precio Unit Mensual</th>
+                        <th class="right" style="width:80px">Precio Cantidad Mensual</th>
+                        <th class="right" style="width:72px">Precio Total x Meses</th>
+                        <th class="center" style="width:76px">Disponibilidad</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1078,6 +1079,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                             <div style="border-bottom: {{ $loop->last ? '0' : '1px solid #e5e7eb' }}; padding:2px 0;">{{ $destino->cantidad }}</div>
                             @endforeach
                         </td>
+                        <td class="center">{{ $item->unidad_medida ?: 'UND' }}</td>
                         <td class="center">{{ $periodoMeses ?: '-' }} meses</td>
                         <td class="right">
                             @foreach($destinosItem as $destino)
@@ -1104,7 +1106,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="{{ $esMultidestino ? 10 : 9 }}" class="center muted">Sin items registrados</td>
+                        <td colspan="{{ $esMultidestino ? 11 : 10 }}" class="center muted">Sin items registrados</td>
                     </tr>
                     @endforelse
                 </tbody>

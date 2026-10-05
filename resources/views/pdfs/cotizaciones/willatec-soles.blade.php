@@ -1013,14 +1013,15 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                     <tr>
                         <th class="center" style="width:20px">#</th>
                         <th>Producto / Servicio</th>
-                        <th class="center" style="width:60px">Imagen</th>
+                        <th class="center" style="width:52px">Imagen</th>
                         @if($esMultidestino)
-                        <th class="center" style="width:76px">Destino</th>
+                        <th class="center" style="width:70px">Destino</th>
                         @endif
-                        <th class="right" style="width:35px">Cant.</th>
-                        <th class="right" style="width:72px">P. Unit.</th>
-                        <th class="right" style="width:72px">Subtotal</th>
-                        <th class="center" style="width:95px">Disponibilidad</th>
+                        <th class="right" style="width:30px">Cant.</th>
+                        <th class="center" style="width:36px">Und.</th>
+                        <th class="right" style="width:68px">P. Unit.</th>
+                        <th class="right" style="width:68px">Subtotal</th>
+                        <th class="center" style="width:86px">Disponibilidad</th>
                     </tr>
                 </thead>
                 @forelse($cotizacion->items as $item)
@@ -1344,6 +1345,12 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
 
                         </td>
 
+                        <td class="center">
+
+                            {{ $item->unidad_medida ?: 'UND' }}
+
+                        </td>
+
 
                         {{-- ==================================
                      PRECIO UNITARIO
@@ -1457,7 +1464,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                     <tr>
 
                         <td
-                            colspan="{{ $esMultidestino ? 8 : 7 }}"
+                            colspan="{{ $esMultidestino ? 9 : 8 }}"
                             class="center muted">
 
                             Sin items registrados
