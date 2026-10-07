@@ -211,10 +211,15 @@ class ProductoController extends Controller
         $series = $this->normalizarSeries($request->input('series', []));
         $seriePrincipal = trim((string) ($request->serie ?: ($series[0] ?? ''))) ?: null;
         $codigoInterno = trim((string) $request->input('codigo')) ?: $this->buildNextInternalCode();
+        $skuSolicitado = trim((string) $request->input('sku')) ?: null;
+
+        if ($skuService->esSkuLegacy($skuSolicitado, $codigoInterno)) {
+            $skuSolicitado = null;
+        }
 
         $data = [
             'nombre' => $request->nombre,
-            'sku' => trim((string) $request->input('sku')) ?: null,
+            'sku' => $skuSolicitado,
             'marca' => $request->marca,
             'modelo' => $request->modelo,
             'codigo' => $codigoInterno,
@@ -247,7 +252,7 @@ class ProductoController extends Controller
         }
 
         $producto = Producto::create($data);
-        if (! $producto->sku) {
+        if ($skuService->esSkuLegacy($producto->sku, $producto->codigo)) {
             $producto->forceFill([
                 'sku' => $skuService->generarSkuParaProducto($producto->fresh(['categoria'])),
             ])->save();
@@ -262,7 +267,7 @@ class ProductoController extends Controller
     }
 
     // Actualizar producto
-    public function update(UpdateProductoRequest $request, int $id)
+    public function update(UpdateProductoRequest $request, int $id, ProductoSkuService $skuService)
     {
         $this->ensureCanManageInternalProducts($request);
 
@@ -300,7 +305,11 @@ class ProductoController extends Controller
 
         unset($data['codigo']);
 
-        if ($producto->woocommerceProducto()->exists()) {
+        $productoVinculadoWoo = $producto->woocommerceProducto()->exists();
+
+        if ($productoVinculadoWoo) {
+            unset($data['sku']);
+        } elseif (array_key_exists('sku', $data) && $skuService->esSkuLegacy($data['sku'], $producto->codigo)) {
             unset($data['sku']);
         }
 
@@ -353,6 +362,13 @@ class ProductoController extends Controller
         }
 
         $producto->update($data);
+
+        if (! $productoVinculadoWoo && $skuService->esSkuLegacy($producto->sku, $producto->codigo)) {
+            $producto->forceFill([
+                'sku' => $skuService->generarSkuParaProducto($producto->fresh(['categoria'])),
+            ])->save();
+        }
+
         $this->syncSeriesProducto($producto, $series);
         $this->persistSeriesStockSnapshot($producto);
         $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'woocommerceProducto']);
