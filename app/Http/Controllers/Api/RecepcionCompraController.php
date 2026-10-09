@@ -8,12 +8,13 @@ use App\Http\Requests\StoreRecepcionCompraRequest;
 use App\Models\Compra;
 use App\Models\RecepcionCompra;
 use App\Services\RecepcionCompraService;
+use App\Services\WorkflowNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class RecepcionCompraController extends Controller
 {
-    public function __construct(private readonly RecepcionCompraService $service) {}
+    public function __construct(private readonly RecepcionCompraService $service, private readonly WorkflowNotificationService $notifications) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -58,10 +59,10 @@ class RecepcionCompraController extends Controller
 
     public function store(StoreRecepcionCompraRequest $request, Compra $compra): JsonResponse
     {
-        return response()->json(
-            $this->service->crear($compra, $request->validated(), $request),
-            201
-        );
+        $recepcion = $this->service->crear($compra, $request->validated(), $request);
+        $this->notifications->compras('Recepción de compra creada', "Se creó la recepción {$recepcion->numero} para la compra {$compra->numero}.", '/compras/recepciones', 'recepcion_creada', ['recepcion_id' => $recepcion->id, 'compra_id' => $compra->id]);
+
+        return response()->json($recepcion, 201);
     }
 
     public function show(RecepcionCompra $recepcion): JsonResponse
@@ -82,9 +83,13 @@ class RecepcionCompraController extends Controller
 
     public function confirmar(ConfirmarRecepcionCompraRequest $request, RecepcionCompra $recepcion): JsonResponse
     {
-        return response()->json(
-            $this->service->confirmar($recepcion, $request->validated(), $request)
-        );
+        $debeNotificar = $recepcion->estado === RecepcionCompra::ESTADO_BORRADOR;
+        $recepcion = $this->service->confirmar($recepcion, $request->validated(), $request);
+        if ($debeNotificar) {
+            $this->notifications->compras('Recepción confirmada', "La recepción {$recepcion->numero} fue confirmada y el stock ingresó al Kardex.", '/compras/recepciones', 'recepcion_confirmada', ['recepcion_id' => $recepcion->id]);
+        }
+
+        return response()->json($recepcion);
     }
 
     public function cancelar(Request $request, RecepcionCompra $recepcion): JsonResponse

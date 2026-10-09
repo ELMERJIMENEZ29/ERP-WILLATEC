@@ -8,6 +8,7 @@ use App\Http\Requests\StoreRequerimientoCompraRequest;
 use App\Models\OcRecibida;
 use App\Models\RequerimientoCompra;
 use App\Services\RequerimientoCompraService;
+use App\Services\WorkflowNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
@@ -64,9 +65,10 @@ class RequerimientoCompraController extends Controller
         );
     }
 
-    public function store(StoreRequerimientoCompraRequest $request, RequerimientoCompraService $service)
+    public function store(StoreRequerimientoCompraRequest $request, RequerimientoCompraService $service, WorkflowNotificationService $notifications)
     {
         $requerimiento = $service->crearManual($request->validated(), $request);
+        $notifications->compras('Nuevo requerimiento de compra', "Se creó el requerimiento {$requerimiento->numero}.", '/compras/requerimientos', 'requerimiento_creado', ['requerimiento_id' => $requerimiento->id]);
 
         return response()->json([
             'message' => 'Requerimiento de compra registrado.',
@@ -74,7 +76,7 @@ class RequerimientoCompraController extends Controller
         ], 201);
     }
 
-    public function sincronizarOcPendientes(Request $request, RequerimientoCompraService $service)
+    public function sincronizarOcPendientes(Request $request, RequerimientoCompraService $service, WorkflowNotificationService $notifications)
     {
         $validated = $request->validate([
             'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
@@ -108,6 +110,7 @@ class RequerimientoCompraController extends Controller
                     $existentes++;
                 } else {
                     $generados++;
+                    $notifications->compras('Requerimiento generado desde OC', "Se generó el requerimiento {$requerimiento->numero} desde la OC {$oc->numero}.", '/compras/requerimientos', 'requerimiento_desde_oc', ['requerimiento_id' => $requerimiento->id, 'oc_recibida_id' => $oc->id]);
                 }
             } catch (ValidationException) {
                 $omitidos++;
@@ -149,9 +152,14 @@ class RequerimientoCompraController extends Controller
     public function generarDesdeOc(
         GenerarRequerimientoDesdeOcRequest $request,
         OcRecibida $ocRecibida,
-        RequerimientoCompraService $service
+        RequerimientoCompraService $service,
+        WorkflowNotificationService $notifications
     ) {
+        $idsAntes = RequerimientoCompra::query()->where('oc_recibida_id', $ocRecibida->id)->pluck('id');
         $requerimiento = $service->generarDesdeOc($ocRecibida, $request->validated(), $request);
+        if (! $idsAntes->contains($requerimiento->id)) {
+            $notifications->compras('Requerimiento generado desde OC', "Se generó el requerimiento {$requerimiento->numero} desde la OC {$ocRecibida->numero}.", '/compras/requerimientos', 'requerimiento_desde_oc', ['requerimiento_id' => $requerimiento->id, 'oc_recibida_id' => $ocRecibida->id]);
+        }
 
         return response()->json([
             'message' => 'Requerimiento de compra generado desde faltantes reales.',

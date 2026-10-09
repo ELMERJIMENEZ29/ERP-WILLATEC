@@ -9,13 +9,15 @@ use App\Models\Cobro;
 use App\Models\Comprobante;
 use App\Models\CuentaPorCobrar;
 use App\Services\CuentaPorCobrarService;
+use App\Services\WorkflowNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CuentaPorCobrarController extends Controller
 {
     public function __construct(
-        private readonly CuentaPorCobrarService $cuentaPorCobrarService
+        private readonly CuentaPorCobrarService $cuentaPorCobrarService,
+        private readonly WorkflowNotificationService $notifications
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -84,14 +86,17 @@ class CuentaPorCobrarController extends Controller
         StoreCuentaPorCobrarRequest $request,
         Comprobante $comprobante
     ): JsonResponse {
-        return response()->json(
-            $this->cuentaPorCobrarService->crearDesdeComprobante(
-                $comprobante,
-                $request->validated(),
-                $request->user()?->id
-            ),
-            201
+        $existia = CuentaPorCobrar::query()->where('comprobante_id', $comprobante->id)->exists();
+        $cuenta = $this->cuentaPorCobrarService->crearDesdeComprobante(
+            $comprobante,
+            $request->validated(),
+            $request->user()?->id
         );
+        if (! $existia) {
+            $this->notifications->contabilidad('Cuenta por cobrar pendiente', "Se generó una CxC por {$cuenta->total}, con vencimiento {$cuenta->fecha_vencimiento?->format('d/m/Y')}.", '/contabilidad/cuentas-por-cobrar', 'cxc_creada', ['cuenta_por_cobrar_id' => $cuenta->id]);
+        }
+
+        return response()->json($cuenta, 201);
     }
 
     public function show(CuentaPorCobrar $cuentaPorCobrar): JsonResponse
@@ -109,14 +114,17 @@ class CuentaPorCobrarController extends Controller
         StoreCobroRequest $request,
         CuentaPorCobrar $cuentaPorCobrar
     ): JsonResponse {
-        return response()->json(
-            $this->cuentaPorCobrarService->registrarCobro(
-                $cuentaPorCobrar,
-                $request->validated(),
-                $request->user()?->id
-            ),
-            201
+        $cobrosAntes = $cuentaPorCobrar->cobros()->count();
+        $cuenta = $this->cuentaPorCobrarService->registrarCobro(
+            $cuentaPorCobrar,
+            $request->validated(),
+            $request->user()?->id
         );
+        if ($cuenta->cobros()->count() > $cobrosAntes) {
+            $this->notifications->contabilidad('Cobro registrado', "Se registró un cobro de {$request->validated('monto')} en la CxC #{$cuenta->id}. Saldo: {$cuenta->saldo}.", '/contabilidad/cuentas-por-cobrar', 'cobro_registrado', ['cuenta_por_cobrar_id' => $cuenta->id]);
+        }
+
+        return response()->json($cuenta, 201);
     }
 
     public function anularCobro(Cobro $cobro): JsonResponse

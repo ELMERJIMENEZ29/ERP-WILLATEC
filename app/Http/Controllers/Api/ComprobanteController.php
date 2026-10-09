@@ -7,6 +7,7 @@ use App\Http\Requests\StoreComprobanteRequest;
 use App\Models\Comprobante;
 use App\Services\ComprobanteService;
 use App\Services\Sunat\SunatXmlService;
+use App\Services\WorkflowNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,7 +15,8 @@ class ComprobanteController extends Controller
 {
     public function __construct(
         private readonly ComprobanteService $comprobanteService,
-        private readonly SunatXmlService $sunatXmlService
+        private readonly SunatXmlService $sunatXmlService,
+        private readonly WorkflowNotificationService $notifications
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -81,13 +83,13 @@ class ComprobanteController extends Controller
 
     public function store(StoreComprobanteRequest $request): JsonResponse
     {
-        return response()->json(
-            $this->comprobanteService->crear(
-                $request->validated(),
-                $request->user()?->id
-            ),
-            201
+        $comprobante = $this->comprobanteService->crear(
+            $request->validated(),
+            $request->user()?->id
         );
+        $this->notifications->contabilidad('Comprobante registrado', "Se registró el comprobante {$comprobante->serie}-{$comprobante->numero}.", '/contabilidad/comprobantes', 'comprobante_creado', ['comprobante_id' => $comprobante->id]);
+
+        return response()->json($comprobante, 201);
     }
 
     public function previewXml(Request $request): JsonResponse

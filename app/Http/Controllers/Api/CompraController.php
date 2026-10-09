@@ -7,13 +7,15 @@ use App\Http\Requests\ConfirmarCompraRequest;
 use App\Http\Requests\StoreCompraRequest;
 use App\Models\Compra;
 use App\Services\CompraService;
+use App\Services\WorkflowNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CompraController extends Controller
 {
     public function __construct(
-        private readonly CompraService $compraService
+        private readonly CompraService $compraService,
+        private readonly WorkflowNotificationService $notifications
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -88,6 +90,7 @@ class CompraController extends Controller
             $request->validated(),
             $request->user()?->id
         );
+        $this->notifications->compras('Nueva compra registrada', "Se registró la compra {$compra->numero} para {$compra->proveedor?->nombre}.", '/compras', 'compra_creada', ['compra_id' => $compra->id]);
 
         return response()->json(
             $compra,
@@ -117,9 +120,18 @@ class CompraController extends Controller
         ConfirmarCompraRequest $request,
         Compra $compra
     ): JsonResponse {
-        return response()->json(
-            $this->compraService->confirmar($compra, $request->user()?->id)
-        );
+        $debeNotificar = $compra->estado === Compra::ESTADO_BORRADOR;
+        $recepcionesAntes = $compra->recepciones()->pluck('id');
+        $compra = $this->compraService->confirmar($compra, $request->user()?->id);
+        if ($debeNotificar) {
+            $this->notifications->compras('Compra confirmada', "La compra {$compra->numero} fue confirmada y está pendiente de recepción.", '/compras/recepciones', 'compra_confirmada', ['compra_id' => $compra->id]);
+            $recepcion = $compra->recepciones->first(fn ($item) => ! $recepcionesAntes->contains($item->id));
+            if ($recepcion) {
+                $this->notifications->compras('Recepción pendiente generada', "Se generó la recepción {$recepcion->numero} para la compra {$compra->numero}.", '/compras/recepciones', 'recepcion_creada', ['recepcion_id' => $recepcion->id, 'compra_id' => $compra->id]);
+            }
+        }
+
+        return response()->json($compra);
     }
 
     public function cancelar(

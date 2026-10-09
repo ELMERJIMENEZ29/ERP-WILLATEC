@@ -9,13 +9,15 @@ use App\Models\Comprobante;
 use App\Models\CuentaPorPagar;
 use App\Models\Pago;
 use App\Services\CuentaPorPagarService;
+use App\Services\WorkflowNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CuentaPorPagarController extends Controller
 {
     public function __construct(
-        private readonly CuentaPorPagarService $cuentaPorPagarService
+        private readonly CuentaPorPagarService $cuentaPorPagarService,
+        private readonly WorkflowNotificationService $notifications
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -83,14 +85,17 @@ class CuentaPorPagarController extends Controller
         StoreCuentaPorPagarRequest $request,
         Comprobante $comprobante
     ): JsonResponse {
-        return response()->json(
-            $this->cuentaPorPagarService->crearDesdeComprobante(
-                $comprobante,
-                $request->validated(),
-                $request->user()?->id
-            ),
-            201
+        $existia = CuentaPorPagar::query()->where('comprobante_id', $comprobante->id)->exists();
+        $cuenta = $this->cuentaPorPagarService->crearDesdeComprobante(
+            $comprobante,
+            $request->validated(),
+            $request->user()?->id
         );
+        if (! $existia) {
+            $this->notifications->contabilidad('Cuenta por pagar pendiente', "Se generó una CxP por {$cuenta->total}, con vencimiento {$cuenta->fecha_vencimiento?->format('d/m/Y')}.", '/contabilidad/cuentas-por-pagar', 'cxp_creada', ['cuenta_por_pagar_id' => $cuenta->id]);
+        }
+
+        return response()->json($cuenta, 201);
     }
 
     public function show(CuentaPorPagar $cuentaPorPagar): JsonResponse
@@ -108,14 +113,17 @@ class CuentaPorPagarController extends Controller
         StorePagoRequest $request,
         CuentaPorPagar $cuentaPorPagar
     ): JsonResponse {
-        return response()->json(
-            $this->cuentaPorPagarService->registrarPago(
-                $cuentaPorPagar,
-                $request->validated(),
-                $request->user()?->id
-            ),
-            201
+        $pagosAntes = $cuentaPorPagar->pagos()->count();
+        $cuenta = $this->cuentaPorPagarService->registrarPago(
+            $cuentaPorPagar,
+            $request->validated(),
+            $request->user()?->id
         );
+        if ($cuenta->pagos()->count() > $pagosAntes) {
+            $this->notifications->contabilidad('Pago registrado', "Se registró un pago de {$request->validated('monto')} en la CxP #{$cuenta->id}. Saldo: {$cuenta->saldo}.", '/contabilidad/cuentas-por-pagar', 'pago_registrado', ['cuenta_por_pagar_id' => $cuenta->id]);
+        }
+
+        return response()->json($cuenta, 201);
     }
 
     public function anularPago(Pago $pago): JsonResponse
