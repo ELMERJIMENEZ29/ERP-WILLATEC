@@ -420,9 +420,20 @@ class OcRecibidaController extends Controller
         }
 
         if ($ocRecibida->estado === OcRecibida::ESTADO_CANCELADO) {
+            if ($ocRecibida->cotizacion) {
+                $this->actualizarEstadoCotizacion($ocRecibida->cotizacion, $ocRecibida);
+            }
+
+            $ocRecibida->refresh()->load(['cotizacion.estadoCotizacion', 'cliente:id,nombre,ruc']);
+
             return response()->json([
                 'message' => 'La OC ya se encuentra cancelada.',
                 'estado' => $ocRecibida->estado,
+                'cotizacion' => [
+                    'id' => $ocRecibida->cotizacion?->id,
+                    'estado' => $ocRecibida->cotizacion?->estadoCotizacion?->nombre,
+                ],
+                'oc_recibida' => $ocRecibida,
             ]);
         }
 
@@ -500,16 +511,23 @@ class OcRecibidaController extends Controller
             }
         });
 
+        $ocRecibida->refresh()->load(['cotizacion.estadoCotizacion', 'cliente:id,nombre,ruc']);
+
         return response()->json([
             'message' => 'OC cancelada y reservas liberadas.',
-            'estado' => $ocRecibida->refresh()->estado,
-            'oc_recibida' => $ocRecibida->load(['cotizacion:id,numero,titulo', 'cliente:id,nombre,ruc']),
+            'estado' => $ocRecibida->estado,
+            'cotizacion' => [
+                'id' => $ocRecibida->cotizacion?->id,
+                'estado' => $ocRecibida->cotizacion?->estadoCotizacion?->nombre,
+            ],
+            'oc_recibida' => $ocRecibida,
         ]);
     }
 
     public function documentos(Request $request, OcRecibida $ocRecibida)
     {
         $this->ensureCanUploadDocuments($request, $ocRecibida);
+        $this->ensureOcIsNotCancelled($ocRecibida, 'No se pueden subir documentos a una OC cancelada.');
 
         $request->validate([
             'orden_compra_cliente' => 'nullable|file|mimes:pdf,xml,doc,docx|max:10240',
@@ -557,6 +575,8 @@ class OcRecibidaController extends Controller
 
     public function eliminarDocumento(Request $request, OcRecibida $ocRecibida, string $tipo)
     {
+        $this->ensureOcIsNotCancelled($ocRecibida, 'No se pueden eliminar documentos de una OC cancelada.');
+
         $column = match ($tipo) {
             'orden_compra_cliente' => 'orden_compra_cliente_path',
             'guia_emision' => 'guia_emision_path',
@@ -591,6 +611,7 @@ class OcRecibidaController extends Controller
 
     public function eliminarDocumentoAdicional(Request $request, OcRecibida $ocRecibida, OcDocumentoAdicional $documento)
     {
+        $this->ensureOcIsNotCancelled($ocRecibida, 'No se pueden eliminar documentos de una OC cancelada.');
         $this->ensureCanDeleteDocumento($request, $ocRecibida, $documento->created_by);
 
         if ((int) $documento->oc_recibida_id !== (int) $ocRecibida->id) {
@@ -710,10 +731,10 @@ class OcRecibidaController extends Controller
         $todosEntregados = $itemsSeleccionados->isNotEmpty() && $itemsSeleccionados->where('entregado', false)->isEmpty();
 
         $payload['estado_comercial'] = match ($estadoLegacy) {
-            OcRecibida::ESTADO_CANCELADO => OcRecibida::ESTADO_COMERCIAL_CANCELADA,
-            OcRecibida::ESTADO_ATENDIDO => OcRecibida::ESTADO_COMERCIAL_CERRADA,
-            OcRecibida::ESTADO_EN_PROCESO, OcRecibida::ESTADO_POR_ENTREGA => OcRecibida::ESTADO_COMERCIAL_EN_ATENCION,
-            default => OcRecibida::ESTADO_COMERCIAL_REGISTRADA,
+            OcRecibida::ESTADO_CANCELADO => 'cancelada',
+            OcRecibida::ESTADO_ATENDIDO => 'cerrada',
+            OcRecibida::ESTADO_EN_PROCESO, OcRecibida::ESTADO_POR_ENTREGA => 'en_atencion',
+            default => 'registrada',
         };
 
         $payload['estado_logistico'] = match (true) {
@@ -1063,13 +1084,16 @@ class OcRecibidaController extends Controller
         $cotizacion->loadMissing('items');
         $cantidadesRegistradas = $this->cantidadesRegistradasPorItem($cotizacion);
         $itemsCotizados = $cotizacion->items;
+        $algunaCantidadRegistrada = $cantidadesRegistradas->sum() > 0;
         $todosCubiertos = $itemsCotizados->isNotEmpty() && $itemsCotizados->every(function ($item) use ($cantidadesRegistradas): bool {
             return (int) ($cantidadesRegistradas->get((int) $item->id, 0)) >= (int) $item->cantidad;
         });
 
-        $estadoNombre = $todosCubiertos
-            ? 'oc_registrada'
-            : 'parcialmente_aprobada';
+        $estadoNombre = match (true) {
+            $todosCubiertos => 'oc_registrada',
+            $algunaCantidadRegistrada => 'parcialmente_aprobada',
+            default => 'aprobada',
+        };
 
         $estado = EstadoCotizacion::firstOrCreate(['nombre' => $estadoNombre]);
         $cotizacion->update(['estado_cotizacion_id' => $estado->id]);
@@ -1152,7 +1176,7 @@ class OcRecibidaController extends Controller
 
     private function ensureCanCreateOcForCotizacion(Request $request, Cotizacion $cotizacion): void
     {
-        if ($request->user()->hasAnyRole(['superadmin', 'admin', 'logistica'])) {
+        if ($request->user()->hasAnyRole(['superadmin', 'admin', 'contabilidad', 'logistica'])) {
             return;
         }
 
@@ -1187,6 +1211,15 @@ class OcRecibidaController extends Controller
         }
 
         abort(403, 'No tienes permisos para subir documentos a esta orden de compra.');
+    }
+
+    private function ensureOcIsNotCancelled(OcRecibida $ocRecibida, string $message): void
+    {
+        if ($ocRecibida->estado !== OcRecibida::ESTADO_CANCELADO) {
+            return;
+        }
+
+        abort(422, $message);
     }
 
     private function ensureCanDeleteDocumento(Request $request, OcRecibida $ocRecibida, mixed $uploadedBy): void

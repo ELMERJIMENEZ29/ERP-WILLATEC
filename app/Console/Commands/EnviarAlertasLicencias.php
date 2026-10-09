@@ -33,6 +33,7 @@ class EnviarAlertasLicencias extends Command
         $dryRun = (bool) $this->option('dry-run');
 
         Licencia::query()
+            ->where('renovacion_programada', false)
             ->whereDate('fecha_renovacion', '>=', $today)
             ->whereDate('fecha_renovacion', '<=', $today->copy()->addDays(90))
             ->orderBy('fecha_renovacion')

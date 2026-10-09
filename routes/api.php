@@ -14,17 +14,20 @@ use App\Http\Controllers\Api\HostingController;
 use App\Http\Controllers\Api\InventarioController;
 use App\Http\Controllers\Api\LicenciaController;
 use App\Http\Controllers\Api\LicitacionController;
+use App\Http\Controllers\Api\NotificationPreferenceController;
 use App\Http\Controllers\Api\OcAtencionController;
 use App\Http\Controllers\Api\OcEmitidaController;
 use App\Http\Controllers\Api\OcRecibidaController;
 use App\Http\Controllers\Api\OrdenCompraController;
 use App\Http\Controllers\Api\ProductoController;
 use App\Http\Controllers\Api\ProductoExternoController;
+use App\Http\Controllers\Api\ProductoSkuController;
 use App\Http\Controllers\Api\ProveedorController;
 use App\Http\Controllers\Api\RecepcionCompraController;
 use App\Http\Controllers\Api\RequerimientoCompraController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\WooCommercePedidoController;
 use App\Http\Controllers\Api\WooCommerceProductoController;
 use App\Http\Controllers\Api\WooCommerceWebhookController;
 use Illuminate\Support\Facades\Route;
@@ -66,6 +69,9 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
 
     Route::get('/notifications', [AuthController::class, 'notifications']);
     Route::patch('/notifications/{id}/read', [AuthController::class, 'markNotificationAsRead']);
+    Route::get('/notification-preferences', [NotificationPreferenceController::class, 'show']);
+    Route::put('/notification-preferences', [NotificationPreferenceController::class, 'update']);
+    Route::post('/notification-preferences/sound', [NotificationPreferenceController::class, 'uploadSound']);
 
     Route::get('/users', [UserController::class, 'index']);
 
@@ -83,10 +89,10 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
 
     // PLATAFORMAS Y PLANTILLAS
     Route::get('/plantillas', [CotizacionController::class, 'indexPlantillas'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|admin|contabilidad');
 
     Route::get('/plataformas', [CotizacionController::class, 'indexPlataformas'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|admin|contabilidad');
 
     Route::get('/auditoria', [AuditoriaController::class, 'index'])
         ->middleware('role:superadmin|admin');
@@ -110,11 +116,14 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
 Route::prefix('productos')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     // PRODUCTOS
     Route::get('/', [ProductoController::class, 'index']);
+    Route::get('/sku-normalizacion/preview', [ProductoSkuController::class, 'preview'])->middleware('role:superadmin|admin|logistica');
+    Route::post('/sku-normalizacion/apply', [ProductoSkuController::class, 'apply'])->middleware('role:superadmin|logistica');
     Route::get('/{producto}/inventario', [InventarioController::class, 'show'])->middleware('role:superadmin|admin|soporte|logistica');
     Route::get('/{producto}/movimientos', [InventarioController::class, 'movimientos'])->middleware('role:superadmin|admin|soporte|logistica');
     Route::post('/{producto}/ajustar-stock', [InventarioController::class, 'ajustarStock'])->middleware('role:superadmin|admin|soporte|logistica');
     Route::post('/{producto}/registrar-entrada', [InventarioController::class, 'registrarEntrada'])->middleware('role:superadmin|admin|soporte|logistica');
     Route::post('/{producto}/registrar-salida', [InventarioController::class, 'registrarSalida'])->middleware('role:superadmin|admin|soporte|logistica');
+    Route::get('/{producto}/historial-cotizaciones', [ProductoController::class, 'historialCotizaciones'])->middleware('role:superadmin|ventas|admin|logistica');
     Route::get('/{id}', [ProductoController::class, 'show']);
 
     Route::post('/', [ProductoController::class, 'store'])->middleware('role:superadmin|ventas|admin|soporte|logistica');
@@ -154,8 +163,14 @@ Route::prefix('licitaciones')
         Route::delete('/{licitacion}/cotizaciones/{cotizacion}', [LicitacionController::class, 'deleteCotizacion']);
     });
 
-Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin'])->group(function () {
+Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin|logistica'])->group(function () {
+    Route::get('/pedidos', [WooCommercePedidoController::class, 'index']);
+    Route::post('/pedidos/sincronizar', [WooCommercePedidoController::class, 'sincronizar']);
+    Route::get('/pedidos/{pedido}', [WooCommercePedidoController::class, 'show']);
+    Route::post('/pedidos/{pedido}/reservar', [WooCommercePedidoController::class, 'reservar']);
     Route::post('/productos/mapear', [WooCommerceProductoController::class, 'mapear']);
+    Route::post('/productos/sync-activos', [WooCommerceProductoController::class, 'sincronizarActivos']);
+    Route::post('/productos/{producto}/mapear-sku', [WooCommerceProductoController::class, 'mapearPorSku']);
     Route::post('/productos/{producto}/sync-stock', [WooCommerceProductoController::class, 'sincronizarStock']);
     Route::get('/sync-logs', [WooCommerceProductoController::class, 'logs']);
 });
@@ -163,7 +178,7 @@ Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle', 'role:su
 Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     // ── RUTAS ESTÁTICAS PRIMERO ──────────────────────────────
     Route::get('/', [CotizacionController::class, 'index'])
-        ->middleware('role:superadmin|ventas|admin|licitacion');
+        ->middleware('role:superadmin|ventas|admin|contabilidad|licitacion');
 
     Route::post('/', [CotizacionController::class, 'store'])
         ->middleware('role:superadmin|ventas');
@@ -177,10 +192,10 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
         ->middleware('role:superadmin|ventas');
 
     Route::get('/estados', [CotizacionController::class, 'indexEstadoCotizacion'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|admin|contabilidad');
 
     Route::get('/monedas', [CotizacionController::class, 'indexMonedas'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|admin|contabilidad');
 
     Route::get('/resumen-pendientes-revision', [CotizacionController::class, 'resumenPendientesRevision'])
         ->middleware('role:superadmin|admin');
@@ -202,7 +217,7 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
 
     // ── RUTAS DINÁMICAS DESPUÉS ──────────────────────────────
     Route::get('/{id}', [CotizacionController::class, 'show'])
-        ->middleware('role:superadmin|ventas|admin');
+        ->middleware('role:superadmin|ventas|admin|contabilidad');
 
     Route::delete('/{cotizacion}', [CotizacionController::class, 'destroy'])
         ->middleware('role:superadmin|ventas');
@@ -223,10 +238,10 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
         ->middleware('role:superadmin|ventas');
 
     Route::get('/{id}/historial', [CotizacionController::class, 'historial'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|admin|contabilidad');
 
     Route::get('/{cotizacion}/versiones', [CotizacionController::class, 'versiones'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|admin|contabilidad');
 
     Route::post('/{cotizacion}/solicitar-modificacion', [CotizacionController::class, 'solicitarModificacion'])
         ->middleware('role:superadmin|ventas');
@@ -244,13 +259,13 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
         ->middleware('role:superadmin|ventas');
 
     Route::get('/{cotizacion}/oc-recibida/preview', [OcRecibidaController::class, 'preview'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|admin|contabilidad');
 
     Route::get('/{cotizacion}/oc-emitida/preview', [OcEmitidaController::class, 'preview'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|admin|contabilidad');
 
     Route::get('/{cotizacion}/oc-emitida/items', [OcEmitidaController::class, 'itemsPorProveedorResponse'])
-        ->middleware('role:superadmin|ventas');
+        ->middleware('role:superadmin|ventas|admin|contabilidad');
 
     // Items
     Route::post('/{id}/items', [CotizacionController::class, 'addItem'])
@@ -275,7 +290,7 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
 
 Route::prefix('oc-recibidas')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [OcRecibidaController::class, 'index'])->middleware('role:superadmin|ventas|admin|contabilidad');
-    Route::post('/', [OcRecibidaController::class, 'store'])->middleware('role:superadmin|ventas');
+    Route::post('/', [OcRecibidaController::class, 'store'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::get('/{ocRecibida}', [OcRecibidaController::class, 'show'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::patch('/{ocRecibida}/items', [OcRecibidaController::class, 'updateItems'])->middleware('role:superadmin|admin|logistica');
     Route::patch('/{ocRecibida}/items/{item}/asociar-producto', [OcRecibidaController::class, 'asociarProductoInterno'])->middleware('role:superadmin|ventas');
@@ -400,9 +415,10 @@ Route::patch('/contabilidad/cobros/{cobro}/anular', [CuentaPorCobrarController::
     ->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin|contabilidad']);
 
 Route::prefix('oc-emitidas')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
-    Route::get('/', [OcEmitidaController::class, 'index'])->middleware('role:superadmin|ventas|admin|contabilidad|logistica');
-    Route::post('/', [OcEmitidaController::class, 'store'])->middleware('role:superadmin|ventas');
-    Route::get('/{ocEmitida}', [OcEmitidaController::class, 'show'])->middleware('role:superadmin|ventas|admin|contabilidad|logistica');
+    Route::get('/', [OcEmitidaController::class, 'index'])->middleware('role:superadmin|ventas|admin|contabilidad');
+    Route::post('/', [OcEmitidaController::class, 'store'])->middleware('role:superadmin|ventas|admin|contabilidad');
+    Route::get('/{ocEmitida}', [OcEmitidaController::class, 'show'])->middleware('role:superadmin|ventas|admin|contabilidad');
+    Route::put('/{ocEmitida}', [OcEmitidaController::class, 'update'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::post('/{ocEmitida}/documentos', [OcEmitidaController::class, 'documentos'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::delete('/{ocEmitida}/documentos/{tipo}', [OcEmitidaController::class, 'eliminarDocumento'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::delete('/{ocEmitida}/documentos-adicionales/{documento}', [OcEmitidaController::class, 'eliminarDocumentoAdicional'])->middleware('role:superadmin|ventas|admin|contabilidad');
@@ -429,7 +445,7 @@ Route::prefix('ordencompra')->middleware(['auth:sanctum', 'token.idle'])->group(
 });
 
 Route::prefix('clientes')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
-    Route::get('/', [ClienteController::class, 'index'])->middleware('role:superadmin|ventas|admin');
+    Route::get('/', [ClienteController::class, 'index'])->middleware('role:superadmin|ventas|admin|contabilidad');
     Route::post('/', [ClienteController::class, 'store'])->middleware('role:superadmin|ventas|admin');
     Route::get('/{id}', [ClienteController::class, 'show'])->middleware('role:superadmin|ventas|admin');
     Route::put('/{id}', [ClienteController::class, 'update'])->middleware('role:superadmin|ventas|admin');
@@ -444,6 +460,8 @@ Route::prefix('licencias')->middleware(['auth:sanctum', 'token.idle', 'role:supe
     Route::post('/{licencia}/renovar', [LicenciaController::class, 'renovar']);
     Route::post('/{licencia}/documentos', [LicenciaController::class, 'documentos']);
     Route::delete('/{licencia}/documentos/{documento}', [LicenciaController::class, 'eliminarDocumento']);
+    Route::post('/{licencia}/cotizaciones', [LicenciaController::class, 'enlazarCotizacion']);
+    Route::delete('/{licencia}/cotizaciones/{cotizacion}', [LicenciaController::class, 'desenlazarCotizacion']);
     Route::get('/{licencia}', [LicenciaController::class, 'show']);
     Route::put('/{licencia}', [LicenciaController::class, 'update']);
     Route::delete('/{licencia}', [LicenciaController::class, 'destroy']);
@@ -454,9 +472,11 @@ Route::prefix('hostings')->middleware(['auth:sanctum', 'token.idle', 'role:super
     Route::post('/', [HostingController::class, 'store']);
     Route::post('/import/preview', [HostingController::class, 'previewImport']);
     Route::post('/import/confirm', [HostingController::class, 'confirmImport']);
-      Route::post('/{hosting}/renovar', [HostingController::class, 'renovar']);
+    Route::post('/{hosting}/renovar', [HostingController::class, 'renovar']);
     Route::post('/{hosting}/documentos', [HostingController::class, 'documentos']);
     Route::delete('/{hosting}/documentos/{documento}', [HostingController::class, 'eliminarDocumento']);
+    Route::post('/{hosting}/cotizaciones', [HostingController::class, 'enlazarCotizacion']);
+    Route::delete('/{hosting}/cotizaciones/{cotizacion}', [HostingController::class, 'desenlazarCotizacion']);
     Route::get('/{hosting}', [HostingController::class, 'show']);
     Route::put('/{hosting}', [HostingController::class, 'update']);
     Route::delete('/{hosting}', [HostingController::class, 'destroy']);

@@ -8,6 +8,7 @@ use App\Models\Cotizacion;
 use App\Models\CotizacionCostosAdicional;
 use App\Models\CotizacionHistorial;
 use App\Models\CotizacionItem;
+use App\Models\CotizacionItemDestino;
 use App\Models\CotizacionItemProveedor;
 use App\Models\CotizacionModificacion;
 use App\Models\CotizacionVersion;
@@ -36,6 +37,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
 
 class CotizacionController extends Controller
@@ -48,6 +50,7 @@ class CotizacionController extends Controller
 
     private const FORMAS_PAGO = [
         'AL CONTADO',
+        'CRÉDITO A 7 DÍAS',
         'CRÉDITO A 5 DÍAS',
         'CRÉDITO 15 DÍAS',
         'CRÉDITO 30 DÍAS',
@@ -180,13 +183,13 @@ class CotizacionController extends Controller
             'fecha_hasta' => 'nullable|date|after_or_equal:fecha_desde',
             'pendiente_revision' => 'nullable|boolean',
         ]);
-
         $query = Cotizacion::with([
             'cliente',
             'estadoCotizacion',
             'user',
             'delegado',
             'delegadoCotizacion',
+            'items.destinosEntrega',
         ])
             ->withCount('items')
             ->withCount([
@@ -234,11 +237,17 @@ class CotizacionController extends Controller
             $query->where('user_id', $request->integer('user_id'));
         }
 
-        return response()->json(
-            $query
-                ->latest()
-                ->paginate($request->integer('per_page', 10))
-        );
+        $cotizaciones = $query
+            ->latest()
+            ->paginate($request->integer('per_page', 10));
+
+        if ($this->shouldHideProfitability($request)) {
+            $cotizaciones->getCollection()->each(
+                fn (Cotizacion $cotizacion) => $this->hideCotizacionProfitability($cotizacion)
+            );
+        }
+
+        return response()->json($cotizaciones);
     }
 
     public function resumenPendientesRevision(Request $request)
@@ -248,7 +257,6 @@ class CotizacionController extends Controller
             'fecha_desde' => 'nullable|date',
             'fecha_hasta' => 'nullable|date|after_or_equal:fecha_desde',
         ]);
-
         $cotizacionesQuery = Cotizacion::query();
 
         if ($request->filled('cliente_id')) {
@@ -289,13 +297,14 @@ class CotizacionController extends Controller
         ]);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         $cotizacion = Cotizacion::with([
             'cliente',
             'items.producto',
             'items.productoExterno',
             'items.proveedores',
+            'items.destinosEntrega',
             'costosAdicionales',
             'estadoCotizacion',
             'historial.estadoAnterior',
@@ -310,6 +319,10 @@ class CotizacionController extends Controller
             return response()->json([
                 'message' => 'Cotización no encontrada',
             ], 404);
+        }
+
+        if ($this->shouldHideProfitability($request)) {
+            $this->hideCotizacionProfitability($cotizacion);
         }
 
         return response()->json($cotizacion);
@@ -327,8 +340,11 @@ class CotizacionController extends Controller
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'adelanto' => 'sometimes|boolean',
+            'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
+            'entrega_multidestino' => 'sometimes|boolean',
             'cliente_contacto' => 'nullable|string|max:255',
         ]);
 
@@ -350,10 +366,15 @@ class CotizacionController extends Controller
             'tipo_cambio' => 1, // luego lo conectamos a API
             'validez_dias' => $request->integer('validez_dias') ?: 10,
             'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
+            'adelanto' => $request->boolean('adelanto'),
+            'adelanto_porcentaje' => $request->boolean('adelanto')
+                ? $request->input('adelanto_porcentaje')
+                : null,
             'entrega_provincia' => $request->boolean('entrega_provincia'),
             'entrega_destino' => $request->boolean('entrega_provincia')
                 ? $request->input('entrega_destino')
                 : null,
+            'entrega_multidestino' => $request->boolean('entrega_multidestino'),
 
             'cliente_id' => $cliente->id,
             'plantilla_id' => $request->plantilla_id,
@@ -397,8 +418,11 @@ class CotizacionController extends Controller
             'delegado_id' => 'nullable|exists:users,id',
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'adelanto' => 'sometimes|boolean',
+            'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
+            'entrega_multidestino' => 'sometimes|boolean',
             'cliente_contacto' => 'nullable|string|max:255',
             'comentario' => 'nullable|string|max:1000',
         ]);
@@ -448,10 +472,15 @@ class CotizacionController extends Controller
                 'delegado_id' => $delegadoId,
                 'delegado_cotizacion_id' => $delegadoCotizacionId,
                 'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
+                'adelanto' => $request->boolean('adelanto'),
+                'adelanto_porcentaje' => $request->boolean('adelanto')
+                    ? $request->input('adelanto_porcentaje')
+                    : null,
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
+                'entrega_multidestino' => $request->boolean('entrega_multidestino'),
             ]);
 
             $this->service->recalcular($cotizacion);
@@ -460,7 +489,7 @@ class CotizacionController extends Controller
 
         return response()->json([
             'message' => 'Cotización actualizada correctamente',
-            'cotizacion' => $cotizacion->load('items.proveedores'),
+            'cotizacion' => $cotizacion->load(['items.proveedores', 'items.destinosEntrega']),
         ]);
     }
 
@@ -527,7 +556,7 @@ class CotizacionController extends Controller
     {
         $this->ensureCanEditCotizacion($request, $cotizacion);
 
-        $cotizacion->load('items.proveedores');
+        $cotizacion->load(['items.proveedores', 'items.destinosEntrega']);
 
         $imagePaths = $cotizacion->items
             ->pluck('imagen')
@@ -557,6 +586,12 @@ class CotizacionController extends Controller
             'descripcion' => 'required|string',
             'cantidad' => 'required|numeric|min:1',
             'aplica_costos_adicionales' => 'sometimes|boolean',
+            'destino_entrega' => 'nullable|string|max:150',
+            'destinos_entrega' => 'nullable|array',
+            'destinos_entrega.*.destino_entrega' => 'required|string|max:150',
+            'destinos_entrega.*.detalle_variante' => 'nullable|string|max:255',
+            'destinos_entrega.*.cantidad' => 'required|integer|min:1',
+            'destinos_entrega.*.margen' => 'nullable|numeric|min:0|max:99.99',
             'costo_base' => 'required|numeric|min:0',
             'margen' => 'required|numeric|min:0',
             'nota' => 'nullable|string',
@@ -578,6 +613,10 @@ class CotizacionController extends Controller
             'imagen' => 'sometimes|nullable|image|max:2048',
             'imagen_path' => 'sometimes|nullable|string|max:2048',
         ]);
+        $this->ensureItemDestinosCantidades([[
+            'cantidad' => $request->input('cantidad'),
+            'destinos_entrega' => $request->input('destinos_entrega', []),
+        ]]);
 
         $cotizacion = Cotizacion::findOrFail($cotizacionId);
         $this->ensureCanEditCotizacion($request, $cotizacion);
@@ -603,6 +642,7 @@ class CotizacionController extends Controller
                 'descripcion' => $request->descripcion,
                 'cantidad' => $cantidad,
                 'aplica_costos_adicionales' => $request->boolean('aplica_costos_adicionales', true),
+                'destino_entrega' => $cotizacion->entrega_multidestino ? $request->input('destino_entrega') : null,
                 'costo_base' => $costoBase,
                 'margen' => $margen,
                 'nota' => $request->nota,
@@ -644,6 +684,7 @@ class CotizacionController extends Controller
 
             $item = CotizacionItem::create($itemData);
             $this->syncItemProveedores($item, $request->input('proveedores'));
+            $this->syncItemDestinos($item, $request->input('destinos_entrega'));
 
             $cotizacion = Cotizacion::findOrFail($cotizacionId);
 
@@ -662,6 +703,12 @@ class CotizacionController extends Controller
             'descripcion' => 'nullable|string',
             'cantidad' => 'nullable|numeric|min:1',
             'aplica_costos_adicionales' => 'sometimes|boolean',
+            'destino_entrega' => 'nullable|string|max:150',
+            'destinos_entrega' => 'nullable|array',
+            'destinos_entrega.*.destino_entrega' => 'required|string|max:150',
+            'destinos_entrega.*.detalle_variante' => 'nullable|string|max:255',
+            'destinos_entrega.*.cantidad' => 'required|integer|min:1',
+            'destinos_entrega.*.margen' => 'nullable|numeric|min:0|max:99.99',
             'costo_base' => 'nullable|numeric|min:0',
             'margen' => 'nullable|numeric|min:0',
             'nota' => 'nullable|string',
@@ -683,6 +730,10 @@ class CotizacionController extends Controller
             'importacion_calculo' => 'nullable|array',
             'imagen' => 'sometimes|nullable|image|max:2048',
         ]);
+        $this->ensureItemDestinosCantidades([[
+            'cantidad' => $request->input('cantidad', $item->cantidad),
+            'destinos_entrega' => $request->input('destinos_entrega', []),
+        ]]);
 
         DB::transaction(function () use ($request, $item) {
 
@@ -704,6 +755,7 @@ class CotizacionController extends Controller
                     'descripcion',
                     'cantidad',
                     'aplica_costos_adicionales',
+                    'destino_entrega',
                     'costo_base',
                     'margen',
                     'nota',
@@ -755,6 +807,9 @@ class CotizacionController extends Controller
 
             $item->update($itemData);
             $this->syncItemProveedores($item, $request->input('proveedores'));
+            if ($request->has('destinos_entrega')) {
+                $this->syncItemDestinos($item, $request->input('destinos_entrega'));
+            }
 
             $this->service->recalcular($item->cotizacion);
         });
@@ -893,6 +948,7 @@ class CotizacionController extends Controller
         $request->validate([
             'tipo' => 'required|string',
             'monto' => 'required|numeric|min:0',
+            'destino_entrega' => 'nullable|string|max:150',
         ]);
 
         $cotizacion = Cotizacion::findOrFail($cotizacionId);
@@ -904,6 +960,7 @@ class CotizacionController extends Controller
                 'cotizacion_id' => $cotizacionId,
                 'tipo' => $request->tipo,
                 'monto' => $request->monto,
+                'destino_entrega' => Cotizacion::findOrFail($cotizacionId)->entrega_multidestino ? $request->input('destino_entrega') : null,
             ]);
 
             $cotizacion = Cotizacion::findOrFail($cotizacionId);
@@ -968,17 +1025,32 @@ class CotizacionController extends Controller
     // =========================
     public function versiones(Request $request, Cotizacion $cotizacion)
     {
+        $versiones = $cotizacion->versiones()
+            ->with(['creador:id,nombres,apellidos,email', 'aprobador:id,nombres,apellidos,email'])
+            ->get();
+        $modificaciones = $cotizacion->modificaciones()
+            ->with(['solicitante:id,nombres,apellidos,email', 'revisor:id,nombres,apellidos,email'])
+            ->latest()
+            ->get();
+
+        if ($this->shouldHideProfitability($request)) {
+            $versiones->each(function ($version): void {
+                $snapshot = is_array($version->snapshot) ? $version->snapshot : [];
+                $version->snapshot = $this->hidePayloadProfitability($snapshot);
+            });
+
+            $modificaciones->each(function ($modificacion): void {
+                $propuesta = is_array($modificacion->propuesta) ? $modificacion->propuesta : [];
+                $modificacion->propuesta = $this->hidePayloadProfitability($propuesta);
+            });
+        }
+
         return response()->json([
             'cotizacion_id' => $cotizacion->id,
             'numero' => $cotizacion->numero,
             'version_vigente' => $cotizacion->versiones()->max('version_number') ?: 1,
-            'versiones' => $cotizacion->versiones()
-                ->with(['creador:id,nombres,apellidos,email', 'aprobador:id,nombres,apellidos,email'])
-                ->get(),
-            'modificaciones' => $cotizacion->modificaciones()
-                ->with(['solicitante:id,nombres,apellidos,email', 'revisor:id,nombres,apellidos,email'])
-                ->latest()
-                ->get(),
+            'versiones' => $versiones,
+            'modificaciones' => $modificaciones,
         ]);
     }
 
@@ -1158,6 +1230,7 @@ class CotizacionController extends Controller
             'version' => $version,
             'cotizacion' => $modificacion->cotizacion->refresh()->load([
                 'items.proveedores',
+                'items.destinosEntrega',
                 'costosAdicionales',
                 'cliente',
                 'estadoCotizacion',
@@ -1210,6 +1283,7 @@ class CotizacionController extends Controller
             'items.producto',
             'items.productoExterno',
             'items.proveedores',
+            'items.destinosEntrega',
             'user.profile',
             'plantilla',
             'moneda',
@@ -1347,8 +1421,11 @@ class CotizacionController extends Controller
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'estado_cotizacion_id' => 'nullable|exists:estado_cotizaciones,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'adelanto' => 'sometimes|boolean',
+            'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
+            'entrega_multidestino' => 'sometimes|boolean',
             'cliente_contacto' => 'nullable|string|max:255',
             'comentario' => 'nullable|string|max:1000',
 
@@ -1357,6 +1434,12 @@ class CotizacionController extends Controller
             'items.*.descripcion' => 'required|string',
             'items.*.cantidad' => 'required|numeric|min:1',
             'items.*.aplica_costos_adicionales' => 'sometimes|boolean',
+            'items.*.destino_entrega' => 'nullable|string|max:150',
+            'items.*.destinos_entrega' => 'nullable|array',
+            'items.*.destinos_entrega.*.destino_entrega' => 'required|string|max:150',
+            'items.*.destinos_entrega.*.detalle_variante' => 'nullable|string|max:255',
+            'items.*.destinos_entrega.*.cantidad' => 'required|integer|min:1',
+            'items.*.destinos_entrega.*.margen' => 'nullable|numeric|min:0|max:99.99',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.nota' => 'nullable|string',
@@ -1374,8 +1457,10 @@ class CotizacionController extends Controller
             'costos' => 'nullable|array',
 
             'costos.*.tipo' => 'required|string',
+            'costos.*.destino_entrega' => 'nullable|string|max:150',
             'costos.*.monto' => 'required|numeric|min:0',
         ]);
+        $this->ensureItemDestinosCantidades($request->input('items', []));
 
         if ($request->filled('delegado_id') && ! $request->user()->hasRole('superadmin')) {
             abort(403, 'Solo superadmin puede delegar la aprobación.');
@@ -1399,10 +1484,15 @@ class CotizacionController extends Controller
                 'tipo_cambio' => 1, // luego lo conectamos a API
                 'validez_dias' => $request->integer('validez_dias') ?: 10,
                 'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
+                'adelanto' => $request->boolean('adelanto'),
+                'adelanto_porcentaje' => $request->boolean('adelanto')
+                    ? $request->input('adelanto_porcentaje')
+                    : null,
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
+                'entrega_multidestino' => $request->boolean('entrega_multidestino'),
 
                 'cliente_id' => $cliente->id,
                 'plantilla_id' => $request->plantilla_id,
@@ -1446,6 +1536,7 @@ class CotizacionController extends Controller
                     'descripcion' => $item['descripcion'],
                     'cantidad' => $item['cantidad'],
                     'aplica_costos_adicionales' => $item['aplica_costos_adicionales'] ?? true,
+                    'destino_entrega' => $request->boolean('entrega_multidestino') ? ($item['destino_entrega'] ?? null) : null,
                     'costo_base' => $item['costo_base'],
                     'margen' => $item['margen'],
                     'orden' => $index + 1,
@@ -1481,6 +1572,7 @@ class CotizacionController extends Controller
                 $cotizacionItem = CotizacionItem::create($itemData);
 
                 $this->syncItemProveedores($cotizacionItem, $item['proveedores'] ?? null);
+                $this->syncItemDestinos($cotizacionItem, $item['destinos_entrega'] ?? null);
             }
 
             // COSTOS
@@ -1489,6 +1581,7 @@ class CotizacionController extends Controller
                     'cotizacion_id' => $cotizacion->id,
                     'tipo' => $costo['tipo'],
                     'descripcion' => $costo['descripcion'] ?? null,
+                    'destino_entrega' => $request->boolean('entrega_multidestino') ? ($costo['destino_entrega'] ?? null) : null,
                     'monto' => $costo['monto'],
                 ]);
             }
@@ -1508,6 +1601,7 @@ class CotizacionController extends Controller
             'cotizacion' => $cotizacion->load([
                 'items.productoExterno',
                 'items.proveedores',
+                'items.destinosEntrega',
                 'costosAdicionales',
                 'cliente',
                 'plantilla',
@@ -1533,16 +1627,25 @@ class CotizacionController extends Controller
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'estado_cotizacion_id' => 'nullable|exists:estado_cotizaciones,id',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'adelanto' => 'sometimes|boolean',
+            'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'cliente_contacto' => 'nullable|string|max:255',
             'comentario' => 'nullable|string|max:1000',
+            'last_known_updated_at' => 'nullable|date',
 
             'items' => 'required|array|min:1',
 
             'items.*.descripcion' => 'required|string',
             'items.*.cantidad' => 'required|numeric|min:1',
             'items.*.aplica_costos_adicionales' => 'sometimes|boolean',
+            'items.*.destino_entrega' => 'nullable|string|max:150',
+            'items.*.destinos_entrega' => 'nullable|array',
+            'items.*.destinos_entrega.*.destino_entrega' => 'required|string|max:150',
+            'items.*.destinos_entrega.*.detalle_variante' => 'nullable|string|max:255',
+            'items.*.destinos_entrega.*.cantidad' => 'required|integer|min:1',
+            'items.*.destinos_entrega.*.margen' => 'nullable|numeric|min:0|max:99.99',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.nota' => 'nullable|string',
@@ -1560,8 +1663,10 @@ class CotizacionController extends Controller
             'costos' => 'nullable|array',
 
             'costos.*.tipo' => 'required|string',
+            'costos.*.destino_entrega' => 'nullable|string|max:150',
             'costos.*.monto' => 'required|numeric|min:0',
         ]);
+        $this->ensureItemDestinosCantidades($request->input('items', []));
 
         $cliente = Cliente::findOrFail($request->cliente_id);
         $hasDelegadoKey = array_key_exists('delegado_id', $request->all());
@@ -1590,7 +1695,11 @@ class CotizacionController extends Controller
 
         $estadoAnterior = (int) $cotizacion->estado_cotizacion_id;
 
-        DB::transaction(function () use ($request, $cotizacion, $cliente, $delegadoId, $delegadoCotizacionId, $estadoAnterior) {
+        DB::transaction(function () use ($request, &$cotizacion, $cliente, $delegadoId, $delegadoCotizacionId, $estadoAnterior) {
+            $cotizacion = Cotizacion::whereKey($cotizacion->id)->lockForUpdate()->firstOrFail();
+            $this->ensureCotizacionWasNotUpdatedConcurrently($request, $cotizacion);
+            $this->ensureCanEditCotizacion($request, $cotizacion);
+
             $monedaId = $this->monedaIdParaPlantilla($request->integer('plantilla_id'), $request->integer('moneda_id'));
             $esAlquiler = $this->esPlantillaAlquilerId($request->integer('plantilla_id'));
 
@@ -1617,10 +1726,15 @@ class CotizacionController extends Controller
                 'delegado_id' => $delegadoId,
                 'delegado_cotizacion_id' => $delegadoCotizacionId,
                 'forma_pago' => $request->forma_pago ?? $cotizacion->forma_pago,
+                'adelanto' => $request->boolean('adelanto'),
+                'adelanto_porcentaje' => $request->boolean('adelanto')
+                    ? $request->input('adelanto_porcentaje')
+                    : null,
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
                     : null,
+                'entrega_multidestino' => $request->boolean('entrega_multidestino'),
             ]);
 
             // ELIMINAR SNAPSHOT VIEJO
@@ -1644,6 +1758,7 @@ class CotizacionController extends Controller
                     'descripcion' => $item['descripcion'],
                     'cantidad' => $item['cantidad'],
                     'aplica_costos_adicionales' => $item['aplica_costos_adicionales'] ?? true,
+                    'destino_entrega' => $request->boolean('entrega_multidestino') ? ($item['destino_entrega'] ?? null) : null,
                     'costo_base' => $item['costo_base'],
                     'margen' => $item['margen'],
                     'orden' => $index + 1,
@@ -1678,6 +1793,7 @@ class CotizacionController extends Controller
                 $cotizacionItem = CotizacionItem::create($itemData);
 
                 $this->syncItemProveedores($cotizacionItem, $item['proveedores'] ?? null);
+                $this->syncItemDestinos($cotizacionItem, $item['destinos_entrega'] ?? null);
             }
 
             // RECREAR COSTOS
@@ -1686,6 +1802,7 @@ class CotizacionController extends Controller
                     'cotizacion_id' => $cotizacion->id,
                     'tipo' => $costo['tipo'],
                     'descripcion' => $costo['descripcion'] ?? null,
+                    'destino_entrega' => $request->boolean('entrega_multidestino') ? ($costo['destino_entrega'] ?? null) : null,
                     'monto' => $costo['monto'],
                 ]);
             }
@@ -1702,6 +1819,7 @@ class CotizacionController extends Controller
             'cotizacion' => $cotizacion->load([
                 'items.productoExterno',
                 'items.proveedores',
+                'items.destinosEntrega',
                 'costosAdicionales',
                 'cliente',
                 'plantilla',
@@ -1717,6 +1835,7 @@ class CotizacionController extends Controller
     private function buildCotizacionProposalPayload(Request $request, Cotizacion $cotizacion): array
     {
         $data = $request->validate($this->cotizacionProposalRules());
+        $this->ensureItemDestinosCantidades($data['items'] ?? []);
         $cliente = Cliente::findOrFail($data['cliente_id']);
 
         $data['cliente_nombre'] = $cliente->nombre;
@@ -1725,9 +1844,14 @@ class CotizacionController extends Controller
             ? $data['cliente_contacto']
             : $cotizacion->cliente_contacto;
         $data['entrega_provincia'] = (bool) ($data['entrega_provincia'] ?? false);
+        $data['adelanto'] = (bool) ($data['adelanto'] ?? false);
+        $data['adelanto_porcentaje'] = $data['adelanto']
+            ? ($data['adelanto_porcentaje'] ?? null)
+            : null;
         $data['entrega_destino'] = $data['entrega_provincia']
             ? ($data['entrega_destino'] ?? null)
             : null;
+        $data['entrega_multidestino'] = (bool) ($data['entrega_multidestino'] ?? false);
         $data['cliente_telefono'] = $cliente->telefono;
         $data['cliente_correo'] = $cliente->correo;
 
@@ -1748,6 +1872,7 @@ class CotizacionController extends Controller
     {
         $cotizacion->loadMissing([
             'items.proveedores',
+            'items.destinosEntrega',
             'costosAdicionales',
             'cliente',
             'plantilla',
@@ -1765,8 +1890,11 @@ class CotizacionController extends Controller
                 'fecha',
                 'validez_dias',
                 'forma_pago',
+                'adelanto',
+                'adelanto_porcentaje',
                 'entrega_provincia',
                 'entrega_destino',
+                'entrega_multidestino',
                 'tipo_cambio',
                 'titulo',
                 'modo_distribucion',
@@ -1797,6 +1925,7 @@ class CotizacionController extends Controller
                         'descripcion',
                         'cantidad',
                         'aplica_costos_adicionales',
+                        'destino_entrega',
                         'nota',
                         'marca',
                         'codigo',
@@ -1834,12 +1963,27 @@ class CotizacionController extends Controller
                             'orden',
                         ]))
                         ->all(),
+                    'destinos_entrega' => $item->destinosEntrega
+                        ->values()
+                        ->map(fn (CotizacionItemDestino $destino): array => $destino->only([
+                            'destino_entrega',
+                            'detalle_variante',
+                            'cantidad',
+                            'margen',
+                            'costo_unitario',
+                            'precio_venta',
+                            'subtotal',
+                            'costo_total',
+                            'ganancia',
+                        ]))
+                        ->all(),
                 ])
                 ->all(),
             'costos' => $cotizacion->costosAdicionales
                 ->map(fn (CotizacionCostosAdicional $costo): array => $costo->only([
                     'tipo',
                     'descripcion',
+                    'destino_entrega',
                     'monto',
                 ]))
                 ->all(),
@@ -1865,8 +2009,11 @@ class CotizacionController extends Controller
             'delegado_cotizacion_id' => null,
             'validez_dias' => $header['validez_dias'],
             'forma_pago' => $header['forma_pago'],
+            'adelanto' => $header['adelanto'] ?? false,
+            'adelanto_porcentaje' => $header['adelanto_porcentaje'] ?? null,
             'entrega_provincia' => $header['entrega_provincia'] ?? false,
             'entrega_destino' => $header['entrega_destino'] ?? null,
+            'entrega_multidestino' => $header['entrega_multidestino'] ?? false,
             'cliente_contacto' => $header['cliente_contacto'],
             'items' => $snapshot['items'],
             'costos' => $snapshot['costos'],
@@ -1911,10 +2058,15 @@ class CotizacionController extends Controller
             'delegado_id' => $delegadoId,
             'delegado_cotizacion_id' => $delegadoCotizacionId,
             'forma_pago' => $payload['forma_pago'] ?? $cotizacion->forma_pago,
+            'adelanto' => (bool) ($payload['adelanto'] ?? false),
+            'adelanto_porcentaje' => ! empty($payload['adelanto'])
+                ? ($payload['adelanto_porcentaje'] ?? null)
+                : null,
             'entrega_provincia' => (bool) ($payload['entrega_provincia'] ?? false),
             'entrega_destino' => ! empty($payload['entrega_provincia'])
                 ? ($payload['entrega_destino'] ?? null)
                 : null,
+            'entrega_multidestino' => (bool) ($payload['entrega_multidestino'] ?? false),
         ]);
 
         $cotizacion->items()->delete();
@@ -1937,6 +2089,7 @@ class CotizacionController extends Controller
                 'descripcion' => $item['descripcion'],
                 'cantidad' => $cantidad,
                 'aplica_costos_adicionales' => $item['aplica_costos_adicionales'] ?? true,
+                'destino_entrega' => ! empty($payload['entrega_multidestino']) ? ($item['destino_entrega'] ?? null) : null,
                 'costo_base' => $costoBase,
                 'margen' => $margen,
                 'orden' => $index + 1,
@@ -1968,6 +2121,7 @@ class CotizacionController extends Controller
 
             $cotizacionItem = CotizacionItem::create($itemData);
             $this->syncItemProveedores($cotizacionItem, $item['proveedores'] ?? null);
+            $this->syncItemDestinos($cotizacionItem, $item['destinos_entrega'] ?? null);
         }
 
         foreach ($payload['costos'] ?? [] as $costo) {
@@ -1975,6 +2129,7 @@ class CotizacionController extends Controller
                 'cotizacion_id' => $cotizacion->id,
                 'tipo' => $costo['tipo'],
                 'descripcion' => $costo['descripcion'] ?? null,
+                'destino_entrega' => ! empty($payload['entrega_multidestino']) ? ($costo['destino_entrega'] ?? null) : null,
                 'monto' => $costo['monto'],
             ]);
         }
@@ -1998,13 +2153,22 @@ class CotizacionController extends Controller
             'delegado_cotizacion_id' => 'nullable|exists:users,id',
             'validez_dias' => 'nullable|integer|min:1|max:365',
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
+            'adelanto' => 'sometimes|boolean',
+            'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
+            'entrega_multidestino' => 'sometimes|boolean',
             'cliente_contacto' => 'nullable|string|max:255',
             'items' => 'required|array|min:1',
             'items.*.descripcion' => 'required|string',
             'items.*.cantidad' => 'required|numeric|min:1',
             'items.*.aplica_costos_adicionales' => 'sometimes|boolean',
+            'items.*.destino_entrega' => 'nullable|string|max:150',
+            'items.*.destinos_entrega' => 'nullable|array',
+            'items.*.destinos_entrega.*.destino_entrega' => 'required|string|max:150',
+            'items.*.destinos_entrega.*.detalle_variante' => 'nullable|string|max:255',
+            'items.*.destinos_entrega.*.cantidad' => 'required|integer|min:1',
+            'items.*.destinos_entrega.*.margen' => 'nullable|numeric|min:0|max:99.99',
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.nota' => 'nullable|string',
@@ -2031,6 +2195,7 @@ class CotizacionController extends Controller
             'costos' => 'nullable|array',
             'costos.*.tipo' => 'required|string',
             'costos.*.descripcion' => 'nullable|string',
+            'costos.*.destino_entrega' => 'nullable|string|max:150',
             'costos.*.monto' => 'required|numeric|min:0',
         ];
     }
@@ -2160,6 +2325,63 @@ class CotizacionController extends Controller
     }
 
     /**
+     * @param  array<int, array<string, mixed>>|null  $destinos
+     */
+    private function syncItemDestinos(CotizacionItem $item, ?array $destinos): void
+    {
+        $item->destinosEntrega()->delete();
+
+        if (! $destinos) {
+            return;
+        }
+
+        foreach ($destinos as $destino) {
+            $nombre = trim((string) ($destino['destino_entrega'] ?? ''));
+            $cantidad = (int) ($destino['cantidad'] ?? 0);
+
+            if ($nombre === '' || $cantidad <= 0) {
+                continue;
+            }
+
+            $item->destinosEntrega()->create([
+                'destino_entrega' => $nombre,
+                'detalle_variante' => trim((string) ($destino['detalle_variante'] ?? '')) ?: null,
+                'cantidad' => $cantidad,
+                'margen' => array_key_exists('margen', $destino) && $destino['margen'] !== null && $destino['margen'] !== ''
+                    ? min((float) $destino['margen'], 99.99)
+                    : null,
+                'costo_unitario' => (float) ($destino['costo_unitario'] ?? 0),
+                'precio_venta' => (float) ($destino['precio_venta'] ?? 0),
+                'subtotal' => (float) ($destino['subtotal'] ?? 0),
+                'costo_total' => (float) ($destino['costo_total'] ?? 0),
+                'ganancia' => (float) ($destino['ganancia'] ?? 0),
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    private function ensureItemDestinosCantidades(array $items): void
+    {
+        foreach ($items as $index => $item) {
+            $destinos = $item['destinos_entrega'] ?? [];
+            if (! is_array($destinos) || count($destinos) === 0) {
+                continue;
+            }
+
+            $cantidadItem = (int) ($item['cantidad'] ?? 0);
+            $cantidadDestinos = collect($destinos)->sum(fn ($destino) => (int) ($destino['cantidad'] ?? 0));
+
+            if ($cantidadItem !== $cantidadDestinos) {
+                throw ValidationException::withMessages([
+                    "items.$index.destinos_entrega" => "La suma de cantidades por destino ({$cantidadDestinos}) debe coincidir con la cantidad del item ({$cantidadItem}).",
+                ]);
+            }
+        }
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>|null  $proveedores
      */
     private function primerProveedorNombre(?array $proveedores, ?string $fallback): ?string
@@ -2216,9 +2438,6 @@ class CotizacionController extends Controller
                 ];
             })
             ->filter()
-            ->unique(fn (array $proveedor): string => $proveedor['proveedor_id']
-                ? 'id:'.$proveedor['proveedor_id']
-                : 'nombre:'.$this->normalizeProveedorKey($proveedor['nombre']))
             ->values()
             ->all();
     }
@@ -2444,12 +2663,90 @@ class CotizacionController extends Controller
         abort(403, 'No autorizado para editar esta cotización.');
     }
 
+    private function ensureCotizacionWasNotUpdatedConcurrently(Request $request, Cotizacion $cotizacion): void
+    {
+        $lastKnownUpdatedAt = $request->input('last_known_updated_at');
+
+        if (! is_string($lastKnownUpdatedAt) || trim($lastKnownUpdatedAt) === '' || ! $cotizacion->updated_at) {
+            return;
+        }
+
+        $clientUpdatedAt = Carbon::parse($lastKnownUpdatedAt)->utc();
+        $currentUpdatedAt = $cotizacion->updated_at->copy()->utc();
+
+        if ($currentUpdatedAt->lessThanOrEqualTo($clientUpdatedAt)) {
+            return;
+        }
+
+        abort(response()->json([
+            'message' => 'Esta cotizacion fue modificada por otro usuario mientras la editabas. Recarga la cotizacion antes de guardar para no sobrescribir sus cambios.',
+            'errors' => [
+                'cotizacion' => [
+                    'La version cargada en tu pantalla ya no es la mas reciente.',
+                ],
+            ],
+        ], 409));
+    }
+
     private function isCotizacionOwnerOrEditDelegate(Request $request, Cotizacion $cotizacion): bool
     {
         $userId = (int) $request->user()->id;
 
         return (int) $cotizacion->user_id === $userId
             || ($cotizacion->delegado_cotizacion_id && (int) $cotizacion->delegado_cotizacion_id === $userId);
+    }
+
+    private function shouldHideProfitability(Request $request): bool
+    {
+        return $request->user()?->hasAnyRole(['admin', 'contabilidad']) === true
+            && ! $request->user()?->hasRole('superadmin');
+    }
+
+    private function hideCotizacionProfitability(Cotizacion $cotizacion): Cotizacion
+    {
+        $cotizacion->makeHidden(['ganancia', 'total_gasto']);
+
+        if ($cotizacion->relationLoaded('items')) {
+            $cotizacion->items->each(function ($item): void {
+                $item->makeHidden(['ganancia', 'margen']);
+
+                if ($item->relationLoaded('destinosEntrega')) {
+                    $item->destinosEntrega->each(
+                        fn ($destino) => $destino->makeHidden(['ganancia', 'margen'])
+                    );
+                }
+            });
+        }
+
+        return $cotizacion;
+    }
+
+    private function hidePayloadProfitability(array $payload): array
+    {
+        unset($payload['ganancia'], $payload['total_gasto']);
+
+        if (isset($payload['cotizacion']) && is_array($payload['cotizacion'])) {
+            unset($payload['cotizacion']['ganancia'], $payload['cotizacion']['total_gasto']);
+        }
+
+        if (isset($payload['items']) && is_array($payload['items'])) {
+            foreach ($payload['items'] as &$item) {
+                if (is_array($item)) {
+                    unset($item['ganancia'], $item['margen']);
+                    if (isset($item['destinos_entrega']) && is_array($item['destinos_entrega'])) {
+                        foreach ($item['destinos_entrega'] as &$destino) {
+                            if (is_array($destino)) {
+                                unset($destino['ganancia'], $destino['margen']);
+                            }
+                        }
+                        unset($destino);
+                    }
+                }
+            }
+            unset($item);
+        }
+
+        return $payload;
     }
 
     private function ensureCanRequestModification(Request $request, Cotizacion $cotizacion): void
@@ -2640,7 +2937,7 @@ class CotizacionController extends Controller
             );
         });
 
-        $cotizacion->refresh()->load(['items.proveedores', 'costosAdicionales', 'cliente', 'estadoCotizacion', 'user', 'delegado']);
+        $cotizacion->refresh()->load(['items.proveedores', 'items.destinosEntrega', 'costosAdicionales', 'cliente', 'estadoCotizacion', 'user', 'delegado']);
 
         if ($cotizacion->user) {
             $cotizacion->user->notify(new CotizacionAprobadaNotification($cotizacion, $request->user()));
@@ -2693,7 +2990,7 @@ class CotizacionController extends Controller
             ]);
         });
 
-        $cotizacion->refresh()->load(['items.proveedores', 'costosAdicionales', 'cliente', 'estadoCotizacion', 'user', 'delegado', 'historial']);
+        $cotizacion->refresh()->load(['items.proveedores', 'items.destinosEntrega', 'costosAdicionales', 'cliente', 'estadoCotizacion', 'user', 'delegado', 'historial']);
 
         if ($cotizacion->user) {
             $cotizacion->user->notify(new CotizacionRechazadaNotification($cotizacion, $request->user(), $request->comentario_rechazo));

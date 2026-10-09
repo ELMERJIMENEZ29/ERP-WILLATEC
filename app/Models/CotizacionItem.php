@@ -22,6 +22,7 @@ class CotizacionItem extends Model
         'descripcion',
         'cantidad',
         'aplica_costos_adicionales',
+        'destino_entrega',
         'nota',
         'marca',
         'codigo',
@@ -73,6 +74,11 @@ class CotizacionItem extends Model
     public function proveedores(): HasMany
     {
         return $this->hasMany(CotizacionItemProveedor::class)->orderBy('orden');
+    }
+
+    public function destinosEntrega(): HasMany
+    {
+        return $this->hasMany(CotizacionItemDestino::class, 'cotizacion_item_id')->orderBy('id');
     }
 
     protected function imagenUrl(): Attribute

@@ -16,6 +16,7 @@ class CotizacionCostosAdicional extends Model
     protected $fillable = [
         'tipo',
         'descripcion',
+        'destino_entrega',
         'monto',
         'cotizacion_id',
     ];

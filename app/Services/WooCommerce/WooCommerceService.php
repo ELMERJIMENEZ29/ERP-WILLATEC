@@ -3,9 +3,13 @@
 namespace App\Services\WooCommerce;
 
 use App\Models\Producto;
+use App\Models\WooCommerceProducto;
 use App\Models\WooCommerceSyncLog;
+use App\Services\ProductoSkuService;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 class WooCommerceService
@@ -85,6 +89,355 @@ class WooCommerceService
         return $log;
     }
 
+    public function actualizarStockSiEstaMapeado(Producto $producto): ?WooCommerceSyncLog
+    {
+        $producto->loadMissing('woocommerceProducto');
+
+        if (! $producto->woocommerceProducto) {
+            return null;
+        }
+
+        try {
+            return $this->actualizarStock($producto);
+        } catch (\Throwable $exception) {
+            Log::warning('No se pudo sincronizar stock con WooCommerce', [
+                'producto_id' => $producto->id,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return WooCommerceSyncLog::create([
+                'tipo' => 'producto_stock',
+                'direccion' => 'erp_to_woocommerce',
+                'endpoint' => null,
+                'payload' => [
+                    'producto_id' => $producto->id,
+                    'sku' => $producto->sku,
+                    'stock_quantity' => (float) $producto->stock_disponible,
+                ],
+                'estado' => 'error',
+                'mensaje_error' => $exception->getMessage(),
+                'referencia_tipo' => Producto::class,
+                'referencia_id' => $producto->id,
+            ]);
+        }
+    }
+
+    public function mapearProductoPorSku(Producto $producto): WooCommerceProducto
+    {
+        $producto->loadMissing(['categoria']);
+
+        if (! $this->estaConfigurado()) {
+            throw new RuntimeException('WooCommerce no esta configurado.');
+        }
+
+        $sku = trim((string) ($producto->sku ?: $producto->codigo));
+
+        if ($sku === '') {
+            throw new RuntimeException('El producto no tiene SKU o codigo para buscar en WooCommerce.');
+        }
+
+        if (app(ProductoSkuService::class)->esSkuLegacy($producto->sku, $producto->codigo)) {
+            throw new RuntimeException('Este producto aun usa un SKU legacy igual al codigo interno. Primero previsualiza y aplica la normalizacion de SKU antes de conectarlo con WooCommerce.');
+        }
+
+        $wooProducto = $this->buscarProductoPorSku($sku);
+
+        if (! $wooProducto) {
+            $wooProducto = $this->crearProductoWooCommerce($producto, $sku);
+        } else {
+            $wooProducto = $this->sincronizarDatosProductoWooCommerce($producto, $wooProducto, $sku);
+        }
+
+        $wooProductId = (int) ($wooProducto['id'] ?? 0);
+        $wooParentId = isset($wooProducto['parent_id']) ? (int) $wooProducto['parent_id'] : null;
+        $wooVariationId = ($wooParentId && $wooParentId !== $wooProductId) ? $wooProductId : null;
+
+        if ($wooProductId <= 0) {
+            throw new RuntimeException('WooCommerce no devolvio un ID de producto valido.');
+        }
+
+        return WooCommerceProducto::updateOrCreate(
+            [
+                'producto_id' => $producto->id,
+                'woocommerce_store_id' => null,
+            ],
+            [
+                'woo_product_id' => $wooVariationId ? $wooParentId : $wooProductId,
+                'woo_variation_id' => $wooVariationId,
+                'woo_parent_id' => $wooVariationId ? $wooParentId : null,
+                'woo_sku' => (string) ($wooProducto['sku'] ?? $sku),
+                'manage_stock' => true,
+            ]
+        );
+    }
+
+    public function actualizarSkuProductoMapeado(Producto $producto, string $skuNuevo): WooCommerceSyncLog
+    {
+        $mapping = $producto->loadMissing('woocommerceProducto')->woocommerceProducto;
+
+        if (! $mapping) {
+            throw new RuntimeException('El producto no tiene mapeo WooCommerce.');
+        }
+
+        if (! $this->estaConfigurado()) {
+            return WooCommerceSyncLog::create([
+                'tipo' => 'sku_update',
+                'direccion' => 'erp_to_woocommerce',
+                'endpoint' => null,
+                'payload' => [
+                    'producto_id' => $producto->id,
+                    'sku_anterior' => $producto->sku,
+                    'sku_nuevo' => $skuNuevo,
+                ],
+                'estado' => 'pendiente',
+                'mensaje_error' => 'WooCommerce no esta configurado.',
+                'referencia_tipo' => Producto::class,
+                'referencia_id' => $producto->id,
+            ]);
+        }
+
+        $endpoint = $this->productoEndpoint($mapping->woo_product_id, $mapping->woo_variation_id, $mapping->woo_parent_id);
+        $payload = ['sku' => $skuNuevo];
+        $response = $this->request()->put($endpoint, $payload);
+
+        $log = WooCommerceSyncLog::create([
+            'tipo' => 'sku_update',
+            'direccion' => 'erp_to_woocommerce',
+            'endpoint' => $endpoint,
+            'payload' => [
+                'producto_id' => $producto->id,
+                'woo_product_id' => $mapping->woo_product_id,
+                'woo_variation_id' => $mapping->woo_variation_id,
+                'sku_anterior' => $producto->sku,
+                'sku_nuevo' => $skuNuevo,
+            ],
+            'response' => $response->json(),
+            'status_code' => $response->status(),
+            'estado' => $response->successful() ? 'exitoso' : 'error',
+            'mensaje_error' => $response->successful() ? null : $response->body(),
+            'referencia_tipo' => Producto::class,
+            'referencia_id' => $producto->id,
+        ]);
+
+        if ($response->successful()) {
+            $mapping->update([
+                'woo_sku' => $skuNuevo,
+                'last_sync_status' => 'exitoso',
+                'last_sync_error' => null,
+                'last_synced_at' => now(),
+            ]);
+        }
+
+        return $log;
+    }
+
+    private function crearProductoWooCommerce(Producto $producto, string $sku): array
+    {
+        $endpoint = '/wp-json/wc/v3/products';
+        $payload = [
+            ...$this->productDataPayload($producto, $sku),
+            'type' => 'simple',
+            'status' => $this->defaultProductStatus(),
+            'manage_stock' => true,
+            'stock_quantity' => (float) ($producto->stock_disponible ?? 0),
+        ];
+
+        $response = $this->request()->post($endpoint, $payload);
+
+        WooCommerceSyncLog::create([
+            'tipo' => 'producto_create',
+            'direccion' => 'erp_to_woocommerce',
+            'endpoint' => $endpoint,
+            'payload' => $payload,
+            'response' => $response->json(),
+            'status_code' => $response->status(),
+            'estado' => $response->successful() ? 'exitoso' : 'error',
+            'mensaje_error' => $response->successful() ? null : $response->body(),
+            'referencia_tipo' => Producto::class,
+            'referencia_id' => $producto->id,
+        ]);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('No se pudo crear el producto en WooCommerce: '.$response->body());
+        }
+
+        return $response->json();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function productDataPayload(Producto $producto, string $sku): array
+    {
+        $payload = [
+            'name' => $this->productName($producto, $sku),
+            'sku' => $sku,
+            'description' => (string) ($producto->descripcion ?? ''),
+            'short_description' => $this->shortDescription($producto),
+            'attributes' => $this->productAttributes($producto),
+            'meta_data' => $this->productMetaData($producto),
+        ];
+
+        $regularPrice = $this->regularPrice($producto);
+        if ($regularPrice !== null) {
+            $payload['regular_price'] = $regularPrice;
+        }
+
+        $imageUrl = $this->productImageUrl($producto);
+        if ($imageUrl) {
+            $payload['images'] = [
+                [
+                    'src' => $imageUrl,
+                    'name' => $this->productName($producto, $sku),
+                    'alt' => $this->productName($producto, $sku),
+                ],
+            ];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $wooProducto
+     * @return array<string, mixed>
+     */
+    private function sincronizarDatosProductoWooCommerce(Producto $producto, array $wooProducto, string $sku): array
+    {
+        $wooProductId = (int) ($wooProducto['id'] ?? 0);
+        $wooParentId = isset($wooProducto['parent_id']) ? (int) $wooProducto['parent_id'] : null;
+        $wooVariationId = ($wooParentId && $wooParentId !== $wooProductId) ? $wooProductId : null;
+
+        if ($wooProductId <= 0) {
+            return $wooProducto;
+        }
+
+        $endpoint = $this->productoEndpoint(
+            $wooVariationId ? $wooParentId : $wooProductId,
+            $wooVariationId,
+            $wooVariationId ? $wooParentId : null
+        );
+
+        $payload = $this->productDataPayload($producto, $sku);
+
+        if (! empty($wooProducto['images'])) {
+            unset($payload['images']);
+        }
+
+        $response = $this->request()->put($endpoint, $payload);
+
+        WooCommerceSyncLog::create([
+            'tipo' => 'producto_update',
+            'direccion' => 'erp_to_woocommerce',
+            'endpoint' => $endpoint,
+            'payload' => $payload,
+            'response' => $response->json(),
+            'status_code' => $response->status(),
+            'estado' => $response->successful() ? 'exitoso' : 'error',
+            'mensaje_error' => $response->successful() ? null : $response->body(),
+            'referencia_tipo' => Producto::class,
+            'referencia_id' => $producto->id,
+        ]);
+
+        return $response->successful() ? $response->json() : $wooProducto;
+    }
+
+    private function productName(Producto $producto, string $sku): string
+    {
+        return trim((string) ($producto->nombre ?: $producto->modelo ?: $sku));
+    }
+
+    private function shortDescription(Producto $producto): string
+    {
+        $parts = array_filter([
+            $producto->marca ? 'Marca: '.$producto->marca : null,
+            $producto->modelo ? 'Modelo: '.$producto->modelo : null,
+            $producto->codigo ? 'Codigo interno: '.$producto->codigo : null,
+            $producto->sku ? 'SKU: '.$producto->sku : null,
+        ]);
+
+        return implode('<br>', $parts);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function productAttributes(Producto $producto): array
+    {
+        return collect([
+            'Marca' => $producto->marca,
+            'Modelo' => $producto->modelo,
+            'Codigo interno' => $producto->codigo,
+        ])
+            ->filter(fn ($value): bool => filled($value))
+            ->map(fn ($value, string $name): array => [
+                'name' => $name,
+                'visible' => true,
+                'variation' => false,
+                'options' => [(string) $value],
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{key: string, value: mixed}>
+     */
+    private function productMetaData(Producto $producto): array
+    {
+        return collect([
+            '_erp_producto_id' => $producto->id,
+            '_erp_codigo_interno' => $producto->codigo,
+            '_erp_modelo' => $producto->modelo,
+            '_erp_marca' => $producto->marca,
+            '_erp_categoria' => $producto->categoria?->nombre,
+            '_erp_unidad_medida' => $producto->unidad_medida,
+        ])
+            ->filter(fn ($value): bool => filled($value))
+            ->map(fn ($value, string $key): array => [
+                'key' => $key,
+                'value' => $value,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function productImageUrl(Producto $producto): ?string
+    {
+        $image = trim((string) $producto->imagen);
+
+        if ($image === '') {
+            return null;
+        }
+
+        if (filter_var($image, FILTER_VALIDATE_URL)) {
+            return $image;
+        }
+
+        $path = preg_replace('#^(public/|storage/)#', '', $image) ?: $image;
+
+        return Storage::disk('public')->url($path);
+    }
+
+    private function defaultProductStatus(): string
+    {
+        $status = (string) (config('services.woocommerce.default_product_status') ?: 'draft');
+
+        return in_array($status, ['draft', 'publish', 'pending', 'private'], true)
+            ? $status
+            : 'draft';
+    }
+
+    private function regularPrice(Producto $producto): ?string
+    {
+        $price = (float) ($producto->precio_venta ?: $producto->precio_referencial ?: 0);
+
+        if ($price <= 0) {
+            return null;
+        }
+
+        return number_format($price, 2, '.', '');
+    }
+
     public function buscarProductoPorSku(string $sku): ?array
     {
         if (! $this->estaConfigurado()) {
@@ -100,6 +453,25 @@ class WooCommerceService
         }
 
         return $response->json()[0] ?? null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     * @return array<int, array<string, mixed>>
+     */
+    public function obtenerPedidos(array $params = []): array
+    {
+        if (! $this->estaConfigurado()) {
+            throw new RuntimeException('WooCommerce no esta configurado.');
+        }
+
+        $response = $this->request()->get('/wp-json/wc/v3/orders', $params);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('No se pudieron obtener pedidos WooCommerce: '.$response->body());
+        }
+
+        return $response->json() ?: [];
     }
 
     private function request(): PendingRequest

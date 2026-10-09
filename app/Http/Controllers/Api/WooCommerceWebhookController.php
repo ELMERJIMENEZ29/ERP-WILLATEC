@@ -4,12 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\WooCommerceSyncLog;
+use App\Services\WooCommerce\WooCommercePedidoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class WooCommerceWebhookController extends Controller
 {
-    public function orders(Request $request)
+    public function orders(Request $request, WooCommercePedidoService $pedidoService)
     {
         $signatureValid = $this->validarFirma($request);
 
@@ -35,9 +36,35 @@ class WooCommerceWebhookController extends Controller
             ], 401);
         }
 
+        try {
+            $pedido = $pedidoService->importarPedido($request->all());
+            $log->forceFill([
+                'estado' => 'exitoso',
+                'referencia_tipo' => 'woocommerce_pedido',
+                'referencia_id' => $pedido->id,
+            ])->save();
+        } catch (\Throwable $exception) {
+            $log->forceFill([
+                'estado' => 'error',
+                'mensaje_error' => $exception->getMessage(),
+            ])->save();
+
+            Log::warning('Webhook WooCommerce recibido pero no procesado', [
+                'log_id' => $log->id,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Webhook recibido, pero no se pudo registrar el pedido',
+                'error' => $exception->getMessage(),
+                'log_id' => $log->id,
+            ], 422);
+        }
+
         return response()->json([
-            'message' => 'Webhook recibido; procesamiento de stock pendiente de configuracion final',
+            'message' => 'Pedido WooCommerce recibido y registrado',
             'log_id' => $log->id,
+            'pedido_id' => $pedido->id,
         ]);
     }
 

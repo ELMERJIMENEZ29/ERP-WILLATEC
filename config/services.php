@@ -40,6 +40,7 @@ return [
         'consumer_key' => env('WOOCOMMERCE_CONSUMER_KEY'),
         'consumer_secret' => env('WOOCOMMERCE_CONSUMER_SECRET'),
         'webhook_secret' => env('WOOCOMMERCE_WEBHOOK_SECRET'),
+        'default_product_status' => env('WOOCOMMERCE_DEFAULT_PRODUCT_STATUS', 'draft'),
     ],
 
 ];

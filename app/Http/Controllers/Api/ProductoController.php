@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreProductoRequest;
 use App\Http\Requests\UpdateProductoRequest;
+use App\Models\CotizacionItem;
 use App\Models\Producto;
 use App\Models\ProductoSerie;
+use App\Services\ProductoSkuService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 
 class ProductoController extends Controller
@@ -32,6 +35,7 @@ class ProductoController extends Controller
                     ->select(['id', 'producto_id', 'serie', 'factura_numero', 'documento_path', 'estado', 'fecha_ingreso', 'fecha_salida', 'oc_recibida_id', 'cotizacion_item_id'])
                     ->latest(),
                 'ultimaEntradaConFactura',
+                'woocommerceProducto',
             ]);
 
         if ($request->has('activo')) {
@@ -88,7 +92,7 @@ class ProductoController extends Controller
     // Ver detalle
     public function show(int $id)
     {
-        $producto = Producto::with(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'ultimaEntradaConFactura'])->findOrFail($id);
+        $producto = Producto::with(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'ultimaEntradaConFactura', 'woocommerceProducto'])->findOrFail($id);
         $producto = $this->applyFacturaFallback($producto);
 
         if (! $producto) {
@@ -98,6 +102,72 @@ class ProductoController extends Controller
         }
 
         return response()->json($producto);
+    }
+
+    public function historialCotizaciones(Producto $producto)
+    {
+        $items = CotizacionItem::query()
+            ->with([
+                'cotizacion:id,numero,titulo,fecha,user_id,cliente_id,cliente_nombre,moneda_id,estado_cotizacion_id',
+                'cotizacion.user:id,nombres,apellidos,email',
+                'cotizacion.cliente:id,nombre',
+                'cotizacion.moneda:id,codigo,simbolo',
+                'cotizacion.estadoCotizacion:id,nombre',
+                'proveedores:id,cotizacion_item_id,nombre,link,precio,notas,orden',
+            ])
+            ->where('producto_id', $producto->id)
+            ->latest('created_at')
+            ->limit(50)
+            ->get()
+            ->map(function (CotizacionItem $item): array {
+                $cotizacion = $item->cotizacion;
+                $user = $cotizacion?->user;
+                $ejecutivo = trim((string) ($user?->nombres ?? '').' '.(string) ($user?->apellidos ?? ''));
+
+                return [
+                    'id' => $item->id,
+                    'descripcion' => $item->descripcion,
+                    'cantidad' => $item->cantidad,
+                    'costo_base' => $item->costo_base,
+                    'costo_unitario' => $item->costo_unitario,
+                    'precio_venta' => $item->precio_venta,
+                    'subtotal' => $item->subtotal,
+                    'ganancia' => $item->ganancia,
+                    'margen' => $item->margen,
+                    'created_at' => optional($item->created_at)->toIso8601String(),
+                    'proveedores' => $item->proveedores->map(fn ($proveedor): array => [
+                        'id' => $proveedor->id,
+                        'nombre' => $proveedor->nombre,
+                        'link' => $proveedor->link,
+                        'precio' => $proveedor->precio,
+                        'notas' => $proveedor->notas,
+                    ])->values(),
+                    'cotizacion' => [
+                        'id' => $cotizacion?->id,
+                        'numero' => $cotizacion?->numero,
+                        'titulo' => $cotizacion?->titulo,
+                        'fecha' => $cotizacion?->fecha
+                            ? Carbon::parse($cotizacion->fecha)->toDateString()
+                            : null,
+                        'cliente_nombre' => $cotizacion?->cliente_nombre ?: $cotizacion?->cliente?->nombre,
+                        'estado' => $cotizacion?->estadoCotizacion?->nombre,
+                        'moneda' => $cotizacion?->moneda?->codigo,
+                        'simbolo_moneda' => $cotizacion?->moneda?->simbolo,
+                        'ejecutivo' => $ejecutivo !== '' ? $ejecutivo : $user?->email,
+                    ],
+                ];
+            });
+
+        return response()->json([
+            'producto' => [
+                'id' => $producto->id,
+                'descripcion' => $producto->nombre,
+                'codigo' => $producto->codigo,
+                'marca' => $producto->marca,
+                'veces_cotizado' => $producto->cotizacionItems()->count(),
+            ],
+            'historial' => $items,
+        ]);
     }
 
     private function applyFacturaFallback(Producto $producto): Producto
@@ -131,7 +201,7 @@ class ProductoController extends Controller
     }
 
     // Crear producto
-    public function store(StoreProductoRequest $request)
+    public function store(StoreProductoRequest $request, ProductoSkuService $skuService)
     {
         $this->ensureCanManageInternalProducts($request);
 
@@ -140,11 +210,16 @@ class ProductoController extends Controller
         $costoPromedio = (float) $request->input('costo_unitario', 0);
         $series = $this->normalizarSeries($request->input('series', []));
         $seriePrincipal = trim((string) ($request->serie ?: ($series[0] ?? ''))) ?: null;
-        $codigoInterno = trim((string) ($request->input('codigo') ?: $request->input('sku'))) ?: $this->buildNextInternalCode();
+        $codigoInterno = trim((string) $request->input('codigo')) ?: $this->buildNextInternalCode();
+        $skuSolicitado = trim((string) $request->input('sku')) ?: null;
+
+        if ($skuService->esSkuLegacy($skuSolicitado, $codigoInterno)) {
+            $skuSolicitado = null;
+        }
 
         $data = [
             'nombre' => $request->nombre,
-            'sku' => $codigoInterno,
+            'sku' => $skuSolicitado,
             'marca' => $request->marca,
             'modelo' => $request->modelo,
             'codigo' => $codigoInterno,
@@ -177,8 +252,13 @@ class ProductoController extends Controller
         }
 
         $producto = Producto::create($data);
+        if ($skuService->esSkuLegacy($producto->sku, $producto->codigo)) {
+            $producto->forceFill([
+                'sku' => $skuService->generarSkuParaProducto($producto->fresh(['categoria'])),
+            ])->save();
+        }
         $this->syncSeriesProducto($producto, $series);
-        $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series']);
+        $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'woocommerceProducto']);
 
         return response()->json([
             'message' => 'Producto creado correctamente',
@@ -187,7 +267,7 @@ class ProductoController extends Controller
     }
 
     // Actualizar producto
-    public function update(UpdateProductoRequest $request, int $id)
+    public function update(UpdateProductoRequest $request, int $id, ProductoSkuService $skuService)
     {
         $this->ensureCanManageInternalProducts($request);
 
@@ -222,6 +302,16 @@ class ProductoController extends Controller
             'stock',
             'categoria_id',
         ]);
+
+        unset($data['codigo']);
+
+        $productoVinculadoWoo = $producto->woocommerceProducto()->exists();
+
+        if ($productoVinculadoWoo) {
+            unset($data['sku']);
+        } elseif (array_key_exists('sku', $data) && $skuService->esSkuLegacy($data['sku'], $producto->codigo)) {
+            unset($data['sku']);
+        }
 
         if ($tieneHistorialInventario) {
             unset(
@@ -272,9 +362,16 @@ class ProductoController extends Controller
         }
 
         $producto->update($data);
+
+        if (! $productoVinculadoWoo && $skuService->esSkuLegacy($producto->sku, $producto->codigo)) {
+            $producto->forceFill([
+                'sku' => $skuService->generarSkuParaProducto($producto->fresh(['categoria'])),
+            ])->save();
+        }
+
         $this->syncSeriesProducto($producto, $series);
         $this->persistSeriesStockSnapshot($producto);
-        $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series']);
+        $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'woocommerceProducto']);
 
         return response()->json([
             'message' => 'Producto actualizado correctamente',
@@ -418,10 +515,7 @@ class ProductoController extends Controller
         do {
             $max++;
             $candidate = str_pad((string) $max, 4, '0', STR_PAD_LEFT);
-        } while (
-            Producto::where('codigo', $candidate)->exists()
-            || Producto::where('sku', $candidate)->exists()
-        );
+        } while (Producto::where('codigo', $candidate)->exists());
 
         return $candidate;
     }

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -57,6 +58,14 @@ class Hosting extends Model
     public function alertasEnviadas(): HasMany
     {
         return $this->hasMany(HostingAlertaEnviada::class);
+    }
+
+    public function cotizaciones(): BelongsToMany
+    {
+        return $this->belongsToMany(Cotizacion::class, 'hosting_cotizaciones')
+            ->withPivot('created_by')
+            ->withTimestamps()
+            ->orderByDesc('hosting_cotizaciones.created_at');
     }
 
     public function moneda(): BelongsTo

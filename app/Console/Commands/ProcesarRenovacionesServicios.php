@@ -2,13 +2,17 @@
 
 namespace App\Console\Commands;
 
+use App\Mail\HostingRenovacionGracias;
+use App\Mail\LicenciaRenovacionGracias;
 use App\Models\Hosting;
 use App\Models\Licencia;
 use App\Models\User;
 use App\Notifications\ServicioRenovacionNotification;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class ProcesarRenovacionesServicios extends Command
 {
@@ -30,6 +34,7 @@ class ProcesarRenovacionesServicios extends Command
                     foreach ($licencias as $licencia) {
                         if ($dryRun) {
                             $this->line("Licencia {$licencia->id} lista para renovar.");
+
                             continue;
                         }
 
@@ -49,6 +54,7 @@ class ProcesarRenovacionesServicios extends Command
                     foreach ($hostings as $hosting) {
                         if ($dryRun) {
                             $this->line("Hosting {$hosting->id} listo para renovar.");
+
                             continue;
                         }
 
@@ -84,6 +90,7 @@ class ProcesarRenovacionesServicios extends Command
         ]);
 
         $licencia->alertasEnviadas()->delete();
+        $this->sendLicenciaRenovacionGracias($licencia->refresh());
 
         $this->notifyAdmins(new ServicioRenovacionNotification(
             'licencia',
@@ -119,6 +126,7 @@ class ProcesarRenovacionesServicios extends Command
         ]);
 
         $hosting->alertasEnviadas()->delete();
+        $this->sendHostingRenovacionGracias($hosting->refresh());
 
         $this->notifyAdmins(new ServicioRenovacionNotification(
             'hosting',
@@ -142,5 +150,49 @@ class ProcesarRenovacionesServicios extends Command
     private function notifyAdmins(ServicioRenovacionNotification $notification): void
     {
         User::role(['superadmin', 'admin'])->get()->each->notify($notification);
+    }
+
+    private function sendLicenciaRenovacionGracias(Licencia $licencia): void
+    {
+        $customerEmail = $licencia->correo_licencia ?: null;
+
+        if (! $customerEmail) {
+            return;
+        }
+
+        try {
+            $message = Mail::to($customerEmail);
+
+            if (strtolower($customerEmail) !== 'luis.lopez@willatec.com') {
+                $message->bcc('luis.lopez@willatec.com');
+            }
+
+            $message->send(new LicenciaRenovacionGracias($licencia));
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    private function sendHostingRenovacionGracias(Hosting $hosting): void
+    {
+        $customerEmail = $hosting->correo_hosting ?: null;
+        $internalRecipient = config('mail.hosting_alert_internal_recipient');
+
+        if (! $customerEmail) {
+            return;
+        }
+
+        try {
+            $message = Mail::mailer(config('mail.hosting_mailer', 'hosting'))
+                ->to($customerEmail);
+
+            if ($internalRecipient && strtolower($customerEmail) !== strtolower((string) $internalRecipient)) {
+                $message->bcc($internalRecipient);
+            }
+
+            $message->send(new HostingRenovacionGracias($hosting));
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 }

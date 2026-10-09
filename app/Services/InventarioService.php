@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\InventarioMovimiento;
 use App\Models\Producto;
 use App\Models\ProductoSerie;
+use App\Services\WooCommerce\WooCommerceService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -265,6 +266,8 @@ class InventarioService
                 'created_by' => $createdBy,
             ]);
 
+            $this->programarSincronizacionWooCommerce($producto->id);
+
             return $producto->refresh();
         });
     }
@@ -275,6 +278,8 @@ class InventarioService
             $producto = Producto::query()->lockForUpdate()->findOrFail($productoId);
             $this->recalcularProducto($producto);
             $producto->save();
+
+            $this->programarSincronizacionWooCommerce($producto->id);
 
             return $producto->refresh();
         });
@@ -486,7 +491,24 @@ class InventarioService
                 );
             }
 
+            $this->programarSincronizacionWooCommerce($producto->id);
+
             return $producto->refresh();
+        });
+    }
+
+    private function programarSincronizacionWooCommerce(int $productoId): void
+    {
+        DB::afterCommit(function () use ($productoId): void {
+            $producto = Producto::query()
+                ->with('woocommerceProducto')
+                ->find($productoId);
+
+            if (! $producto) {
+                return;
+            }
+
+            app(WooCommerceService::class)->actualizarStockSiEstaMapeado($producto);
         });
     }
 

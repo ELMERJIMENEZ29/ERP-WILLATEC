@@ -29,6 +29,7 @@ class EnviarAlertasHostings extends Command
         $internalRecipient = config('mail.hosting_alert_internal_recipient');
 
         Hosting::query()
+            ->where('renovacion_programada', false)
             ->whereDate('fecha_renovacion', '>=', $today)
             ->whereDate('fecha_renovacion', '<=', $today->copy()->addDays(90))
             ->orderBy('fecha_renovacion')
