@@ -22,6 +22,10 @@ class Proveedor extends Model
         'direccion',
         'observaciones',
         'activo',
+        'tiene_credito',
+        'dias_credito',
+        'limite_credito',
+        'moneda_credito_id',
     ];
 
     public function compras(): HasMany
@@ -46,6 +50,9 @@ class Proveedor extends Model
     {
         return [
             'activo' => 'boolean',
+            'tiene_credito' => 'boolean',
+            'dias_credito' => 'integer',
+            'limite_credito' => 'decimal:2',
         ];
     }
 }

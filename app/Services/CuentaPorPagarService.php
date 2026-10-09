@@ -40,13 +40,23 @@ class CuentaPorPagarService
                 return $existente->fresh($this->relaciones());
             }
 
+            $proveedor = $comprobante->proveedor ?? $comprobante->compra?->proveedor;
+            $fechaVencimiento = $data['fecha_vencimiento'] ?? $comprobante->fecha_vencimiento;
+
+            if (! $fechaVencimiento) {
+                $fechaBase = $comprobante->fecha_emision?->copy() ?? now();
+                $fechaVencimiento = $proveedor?->tiene_credito
+                    ? $fechaBase->addDays((int) $proveedor->dias_credito)->toDateString()
+                    : $fechaBase->toDateString();
+            }
+
             $cuenta = CuentaPorPagar::create([
                 'comprobante_id' => $comprobante->id,
                 'compra_id' => $comprobante->compra_id,
                 'proveedor_id' => $comprobante->proveedor_id,
                 'moneda_id' => $comprobante->moneda_id,
                 'fecha_emision' => $comprobante->fecha_emision,
-                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? $comprobante->fecha_vencimiento,
+                'fecha_vencimiento' => $fechaVencimiento,
                 'total' => $comprobante->total,
                 'monto_pagado' => 0,
                 'saldo' => $comprobante->total,

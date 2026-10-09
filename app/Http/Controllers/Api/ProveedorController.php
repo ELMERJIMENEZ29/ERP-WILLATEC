@@ -63,7 +63,7 @@ class ProveedorController extends Controller
      */
     private function validatePayload(Request $request): array
     {
-        return $request->validate([
+        $validated = $request->validate([
             'nombre' => 'required|string|max:255',
             'ruc' => 'nullable|string|max:20',
             'contacto' => 'nullable|string|max:255',
@@ -72,6 +72,20 @@ class ProveedorController extends Controller
             'direccion' => 'nullable|string|max:255',
             'observaciones' => 'nullable|string',
             'activo' => 'nullable|boolean',
+            'tiene_credito' => 'nullable|boolean',
+            'dias_credito' => 'nullable|integer|min:0|max:365',
+            'limite_credito' => 'nullable|numeric|min:0',
+            'moneda_credito_id' => 'nullable|integer|exists:monedas,id',
         ]);
+
+        if (! $request->user()?->hasAnyRole(['superadmin', 'admin', 'contabilidad'])) {
+            unset($validated['dias_credito'], $validated['limite_credito'], $validated['moneda_credito_id']);
+
+            if (! $request->user()?->hasRole('ventas')) {
+                unset($validated['tiene_credito']);
+            }
+        }
+
+        return $validated;
     }
 }

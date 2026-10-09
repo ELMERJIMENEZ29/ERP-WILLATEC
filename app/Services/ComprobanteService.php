@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Compra;
 use App\Models\Comprobante;
+use App\Models\OcRecibida;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -16,6 +18,18 @@ class ComprobanteService
     public function crear(array $data, ?int $userId = null): Comprobante
     {
         return DB::transaction(function () use ($data, $userId) {
+            if (($data['tipo_operacion'] ?? null) === Comprobante::TIPO_OPERACION_COMPRA) {
+                $compra = Compra::query()->with('proveedor')->findOrFail($data['compra_id']);
+                $data['proveedor_id'] = $compra->proveedor_id;
+                $data['moneda_id'] ??= $compra->moneda_id;
+            }
+
+            if (($data['tipo_operacion'] ?? null) === Comprobante::TIPO_OPERACION_VENTA && ! empty($data['oc_recibida_id'])) {
+                $oc = OcRecibida::query()->findOrFail($data['oc_recibida_id']);
+                $data['cliente_id'] = $oc->cliente_id;
+                $data['cotizacion_id'] ??= $oc->cotizacion_id;
+            }
+
             $this->validarDuplicado($data);
 
             $items = $data['items'];

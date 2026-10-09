@@ -104,13 +104,13 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
         ->middleware('role:superadmin|logistica|admin|contabilidad');
 
     Route::get('/proveedores', [ProveedorController::class, 'index'])
-        ->middleware('role:superadmin|admin|ventas|soporte|logistica');
+        ->middleware('role:superadmin|admin|ventas|soporte|logistica|contabilidad');
 
     Route::post('/proveedores', [ProveedorController::class, 'store'])
-        ->middleware('role:superadmin|admin|ventas|soporte|logistica');
+        ->middleware('role:superadmin|admin|ventas|soporte|logistica|contabilidad');
 
     Route::put('/proveedores/{proveedor}', [ProveedorController::class, 'update'])
-        ->middleware('role:superadmin|admin|ventas|soporte|logistica');
+        ->middleware('role:superadmin|admin|ventas|soporte|logistica|contabilidad');
 });
 
 Route::prefix('productos')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
