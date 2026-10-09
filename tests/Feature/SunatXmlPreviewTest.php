@@ -94,6 +94,31 @@ test('ventas no puede previsualizar xml contable', function () {
     ])->assertForbidden();
 });
 
+test('preview reconoce ruc y moneda en variantes ubl alternativas', function () {
+    test()->seed(RoleSeeder::class);
+    config(['app.company_ruc' => '20602503331']);
+    Moneda::create(['codigo' => 'PEN', 'simbolo' => 'S/']);
+
+    $contabilidad = User::factory()->create();
+    $contabilidad->assignRole('contabilidad');
+    Sanctum::actingAs($contabilidad);
+
+    $xml = str_replace(
+        ['<cac:PartyIdentification><cbc:ID>20123456789</cbc:ID></cac:PartyIdentification>', '<cac:PartyIdentification><cbc:ID>20602503331</cbc:ID></cac:PartyIdentification>', '<cbc:DocumentCurrencyCode>PEN</cbc:DocumentCurrencyCode>'],
+        ['<cac:PartyTaxScheme><cbc:CompanyID>20123456789</cbc:CompanyID></cac:PartyTaxScheme>', '<cac:PartyTaxScheme><cbc:CompanyID>20602503331</cbc:CompanyID></cac:PartyTaxScheme>', ''],
+        xmlFacturaSunatFase9('20123456789', '20602503331')
+    );
+
+    $file = UploadedFile::fake()->createWithContent('factura.xml', $xml);
+
+    $this->postJson('/api/contabilidad/comprobantes/preview-xml', ['xml' => $file])
+        ->assertOk()
+        ->assertJsonPath('emisor_ruc', '20123456789')
+        ->assertJsonPath('receptor_ruc', '20602503331')
+        ->assertJsonPath('moneda_codigo', 'PEN')
+        ->assertJsonPath('tipo_operacion_sugerida', Comprobante::TIPO_OPERACION_COMPRA);
+});
+
 function xmlFacturaSunatFase9(string $emisorRuc, string $receptorRuc, string $moneda = 'PEN'): string
 {
     return <<<XML

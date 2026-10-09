@@ -85,8 +85,23 @@ class CuentaPorCobrarService
                     ->first();
 
                 if ($cobroExistente) {
+                    if (
+                        (int) $cobroExistente->cuenta_por_cobrar_id !== (int) $cuenta->id ||
+                        abs((float) $cobroExistente->monto - round((float) $data['monto'], 2)) > 0.00001
+                    ) {
+                        throw ValidationException::withMessages([
+                            'idempotency_key' => 'La clave de idempotencia ya fue usada para otra operación.',
+                        ]);
+                    }
+
                     return $cuenta->fresh($this->relaciones());
                 }
+            }
+
+            if (! empty($data['moneda_id']) && (int) $data['moneda_id'] !== (int) $cuenta->moneda_id) {
+                throw ValidationException::withMessages([
+                    'moneda_id' => 'La moneda del cobro debe coincidir con la moneda de la cuenta.',
+                ]);
             }
 
             $saldoActual = $this->saldoActual($cuenta);
@@ -145,6 +160,12 @@ class CuentaPorCobrarService
             $cuenta = CuentaPorCobrar::query()
                 ->lockForUpdate()
                 ->findOrFail($cuenta->id);
+
+            if ($cuenta->cobros()->where('estado', Cobro::ESTADO_REGISTRADO)->exists()) {
+                throw ValidationException::withMessages([
+                    'cuenta_por_cobrar_id' => 'Anula primero los cobros registrados antes de anular la cuenta.',
+                ]);
+            }
 
             $cuenta->estado = CuentaPorCobrar::ESTADO_ANULADA;
             $cuenta->save();

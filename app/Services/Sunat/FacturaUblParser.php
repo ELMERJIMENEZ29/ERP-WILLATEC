@@ -34,11 +34,12 @@ class FacturaUblParser
             'numero' => $numero,
             'fecha_emision' => $this->text($xpath, '/*[local-name()="Invoice" or local-name()="CreditNote" or local-name()="DebitNote"]/cbc:IssueDate'),
             'fecha_vencimiento' => $this->text($xpath, '/*[local-name()="Invoice" or local-name()="CreditNote" or local-name()="DebitNote"]/cbc:DueDate'),
-            'moneda_codigo' => $this->text($xpath, '/*[local-name()="Invoice" or local-name()="CreditNote" or local-name()="DebitNote"]/cbc:DocumentCurrencyCode'),
-            'emisor_ruc' => $this->text($xpath, '//*[local-name()="AccountingSupplierParty"]//*[local-name()="PartyIdentification"]/cbc:ID'),
+            'moneda_codigo' => $this->text($xpath, '/*[local-name()="Invoice" or local-name()="CreditNote" or local-name()="DebitNote"]/cbc:DocumentCurrencyCode')
+                ?? $this->attribute($xpath, '//*[local-name()="LegalMonetaryTotal"]/*[local-name()="PayableAmount"]', 'currencyID'),
+            'emisor_ruc' => $this->partyRuc($xpath, 'AccountingSupplierParty'),
             'emisor_nombre' => $this->text($xpath, '//*[local-name()="AccountingSupplierParty"]//*[local-name()="PartyLegalEntity"]/cbc:RegistrationName')
                 ?? $this->text($xpath, '//*[local-name()="AccountingSupplierParty"]//*[local-name()="PartyName"]/cbc:Name'),
-            'receptor_ruc' => $this->text($xpath, '//*[local-name()="AccountingCustomerParty"]//*[local-name()="PartyIdentification"]/cbc:ID'),
+            'receptor_ruc' => $this->partyRuc($xpath, 'AccountingCustomerParty'),
             'receptor_nombre' => $this->text($xpath, '//*[local-name()="AccountingCustomerParty"]//*[local-name()="PartyLegalEntity"]/cbc:RegistrationName')
                 ?? $this->text($xpath, '//*[local-name()="AccountingCustomerParty"]//*[local-name()="PartyName"]/cbc:Name'),
             'subtotal' => (float) ($this->text($xpath, '//*[local-name()="LegalMonetaryTotal"]/cbc:LineExtensionAmount') ?? 0),
@@ -85,6 +86,20 @@ class FacturaUblParser
         $node = $xpath->query($query)?->item(0);
 
         return $node ? trim($node->textContent) : null;
+    }
+
+    private function partyRuc(DOMXPath $xpath, string $party): ?string
+    {
+        return $this->text($xpath, "//*[local-name()=\"{$party}\"]//*[local-name()=\"PartyIdentification\"]/*[local-name()=\"ID\"]")
+            ?? $this->text($xpath, "//*[local-name()=\"{$party}\"]//*[local-name()=\"PartyTaxScheme\"]/*[local-name()=\"CompanyID\"]")
+            ?? $this->text($xpath, "//*[local-name()=\"{$party}\"]/*[local-name()=\"CustomerAssignedAccountID\" or local-name()=\"SupplierAssignedAccountID\"]");
+    }
+
+    private function attribute(DOMXPath $xpath, string $query, string $attribute): ?string
+    {
+        $value = trim((string) $xpath->query($query)?->item(0)?->attributes?->getNamedItem($attribute)?->nodeValue);
+
+        return $value !== '' ? $value : null;
     }
 
     private function textRelative(DOMXPath $xpath, mixed $context, string $query): ?string

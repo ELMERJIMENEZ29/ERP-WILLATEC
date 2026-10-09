@@ -301,7 +301,7 @@ Route::prefix('oc-recibidas')->middleware(['auth:sanctum', 'token.idle'])->group
     Route::get('/{ocRecibida}/atenciones', [OcAtencionController::class, 'index'])->middleware('role:superadmin|ventas|admin|contabilidad|logistica');
     Route::post('/{ocRecibida}/atenciones', [OcAtencionController::class, 'store'])->middleware('role:superadmin|admin|logistica');
     Route::get('/{ocRecibida}/requerimientos/faltantes', [RequerimientoCompraController::class, 'faltantes'])->middleware('role:superadmin|ventas|admin|contabilidad|logistica');
-    Route::post('/{ocRecibida}/requerimientos/generar', [RequerimientoCompraController::class, 'generarDesdeOc'])->middleware('role:superadmin|admin|logistica');
+    Route::post('/{ocRecibida}/requerimientos/generar', [RequerimientoCompraController::class, 'generarDesdeOc'])->middleware('role:superadmin|admin|logistica|ventas');
 });
 
 Route::prefix('oc-atenciones')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
@@ -312,8 +312,8 @@ Route::prefix('oc-atenciones')->middleware(['auth:sanctum', 'token.idle'])->grou
 
 Route::prefix('requerimientos-compra')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [RequerimientoCompraController::class, 'index'])->middleware('role:superadmin|admin|logistica|contabilidad|ventas');
-    Route::post('/', [RequerimientoCompraController::class, 'store'])->middleware('role:superadmin|admin|logistica');
-    Route::post('/sincronizar-oc-pendientes', [RequerimientoCompraController::class, 'sincronizarOcPendientes'])->middleware('role:superadmin|admin|logistica');
+    Route::post('/', [RequerimientoCompraController::class, 'store'])->middleware('role:superadmin|admin|logistica|ventas');
+    Route::post('/sincronizar-oc-pendientes', [RequerimientoCompraController::class, 'sincronizarOcPendientes'])->middleware('role:superadmin|admin|logistica|ventas');
     Route::get('/{requerimientoCompra}', [RequerimientoCompraController::class, 'show'])->middleware('role:superadmin|admin|logistica|contabilidad|ventas');
 });
 
@@ -321,37 +321,37 @@ Route::prefix('compras')->middleware(['auth:sanctum', 'token.idle'])->group(func
 
     // Lectura
     Route::get('/', [CompraController::class, 'index'])
-        ->middleware('role:superadmin|admin|logistica|contabilidad');
+        ->middleware('role:superadmin|admin|logistica|contabilidad|ventas');
 
     Route::get('/{compra}', [CompraController::class, 'show'])
-        ->middleware('role:superadmin|admin|logistica|contabilidad');
+        ->middleware('role:superadmin|admin|logistica|contabilidad|ventas');
 
     // Escritura
     Route::post('/', [CompraController::class, 'store'])
-        ->middleware('role:superadmin|admin|logistica');
+        ->middleware('role:superadmin|admin|logistica|ventas');
 
     Route::patch('/{compra}/confirmar', [CompraController::class, 'confirmar'])
-        ->middleware('role:superadmin|admin|logistica');
+        ->middleware('role:superadmin|admin|logistica|ventas');
 
     Route::patch('/{compra}/cancelar', [CompraController::class, 'cancelar'])
-        ->middleware('role:superadmin|admin|logistica');
+        ->middleware('role:superadmin|admin|logistica|ventas');
 
     Route::post('/{compra}/recepciones', [RecepcionCompraController::class, 'store'])
-        ->middleware('role:superadmin|admin|logistica');
+        ->middleware('role:superadmin|admin|logistica|ventas');
 });
 
 Route::prefix('recepciones-compra')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [RecepcionCompraController::class, 'index'])
-        ->middleware('role:superadmin|admin|logistica|contabilidad');
+        ->middleware('role:superadmin|admin|logistica|contabilidad|ventas');
 
     Route::get('/{recepcion}', [RecepcionCompraController::class, 'show'])
-        ->middleware('role:superadmin|admin|logistica|contabilidad');
+        ->middleware('role:superadmin|admin|logistica|contabilidad|ventas');
 
     Route::patch('/{recepcion}/confirmar', [RecepcionCompraController::class, 'confirmar'])
-        ->middleware('role:superadmin|admin|logistica');
+        ->middleware('role:superadmin|admin|logistica|ventas');
 
     Route::patch('/{recepcion}/cancelar', [RecepcionCompraController::class, 'cancelar'])
-        ->middleware('role:superadmin|admin|logistica');
+        ->middleware('role:superadmin|admin|logistica|ventas');
 });
 
 Route::prefix('contabilidad/comprobantes')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
@@ -378,7 +378,7 @@ Route::prefix('contabilidad/comprobantes')->middleware(['auth:sanctum', 'token.i
 });
 
 Route::get('/operaciones/alertas', [AlertaOperativaController::class, 'index'])
-    ->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin|logistica|contabilidad']);
+    ->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin|logistica|contabilidad|ventas']);
 
 Route::prefix('contabilidad/cuentas-por-pagar')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [CuentaPorPagarController::class, 'index'])

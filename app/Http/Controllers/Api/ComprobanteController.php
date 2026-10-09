@@ -28,6 +28,8 @@ class ComprobanteController extends Controller
                 'proveedor',
                 'moneda',
                 'creadoPor',
+                'cuentaPorPagar:id,comprobante_id,estado',
+                'cuentaPorCobrar:id,comprobante_id,estado',
             ])
             ->withCount('items')
             ->latest('id');
@@ -91,7 +93,10 @@ class ComprobanteController extends Controller
     public function previewXml(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'xml' => ['required', 'file', 'mimes:xml,txt', 'max:5120'],
+            'xml' => ['bail', 'required', 'file', 'min:1', 'mimes:xml,txt', 'max:5120'],
+        ], [
+            'xml.min' => 'El archivo XML está vacío. Vuelve a descargarlo o expórtalo nuevamente.',
+            'xml.mimes' => 'El archivo seleccionado no es un XML válido.',
         ]);
 
         return response()->json(

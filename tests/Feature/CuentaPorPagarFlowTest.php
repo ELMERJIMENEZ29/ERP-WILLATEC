@@ -23,7 +23,7 @@ test('genera cuenta por pagar desde comprobante de compra de forma idempotente',
     Sanctum::actingAs($base['contabilidad']);
 
     $response = $this->postJson("/api/contabilidad/comprobantes/{$base['comprobanteCompra']->id}/cuenta-por-pagar", [
-        'fecha_vencimiento' => '2026-09-13',
+        'fecha_vencimiento' => now()->addMonth()->toDateString(),
     ])
         ->assertCreated()
         ->assertJsonPath('estado', CuentaPorPagar::ESTADO_PENDIENTE)
@@ -31,7 +31,7 @@ test('genera cuenta por pagar desde comprobante de compra de forma idempotente',
         ->assertJsonPath('saldo', '118.00');
 
     $this->postJson("/api/contabilidad/comprobantes/{$base['comprobanteCompra']->id}/cuenta-por-pagar", [
-        'fecha_vencimiento' => '2026-09-13',
+        'fecha_vencimiento' => now()->addMonth()->toDateString(),
     ])
         ->assertCreated()
         ->assertJsonPath('id', $response->json('id'));
@@ -219,7 +219,7 @@ function crearBaseCuentaPorPagarFase7(): array
         'serie' => 'F001',
         'numero' => '700',
         'fecha_emision' => '2026-08-13',
-        'fecha_vencimiento' => '2026-09-13',
+        'fecha_vencimiento' => now()->addMonth()->toDateString(),
         'moneda_id' => $moneda->id,
         'subtotal' => 100,
         'igv' => 18,

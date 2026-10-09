@@ -53,6 +53,11 @@ class StoreCompraRequest extends FormRequest
                 'max:5000',
             ],
 
+            'autorizar_sobrecompra' => [
+                'sometimes',
+                'boolean',
+            ],
+
             'items' => [
                 'required',
                 'array',
@@ -116,6 +121,16 @@ class StoreCompraRequest extends FormRequest
 
                 $modalidad = $this->input('modalidad');
                 $ocEmitidaId = $this->input('oc_emitida_id');
+
+                if (
+                    $this->boolean('autorizar_sobrecompra') &&
+                    ! $this->user()?->hasAnyRole(['superadmin', 'admin'])
+                ) {
+                    $validator->errors()->add(
+                        'autorizar_sobrecompra',
+                        'Solo un administrador puede autorizar una sobrecompra.'
+                    );
+                }
 
                 if (
                     $modalidad === 'oc_proveedor' &&

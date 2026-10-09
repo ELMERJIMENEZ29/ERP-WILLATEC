@@ -172,6 +172,32 @@ test('impide sobrecompra y permite completar requerimiento con segunda compra', 
     expect($requerimiento->estado)->toBe('comprado');
 });
 
+test('solo administracion puede autorizar sobrecompra excepcional', function () {
+    $base = crearBaseCompraFase4();
+    $payload = [
+        'proveedor_id' => $base['proveedor']->id,
+        'modalidad' => 'directa',
+        'autorizar_sobrecompra' => true,
+        'items' => [[
+            'requerimiento_compra_item_id' => $base['requerimientoItem']->id,
+            'cantidad' => 12,
+        ]],
+    ];
+
+    Sanctum::actingAs($base['logistica']);
+    $this->postJson('/api/compras', $payload)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('autorizar_sobrecompra');
+
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+    Sanctum::actingAs($admin);
+
+    $this->postJson('/api/compras', $payload)
+        ->assertCreated()
+        ->assertJsonCount(2, 'items');
+});
+
 test('borradores tambien impiden comprometer mas cantidad que la requerida', function () {
     $base = crearBaseCompraFase4();
 
@@ -462,7 +488,7 @@ test('contabilidad puede consultar compras pero no crearlas', function () {
     ])->assertForbidden();
 });
 
-test('ventas no puede ingresar al modulo interno de compras', function () {
+test('ventas puede consultar y registrar compras', function () {
     $base = crearBaseCompraFase4();
 
     $ventas = User::factory()->create();
@@ -471,16 +497,16 @@ test('ventas no puede ingresar al modulo interno de compras', function () {
     Sanctum::actingAs($ventas);
 
     $this->getJson('/api/compras')
-        ->assertForbidden();
+        ->assertOk();
 
     $this->postJson('/api/compras', [
         'proveedor_id' => $base['proveedor']->id,
         'modalidad' => 'directa',
         'items' => [
             [
-                'descripcion' => 'Producto no autorizado',
+                'descripcion' => 'Producto gestionado por ventas',
                 'cantidad' => 1,
             ],
         ],
-    ])->assertForbidden();
+    ])->assertCreated();
 });

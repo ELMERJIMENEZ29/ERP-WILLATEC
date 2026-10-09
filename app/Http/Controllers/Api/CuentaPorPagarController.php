@@ -20,6 +20,18 @@ class CuentaPorPagarController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        CuentaPorPagar::query()
+            ->whereIn('estado', [CuentaPorPagar::ESTADO_PENDIENTE, CuentaPorPagar::ESTADO_VENCIDA])
+            ->where('monto_pagado', 0)
+            ->where('saldo', '>', 0)
+            ->update(['estado' => CuentaPorPagar::ESTADO_PENDIENTE]);
+
+        CuentaPorPagar::query()
+            ->where('estado', CuentaPorPagar::ESTADO_PENDIENTE)
+            ->where('saldo', '>', 0)
+            ->whereDate('fecha_vencimiento', '<', now()->toDateString())
+            ->update(['estado' => CuentaPorPagar::ESTADO_VENCIDA]);
+
         $query = CuentaPorPagar::query()
             ->with([
                 'comprobante',

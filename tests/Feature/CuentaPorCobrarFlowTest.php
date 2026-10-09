@@ -24,7 +24,7 @@ test('genera cuenta por cobrar desde comprobante de venta y sincroniza oc', func
     Sanctum::actingAs($base['contabilidad']);
 
     $response = $this->postJson("/api/contabilidad/comprobantes/{$base['comprobanteVenta']->id}/cuenta-por-cobrar", [
-        'fecha_vencimiento' => '2026-09-13',
+        'fecha_vencimiento' => now()->addMonth()->toDateString(),
     ])
         ->assertCreated()
         ->assertJsonPath('estado', CuentaPorCobrar::ESTADO_PENDIENTE)
@@ -32,7 +32,7 @@ test('genera cuenta por cobrar desde comprobante de venta y sincroniza oc', func
         ->assertJsonPath('saldo', '236.00');
 
     $this->postJson("/api/contabilidad/comprobantes/{$base['comprobanteVenta']->id}/cuenta-por-cobrar", [
-        'fecha_vencimiento' => '2026-09-13',
+        'fecha_vencimiento' => now()->addMonth()->toDateString(),
     ])
         ->assertCreated()
         ->assertJsonPath('id', $response->json('id'));

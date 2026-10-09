@@ -98,6 +98,12 @@ class CompraService
                     ? max(0, $cantidadSolicitada - $cantidadVinculada)
                     : 0;
 
+                if ($cantidadExtra > 0 && ! ($data['autorizar_sobrecompra'] ?? false)) {
+                    throw ValidationException::withMessages([
+                        'cantidad' => 'La cantidad supera el saldo requerido. Solicita autorización de sobrecompra.',
+                    ]);
+                }
+
                 if ($cantidadVinculada > 0) {
                     CompraItem::create([
                         'compra_id' => $compra->id,
@@ -353,7 +359,30 @@ class CompraService
         }
 
         if (! $compraItem->producto_externo_id) {
-            return 0;
+            $producto = Producto::create([
+                'nombre' => $compraItem->descripcion,
+                'sku' => $this->generarSkuProductoInterno(null),
+                'descripcion' => $compraItem->descripcion,
+                'tipo_producto' => 'stock',
+                'controla_stock' => true,
+                'stock_actual' => 0,
+                'stock_reservado' => 0,
+                'stock_disponible' => 0,
+                'stock_minimo' => 0,
+                'stock' => 0,
+                'costo_unitario' => $compraItem->costo_unitario_estimado ?? 0,
+                'costo_promedio' => $compraItem->costo_unitario_estimado ?? 0,
+                'valor_stock' => 0,
+                'precio_venta' => 0,
+                'moneda_id' => $compraItem->moneda_id ?? $compra->moneda_id,
+                'activo' => true,
+                'estado' => 'NUEVO',
+            ]);
+
+            $compraItem->producto_id = $producto->id;
+            $compraItem->save();
+
+            return (int) $producto->id;
         }
 
         $externo = ProductoExterno::query()

@@ -149,7 +149,7 @@ test('recepcion con series crea series disponibles y evita duplicados', function
     ])->assertUnprocessable();
 });
 
-test('contabilidad solo consulta recepciones y ventas no accede', function () {
+test('contabilidad solo consulta recepciones y ventas puede acceder', function () {
     $base = crearBaseRecepcionCompra();
 
     $contabilidad = User::factory()->create();
@@ -169,7 +169,7 @@ test('contabilidad solo consulta recepciones y ventas no accede', function () {
     $ventas->assignRole('ventas');
     Sanctum::actingAs($ventas);
 
-    $this->getJson('/api/recepciones-compra')->assertForbidden();
+    $this->getJson('/api/recepciones-compra')->assertOk();
 });
 
 test('recepcion de compra externa crea producto interno y enlaza el externo', function () {

@@ -8,6 +8,11 @@ use Illuminate\Validation\ValidationException;
 
 class ComprobanteService
 {
+    public function __construct(
+        private readonly CuentaPorPagarService $cuentaPorPagarService,
+        private readonly CuentaPorCobrarService $cuentaPorCobrarService
+    ) {}
+
     public function crear(array $data, ?int $userId = null): Comprobante
     {
         return DB::transaction(function () use ($data, $userId) {
@@ -58,6 +63,28 @@ class ComprobanteService
                 return $comprobante->fresh($this->relaciones());
             }
 
+            $comprobante->loadMissing(['cuentaPorPagar.pagos', 'cuentaPorCobrar.cobros']);
+
+            if ($comprobante->cuentaPorPagar?->pagos()->where('estado', 'registrado')->exists()) {
+                throw ValidationException::withMessages([
+                    'comprobante' => 'Anula primero los pagos registrados de la cuenta por pagar.',
+                ]);
+            }
+
+            if ($comprobante->cuentaPorCobrar?->cobros()->where('estado', 'registrado')->exists()) {
+                throw ValidationException::withMessages([
+                    'comprobante' => 'Anula primero los cobros registrados de la cuenta por cobrar.',
+                ]);
+            }
+
+            if ($comprobante->cuentaPorPagar) {
+                $this->cuentaPorPagarService->anularCuenta($comprobante->cuentaPorPagar);
+            }
+
+            if ($comprobante->cuentaPorCobrar) {
+                $this->cuentaPorCobrarService->anularCuenta($comprobante->cuentaPorCobrar);
+            }
+
             $comprobante->estado = Comprobante::ESTADO_ANULADO;
             $comprobante->save();
 
@@ -78,6 +105,8 @@ class ComprobanteService
             'items.compraItem',
             'items.cotizacionItem',
             'items.producto',
+            'cuentaPorPagar:id,comprobante_id,estado',
+            'cuentaPorCobrar:id,comprobante_id,estado',
         ];
     }
 
