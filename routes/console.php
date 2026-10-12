@@ -18,6 +18,11 @@ Schedule::command('hostings:enviar-alertas')
     ->timezone('America/Lima')
     ->withoutOverlapping();
 
+Schedule::command('oportunidades:enviar-alertas')
+    ->everyFiveMinutes()
+    ->timezone('America/Lima')
+    ->withoutOverlapping();
+
 Schedule::command('servicios:procesar-renovaciones')
     ->dailyAt('00:10')
     ->timezone('America/Lima')

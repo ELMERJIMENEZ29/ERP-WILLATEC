@@ -26,6 +26,7 @@ use App\Models\User;
 use App\Notifications\CotizacionAprobadaNotification;
 use App\Notifications\CotizacionEnviadaRevisionNotification;
 use App\Notifications\CotizacionModificacionAprobadaNotification;
+use App\Notifications\CotizacionModificacionAutoaprobadaNotification;
 use App\Notifications\CotizacionModificacionEnRevisionNotification;
 use App\Notifications\CotizacionModificacionRechazadaNotification;
 use App\Notifications\CotizacionModificacionSolicitadaNotification;
@@ -37,8 +38,8 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class CotizacionController extends Controller
 {
@@ -1154,6 +1155,47 @@ class CotizacionController extends Controller
             'comentario_reenvio_revision' => 'nullable|string|max:1000',
         ]);
 
+        $modificacion->loadMissing('cotizacion');
+
+        if (! $this->modificacionTocaMontos($modificacion->cotizacion, $modificacion->propuesta ?? [])) {
+            $version = null;
+
+            DB::transaction(function () use ($request, $modificacion, &$version) {
+                $version = $this->aprobarModificacionInternamente(
+                    $request,
+                    $modificacion,
+                    'Aprobacion automatica: la modificacion no altera montos.'
+                );
+            });
+
+            $modificacion->refresh()->load(['cotizacion', 'solicitante']);
+
+            if ($modificacion->solicitante) {
+                $modificacion->solicitante->notify(new CotizacionModificacionAprobadaNotification($modificacion, $request->user()));
+            }
+
+            //Informar a los superadministradores de la autoaprobacion
+            $this->notifySuperadmins(new CotizacionModificacionAutoaprobadaNotification($modificacion, $modificacion->solicitante ?? $request->user()));
+
+            $this->notifyLicitacionUsersIfLinked($modificacion->cotizacion->refresh()->load('estadoCotizacion'));
+
+            return response()->json([
+                'message' => 'Modificacion aprobada automaticamente porque no altera montos',
+                'version' => $version,
+                'modificacion' => $modificacion->refresh()->load(['cotizacion', 'solicitante']),
+                'cotizacion' => $modificacion->cotizacion->refresh()->load([
+                    'items.proveedores',
+                    'items.destinosEntrega',
+                    'costosAdicionales',
+                    'cliente',
+                    'estadoCotizacion',
+                    'user',
+                    'delegado',
+                    'delegadoCotizacion',
+                ]),
+            ]);
+        }
+
         $modificacion->update([
             'estado' => CotizacionModificacion::ESTADO_EN_REVISION,
             'comentario_reenvio_revision' => $request->filled('comentario_reenvio_revision')
@@ -1182,39 +1224,11 @@ class CotizacionController extends Controller
         $version = null;
 
         DB::transaction(function () use ($request, $modificacion, &$version) {
-            $cotizacion = $modificacion->cotizacion()->lockForUpdate()->firstOrFail();
-            $this->ensureCotizacionIsApproved($cotizacion);
-            $this->ensureCotizacionVersionSnapshot(
-                $cotizacion,
-                $modificacion->requested_by,
-                'Version original antes de aprobar modificacion.'
+            $version = $this->aprobarModificacionInternamente(
+                $request,
+                $modificacion,
+                $request->input('comentario_revision')
             );
-            $nextVersionNumber = ($this->latestCotizacionVersion($cotizacion)?->version_number ?? 1) + 1;
-
-            $this->applyCotizacionProposalPayload($request, $cotizacion, $modificacion->propuesta);
-
-            $cotizacion->update([
-                'estado_cotizacion_id' => $this->estadoCotizacionId('aprobada'),
-            ]);
-
-            $version = CotizacionVersion::create([
-                'cotizacion_id' => $cotizacion->id,
-                'version_number' => $nextVersionNumber,
-                'numero_version' => $this->numeroVersion($cotizacion, $nextVersionNumber),
-                'snapshot' => $this->buildCotizacionSnapshot($cotizacion->refresh()),
-                'created_by' => $modificacion->requested_by,
-                'approved_by' => $request->user()->id,
-                'approved_at' => now(),
-                'notas' => $modificacion->motivo,
-            ]);
-
-            $modificacion->update([
-                'estado' => CotizacionModificacion::ESTADO_APROBADA,
-                'version_number' => $nextVersionNumber,
-                'reviewed_by' => $request->user()->id,
-                'comentario_revision' => $request->input('comentario_revision'),
-                'reviewed_at' => now(),
-            ]);
         });
 
         $modificacion->refresh()->load(['cotizacion', 'solicitante']);
@@ -1274,6 +1288,48 @@ class CotizacionController extends Controller
             'message' => 'Modificacion rechazada; se conserva la version aprobada vigente',
             'modificacion' => $modificacion,
         ]);
+    }
+
+    private function aprobarModificacionInternamente(
+        Request $request,
+        CotizacionModificacion $modificacion,
+        ?string $comentarioRevision = null
+    ): CotizacionVersion {
+        $cotizacion = $modificacion->cotizacion()->lockForUpdate()->firstOrFail();
+        $this->ensureCotizacionIsApproved($cotizacion);
+        $this->ensureCotizacionVersionSnapshot(
+            $cotizacion,
+            $modificacion->requested_by,
+            'Version original antes de aprobar modificacion.'
+        );
+        $nextVersionNumber = ($this->latestCotizacionVersion($cotizacion)?->version_number ?? 1) + 1;
+
+        $this->applyCotizacionProposalPayload($request, $cotizacion, $modificacion->propuesta);
+
+        $cotizacion->update([
+            'estado_cotizacion_id' => $this->estadoCotizacionId('aprobada'),
+        ]);
+
+        $version = CotizacionVersion::create([
+            'cotizacion_id' => $cotizacion->id,
+            'version_number' => $nextVersionNumber,
+            'numero_version' => $this->numeroVersion($cotizacion, $nextVersionNumber),
+            'snapshot' => $this->buildCotizacionSnapshot($cotizacion->refresh()),
+            'created_by' => $modificacion->requested_by,
+            'approved_by' => $request->user()->id,
+            'approved_at' => now(),
+            'notas' => $modificacion->motivo,
+        ]);
+
+        $modificacion->update([
+            'estado' => CotizacionModificacion::ESTADO_APROBADA,
+            'version_number' => $nextVersionNumber,
+            'reviewed_by' => $request->user()->id,
+            'comentario_revision' => $comentarioRevision,
+            'reviewed_at' => now(),
+        ]);
+
+        return $version;
     }
 
     public function exportarPdf(Request $request, Cotizacion $cotizacion)
@@ -2018,6 +2074,152 @@ class CotizacionController extends Controller
             'items' => $snapshot['items'],
             'costos' => $snapshot['costos'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function modificacionTocaMontos(Cotizacion $cotizacion, array $payload): bool
+    {
+        if (empty($payload['items']) || ! is_array($payload['items'])) {
+            return true;
+        }
+
+        $snapshot = $this->buildCotizacionSnapshot($cotizacion);
+
+        return $this->firmaMonetariaCotizacion($snapshot['cotizacion'], $snapshot['items'], $snapshot['costos'])
+            !== $this->firmaMonetariaCotizacion($payload, $payload['items'], $payload['costos'] ?? []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $header
+     * @param  array<int, array<string, mixed>>  $items
+     * @param  array<int, array<string, mixed>>  $costos
+     * @return array<string, mixed>
+     */
+    private function firmaMonetariaCotizacion(array $header, array $items, array $costos): array
+    {
+        return [
+            'header' => [
+                'plantilla_id' => $this->normalizarEnteroFirma($header['plantilla_id'] ?? null),
+                'moneda_id' => $this->normalizarEnteroFirma($header['moneda_id'] ?? null),
+                'modo_distribucion' => $header['modo_distribucion'] ?? null,
+                'adelanto' => (bool) ($header['adelanto'] ?? false),
+                'adelanto_porcentaje' => $this->normalizarNumeroFirma($header['adelanto_porcentaje'] ?? null),
+                'entrega_provincia' => (bool) ($header['entrega_provincia'] ?? false),
+                'entrega_destino' => $this->normalizarTextoFirma($header['entrega_destino'] ?? null),
+                'entrega_multidestino' => (bool) ($header['entrega_multidestino'] ?? false),
+            ],
+            'items' => $this->firmasMonetariasItems($items),
+            'costos' => $this->firmasMonetariasCostos($costos),
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function firmasMonetariasItems(array $items): array
+    {
+        $firmas = array_map(function (array $item): array {
+            $proveedores = array_map(fn (array $proveedor): array => [
+                'nombre' => $this->normalizarTextoFirma($proveedor['nombre'] ?? null),
+                'precio' => $this->normalizarNumeroFirma($proveedor['precio'] ?? null),
+            ], $item['proveedores'] ?? []);
+
+            usort($proveedores, fn (array $a, array $b): int => json_encode($a) <=> json_encode($b));
+
+            $destinos = array_map(fn (array $destino): array => [
+                'destino_entrega' => $this->normalizarTextoFirma($destino['destino_entrega'] ?? null),
+                'cantidad' => $this->normalizarNumeroFirma($destino['cantidad'] ?? null),
+                'margen' => $this->normalizarNumeroFirma($destino['margen'] ?? null),
+            ], $item['destinos_entrega'] ?? []);
+
+            usort($destinos, fn (array $a, array $b): int => json_encode($a) <=> json_encode($b));
+
+            return [
+                'cantidad' => $this->normalizarNumeroFirma($item['cantidad'] ?? null),
+                'aplica_costos_adicionales' => (bool) ($item['aplica_costos_adicionales'] ?? true),
+                'destino_entrega' => $this->normalizarTextoFirma($item['destino_entrega'] ?? null),
+                'costo_base' => $this->normalizarNumeroFirma($item['costo_base'] ?? null),
+                'margen' => $this->normalizarNumeroFirma($item['margen'] ?? null),
+                'garantia_meses' => $this->normalizarEnteroFirma($item['garantia_meses'] ?? null),
+                'producto_id' => $this->normalizarEnteroFirma($item['producto_id'] ?? null),
+                'producto_externo_id' => $this->normalizarEnteroFirma($item['producto_externo_id'] ?? null),
+                'importacion_calculo' => $this->normalizarValorFirma($item['importacion_calculo'] ?? null),
+                'proveedores' => $proveedores,
+                'destinos_entrega' => $destinos,
+            ];
+        }, $items);
+
+        usort($firmas, fn (array $a, array $b): int => json_encode($a) <=> json_encode($b));
+
+        return $firmas;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $costos
+     * @return array<int, array<string, mixed>>
+     */
+    private function firmasMonetariasCostos(array $costos): array
+    {
+        $firmas = array_map(fn (array $costo): array => [
+            'tipo' => $this->normalizarTextoFirma($costo['tipo'] ?? null),
+            'destino_entrega' => $this->normalizarTextoFirma($costo['destino_entrega'] ?? null),
+            'monto' => $this->normalizarNumeroFirma($costo['monto'] ?? null),
+        ], $costos);
+
+        usort($firmas, fn (array $a, array $b): int => json_encode($a) <=> json_encode($b));
+
+        return $firmas;
+    }
+
+    private function normalizarNumeroFirma(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return number_format((float) $value, 4, '.', '');
+    }
+
+    private function normalizarEnteroFirma(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    private function normalizarTextoFirma(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $text = trim(mb_strtolower((string) $value));
+
+        return $text === '' ? null : $text;
+    }
+
+    private function normalizarValorFirma(mixed $value): mixed
+    {
+        if (is_array($value)) {
+            ksort($value);
+
+            return array_map(fn (mixed $item): mixed => $this->normalizarValorFirma($item), $value);
+        }
+
+        if (is_numeric($value)) {
+            return $this->normalizarNumeroFirma($value);
+        }
+
+        if (is_string($value)) {
+            return $this->normalizarTextoFirma($value);
+        }
+
+        return $value;
     }
 
     /**

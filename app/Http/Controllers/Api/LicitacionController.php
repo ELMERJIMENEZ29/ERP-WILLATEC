@@ -18,6 +18,7 @@ use App\Notifications\OportunidadAtendidaNotification;
 use App\Notifications\OportunidadComentarioNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -129,6 +130,16 @@ class LicitacionController extends Controller
     public function showArchivo(LicitacionArchivo $archivo)
     {
         return response()->json($this->serializeArchivo($archivo));
+    }
+
+    public function procesarAlertasVencimiento()
+    {
+        $exitCode = Artisan::call('oportunidades:enviar-alertas');
+
+        return response()->json([
+            'ok' => $exitCode === 0,
+            'output' => trim(Artisan::output()),
+        ]);
     }
 
     public function update(Request $request, Licitacion $licitacion)

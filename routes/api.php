@@ -146,6 +146,7 @@ Route::prefix('licitaciones')
         Route::post('/', [LicitacionController::class, 'store']);
         Route::get('/por-cotizacion/{cotizacion}', [LicitacionController::class, 'showByCotizacion']);
         Route::get('/archivos/{archivo}', [LicitacionController::class, 'showArchivo']);
+        Route::post('/alertas-vencimiento/procesar', [LicitacionController::class, 'procesarAlertasVencimiento']);
         Route::get('/{licitacion}', [LicitacionController::class, 'show']);
         Route::post('/{licitacion}/registrar-vista', [LicitacionController::class, 'registrarVista']);
         Route::put('/{licitacion}', [LicitacionController::class, 'update']);
