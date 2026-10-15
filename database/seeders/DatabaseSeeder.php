@@ -35,6 +35,7 @@ class DatabaseSeeder extends Seeder
             ConsolidateRolePermissionsV5Seeder::class,
             ConsolidateRolePermissionsV6Seeder::class,
             ConsolidateRolePermissionsV7Seeder::class,
+            ConsolidateRolePermissionsV8Seeder::class,
             EstadoCotizacionItemSeeder::class,
             PlataformaSeeder::class,
             MonedaSeeder::class,

@@ -1346,7 +1346,11 @@ class CotizacionController extends Controller
             'estadoCotizacion',
         ])->findOrFail($cotizacion->id);
 
-        if ($request->boolean('desde_oportunidad')) {
+        $user = $request->user();
+        $soloPdfDesdeOportunidad = $user?->can('licitaciones.cotizaciones_pdf')
+            || ($user?->can('licitaciones') && ! $user?->can('cotizaciones.exportar'));
+
+        if ($request->boolean('desde_oportunidad') || $soloPdfDesdeOportunidad) {
             $this->ensureCanExportPdfFromOpportunity($cotizacion);
         }
 

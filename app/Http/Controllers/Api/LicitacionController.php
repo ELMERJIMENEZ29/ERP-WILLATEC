@@ -754,7 +754,13 @@ class LicitacionController extends Controller
      */
     private function serializeCotizacion(LicitacionCotizacion $cotizacion): array
     {
-        $modificacionPendiente = $cotizacion->cotizacion?->modificaciones?->first();
+        $modificacionPendiente = $cotizacion->cotizacion?->modificaciones()
+            ->whereIn('estado', [
+                CotizacionModificacion::ESTADO_BORRADOR,
+                CotizacionModificacion::ESTADO_EN_REVISION,
+            ])
+            ->latest('id')
+            ->first();
         $estadoReal = $cotizacion->cotizacion?->estadoCotizacion?->nombre ?? $cotizacion->estado;
         $estaAprobada = mb_strtolower((string) $estadoReal) === 'aprobada';
         $puedeDescargarPdf = $estaAprobada && ! $modificacionPendiente;
