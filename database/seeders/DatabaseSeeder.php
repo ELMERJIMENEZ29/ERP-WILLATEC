@@ -28,6 +28,13 @@ class DatabaseSeeder extends Seeder
         $this->call([
             EstadoCotizacionSeeder::class,
             RoleSeeder::class,
+            ConsolidateRolePermissionsSeeder::class,
+            ConsolidateRolePermissionsV2Seeder::class,
+            ConsolidateRolePermissionsV3Seeder::class,
+            ConsolidateRolePermissionsV4Seeder::class,
+            ConsolidateRolePermissionsV5Seeder::class,
+            ConsolidateRolePermissionsV6Seeder::class,
+            ConsolidateRolePermissionsV7Seeder::class,
             EstadoCotizacionItemSeeder::class,
             PlataformaSeeder::class,
             MonedaSeeder::class,

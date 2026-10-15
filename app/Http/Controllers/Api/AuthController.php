@@ -99,7 +99,7 @@ class AuthController extends Controller
         $token = $user->createToken('api-token')->plainTextToken;
 
         return $this->safeJson([
-            'user' => $user->load('profile', 'roles'),
+            'user' => $user->load('profile', 'roles.permissions'),
             'token' => $token,
             'requires_password_change' => $user->requires_password_change,
             'two_factor_enabled' => ! is_null($user->two_factor_confirmed_at),
@@ -338,7 +338,7 @@ class AuthController extends Controller
 
         return $this->safeJson([
             'message' => 'Contraseña cambiada correctamente',
-            'user' => $user->load('profile', 'roles'),
+            'user' => $user->load('profile', 'roles.permissions'),
             'token' => $token,
         ]);
     }
@@ -365,7 +365,7 @@ class AuthController extends Controller
     public function user(Request $request)
     {
         return $this->safeJson([
-            'user' => $request->user()->load('profile', 'roles'),
+            'user' => $request->user()->load('profile', 'roles.permissions'),
         ]);
     }
 
