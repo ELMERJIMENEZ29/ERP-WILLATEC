@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\ProductoExternoController;
 use App\Http\Controllers\Api\ProductoSkuController;
 use App\Http\Controllers\Api\ProveedorController;
 use App\Http\Controllers\Api\RequerimientoCompraController;
+use App\Http\Controllers\Api\SnakeScoreController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WooCommercePedidoController;
@@ -154,6 +155,8 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::delete('/two-factor/disable', [TwoFactorController::class, 'disable']);
 
     Route::get('/erp/refresh', [AuthController::class, 'refresh'])->middleware('throttle:30,1');
+    Route::get('/snake/scores', [SnakeScoreController::class, 'index']);
+    Route::post('/snake/scores', [SnakeScoreController::class, 'store'])->middleware('throttle:30,1');
     Route::get('/user', [AuthController::class, 'user']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/password/change', [AuthController::class, 'changePassword']);

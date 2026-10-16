@@ -344,6 +344,7 @@ class CotizacionController extends Controller
             'adelanto' => 'sometimes|boolean',
             'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'cuota_mensual' => 'sometimes|boolean',
+            'cuota_mensual_meses' => 'nullable|integer|min:1|max:120',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
@@ -373,6 +374,7 @@ class CotizacionController extends Controller
                 ? $request->input('adelanto_porcentaje')
                 : null,
             'cuota_mensual' => $request->boolean('cuota_mensual'),
+            'cuota_mensual_meses' => $request->boolean('cuota_mensual') ? ($request->integer('cuota_mensual_meses') ?: 12) : null,
             'entrega_provincia' => $request->boolean('entrega_provincia'),
             'entrega_destino' => $request->boolean('entrega_provincia')
                 ? $request->input('entrega_destino')
@@ -424,6 +426,7 @@ class CotizacionController extends Controller
             'adelanto' => 'sometimes|boolean',
             'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'cuota_mensual' => 'sometimes|boolean',
+            'cuota_mensual_meses' => 'nullable|integer|min:1|max:120',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
@@ -481,6 +484,7 @@ class CotizacionController extends Controller
                     ? $request->input('adelanto_porcentaje')
                     : null,
                 'cuota_mensual' => $request->boolean('cuota_mensual'),
+                'cuota_mensual_meses' => $request->boolean('cuota_mensual') ? ($request->integer('cuota_mensual_meses') ?: 12) : null,
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
@@ -1070,6 +1074,7 @@ class CotizacionController extends Controller
 
         $request->validate([
             'motivo' => 'required|string|max:1000',
+            'version_id' => 'required|integer|exists:cotizacion_versiones,id',
         ]);
 
         $modificacion = null;
@@ -1080,6 +1085,14 @@ class CotizacionController extends Controller
                 $request->user()->id,
                 'Version original antes de solicitud de modificacion.'
             );
+            $versionSeleccionada = $cotizacion->versiones()
+                ->whereKey($request->integer('version_id'))
+                ->first();
+
+            if (! $versionSeleccionada) {
+                abort(422, 'La version seleccionada no pertenece a esta cotizacion.');
+            }
+
             $versionVigente = $this->latestCotizacionVersion($cotizacion) ?? $versionOriginal;
 
             $pendiente = $cotizacion->modificaciones()
@@ -1100,7 +1113,7 @@ class CotizacionController extends Controller
                 'version_number' => $versionVigente->version_number + 1,
                 'estado' => CotizacionModificacion::ESTADO_BORRADOR,
                 'motivo' => $request->string('motivo')->toString(),
-                'propuesta' => $this->buildCotizacionEditablePayload($cotizacion),
+                'propuesta' => $this->buildCotizacionEditablePayloadFromSnapshot($versionSeleccionada->snapshot),
                 'requested_by' => $request->user()->id,
             ]);
         });
@@ -1492,6 +1505,7 @@ class CotizacionController extends Controller
             'adelanto' => 'sometimes|boolean',
             'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'cuota_mensual' => 'sometimes|boolean',
+            'cuota_mensual_meses' => 'nullable|integer|min:1|max:120',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
@@ -1560,6 +1574,7 @@ class CotizacionController extends Controller
                     ? $request->input('adelanto_porcentaje')
                     : null,
                 'cuota_mensual' => $request->boolean('cuota_mensual'),
+                'cuota_mensual_meses' => $request->boolean('cuota_mensual') ? ($request->integer('cuota_mensual_meses') ?: 12) : null,
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
@@ -1925,6 +1940,9 @@ class CotizacionController extends Controller
             ? ($data['adelanto_porcentaje'] ?? null)
             : null;
         $data['cuota_mensual'] = (bool) ($data['cuota_mensual'] ?? false);
+        $data['cuota_mensual_meses'] = $data['cuota_mensual']
+            ? max(1, min((int) ($data['cuota_mensual_meses'] ?? 12), 120))
+            : null;
         $data['entrega_destino'] = $data['entrega_provincia']
             ? ($data['entrega_destino'] ?? null)
             : null;
@@ -1970,6 +1988,7 @@ class CotizacionController extends Controller
                 'adelanto',
                 'adelanto_porcentaje',
                 'cuota_mensual',
+                'cuota_mensual_meses',
                 'entrega_provincia',
                 'entrega_destino',
                 'entrega_multidestino',
@@ -2075,6 +2094,15 @@ class CotizacionController extends Controller
     private function buildCotizacionEditablePayload(Cotizacion $cotizacion): array
     {
         $snapshot = $this->buildCotizacionSnapshot($cotizacion);
+        return $this->buildCotizacionEditablePayloadFromSnapshot($snapshot);
+    }
+
+    /**
+     * @param  array<string, mixed>  $snapshot
+     * @return array<string, mixed>
+     */
+    private function buildCotizacionEditablePayloadFromSnapshot(array $snapshot): array
+    {
         $header = $snapshot['cotizacion'];
 
         return [
@@ -2288,6 +2316,7 @@ class CotizacionController extends Controller
                 ? ($payload['adelanto_porcentaje'] ?? null)
                 : null,
             'cuota_mensual' => (bool) ($payload['cuota_mensual'] ?? false),
+            'cuota_mensual_meses' => ! empty($payload['cuota_mensual']) ? max(1, min((int) ($payload['cuota_mensual_meses'] ?? 12), 120)) : null,
             'entrega_provincia' => (bool) ($payload['entrega_provincia'] ?? false),
             'entrega_destino' => ! empty($payload['entrega_provincia'])
                 ? ($payload['entrega_destino'] ?? null)
@@ -2383,6 +2412,7 @@ class CotizacionController extends Controller
             'adelanto' => 'sometimes|boolean',
             'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
             'cuota_mensual' => 'sometimes|boolean',
+            'cuota_mensual_meses' => 'nullable|integer|min:1|max:120',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
