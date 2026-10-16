@@ -625,7 +625,19 @@ class LicitacionController extends Controller
         ];
 
         if ($lite) {
-            return $relations;
+            return [
+                ...$relations,
+                'cotizaciones' => fn ($query) => $query
+                    ->with(['cotizacion.modificaciones' => fn ($modificacionQuery) => $modificacionQuery
+                        ->whereIn('estado', [
+                            CotizacionModificacion::ESTADO_BORRADOR,
+                            CotizacionModificacion::ESTADO_EN_REVISION,
+                        ])
+                        ->latest('submitted_at')
+                        ->latest('id'), 'cotizacion.estadoCotizacion'])
+                    ->latest('creado_en')
+                    ->latest('id'),
+            ];
         }
 
         return [
@@ -701,7 +713,7 @@ class LicitacionController extends Controller
             'comentarios' => $withDetails ? $licitacion->comentarios->map(fn (LicitacionComentario $comentario) => $this->serializeComentario($comentario))->values() : [],
             'archivos' => $withDetails ? $archivos : [],
             'historial' => $withDetails ? $licitacion->historial->map(fn (LicitacionHistorial $historial) => $this->serializeHistorial($historial))->values() : [],
-            'cotizaciones' => $withDetails ? $licitacion->cotizaciones->map(fn (LicitacionCotizacion $cotizacion) => $this->serializeCotizacion($cotizacion))->values() : [],
+            'cotizaciones' => $licitacion->cotizaciones->map(fn (LicitacionCotizacion $cotizacion) => $this->serializeCotizacion($cotizacion))->values(),
         ];
     }
 

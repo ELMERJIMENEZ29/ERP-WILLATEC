@@ -443,7 +443,7 @@ class AuthController extends Controller
             return $this->safeJson(['message' => 'Token temporal expirado'], 422);
         }
 
-        $user = User::with('profile', 'roles')->findOrFail($userId);
+        $user = User::with('profile', 'roles.permissions')->findOrFail($userId);
 
         $valid = false;
 

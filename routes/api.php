@@ -182,6 +182,63 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
         ]);
     })->middleware('permission:superadmin');
 
+    Route::post('/roles', function () {
+        $data = request()->validate([
+            'name' => ['required', 'string', 'max:80', 'regex:/^[a-z0-9][a-z0-9_-]*$/', 'unique:roles,name'],
+        ]);
+
+        $role = Role::create([
+            'name' => strtolower($data['name']),
+            'guard_name' => 'web',
+        ]);
+
+        return response()->json([
+            'role' => [
+                'id' => $role->id,
+                'name' => $role->name,
+                'permissions' => [],
+            ],
+        ], 201);
+    })->middleware('permission:superadmin');
+
+    Route::patch('/roles/{role}', function (Role $role) {
+        if (strtoupper($role->name) === 'SUPERADMIN') {
+            abort(422, 'El rol superadmin esta protegido.');
+        }
+
+        $data = request()->validate([
+            'name' => [
+                'required', 'string', 'max:80', 'regex:/^[a-z0-9][a-z0-9_-]*$/',
+                Rule::unique('roles', 'name')->ignore($role->id),
+            ],
+        ]);
+
+        $role->update(['name' => strtolower($data['name'])]);
+
+        return response()->json([
+            'role' => [
+                'id' => $role->id,
+                'name' => $role->name,
+                'permissions' => $role->fresh('permissions:id,name')->permissions->pluck('name')->values(),
+            ],
+        ]);
+    })->middleware('permission:superadmin');
+
+    Route::delete('/roles/{role}', function (Role $role) {
+        if (strtoupper($role->name) === 'SUPERADMIN') {
+            abort(422, 'El rol superadmin esta protegido.');
+        }
+
+        if ($role->users()->exists()) {
+            abort(422, 'No se puede eliminar un rol que tiene usuarios asignados.');
+        }
+
+        $role->delete();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        return response()->json(['message' => 'Rol eliminado correctamente.']);
+    })->middleware('permission:superadmin');
+
     Route::put('/roles/{role}/permissions', function (Role $role) {
         ensureRolePermissionsCatalog();
 
