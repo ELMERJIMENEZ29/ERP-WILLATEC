@@ -374,7 +374,7 @@ class CotizacionController extends Controller
                 ? $request->input('adelanto_porcentaje')
                 : null,
             'cuota_mensual' => $request->boolean('cuota_mensual'),
-            'cuota_mensual_meses' => $request->boolean('cuota_mensual') ? ($request->integer('cuota_mensual_meses') ?: 12) : null,
+            'cuota_mensual_meses' => max(1, min($request->integer('cuota_mensual_meses') ?: 12, 120)),
             'entrega_provincia' => $request->boolean('entrega_provincia'),
             'entrega_destino' => $request->boolean('entrega_provincia')
                 ? $request->input('entrega_destino')
@@ -484,7 +484,7 @@ class CotizacionController extends Controller
                     ? $request->input('adelanto_porcentaje')
                     : null,
                 'cuota_mensual' => $request->boolean('cuota_mensual'),
-                'cuota_mensual_meses' => $request->boolean('cuota_mensual') ? ($request->integer('cuota_mensual_meses') ?: 12) : null,
+                'cuota_mensual_meses' => max(1, min($request->integer('cuota_mensual_meses') ?: 12, 120)),
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
@@ -1574,7 +1574,7 @@ class CotizacionController extends Controller
                     ? $request->input('adelanto_porcentaje')
                     : null,
                 'cuota_mensual' => $request->boolean('cuota_mensual'),
-                'cuota_mensual_meses' => $request->boolean('cuota_mensual') ? ($request->integer('cuota_mensual_meses') ?: 12) : null,
+                'cuota_mensual_meses' => max(1, min($request->integer('cuota_mensual_meses') ?: 12, 120)),
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
@@ -1940,9 +1940,10 @@ class CotizacionController extends Controller
             ? ($data['adelanto_porcentaje'] ?? null)
             : null;
         $data['cuota_mensual'] = (bool) ($data['cuota_mensual'] ?? false);
-        $data['cuota_mensual_meses'] = $data['cuota_mensual']
-            ? max(1, min((int) ($data['cuota_mensual_meses'] ?? 12), 120))
-            : null;
+        $data['cuota_mensual_meses'] = max(
+            1,
+            min((int) ($data['cuota_mensual_meses'] ?? 12), 120),
+        );
         $data['entrega_destino'] = $data['entrega_provincia']
             ? ($data['entrega_destino'] ?? null)
             : null;
@@ -2316,7 +2317,7 @@ class CotizacionController extends Controller
                 ? ($payload['adelanto_porcentaje'] ?? null)
                 : null,
             'cuota_mensual' => (bool) ($payload['cuota_mensual'] ?? false),
-            'cuota_mensual_meses' => ! empty($payload['cuota_mensual']) ? max(1, min((int) ($payload['cuota_mensual_meses'] ?? 12), 120)) : null,
+            'cuota_mensual_meses' => max(1, min((int) ($payload['cuota_mensual_meses'] ?? 12), 120)),
             'entrega_provincia' => (bool) ($payload['entrega_provincia'] ?? false),
             'entrega_destino' => ! empty($payload['entrega_provincia'])
                 ? ($payload['entrega_destino'] ?? null)
