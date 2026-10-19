@@ -561,6 +561,39 @@ class CotizacionController extends Controller
         ]);
     }
 
+    public function cancelarRevision(Request $request, Cotizacion $cotizacion)
+    {
+        $this->ensureCanEditCotizacion($request, $cotizacion);
+
+        if ((int) $cotizacion->estado_cotizacion_id !== (int) $this->estadoCotizacionId('enviada')) {
+            abort(422, 'Solo se puede cancelar una cotizacion enviada a revision.');
+        }
+
+        $request->validate([
+            'motivo' => 'nullable|string|max:1000',
+        ]);
+
+        $estadoAnterior = $cotizacion->estado_cotizacion_id;
+        $estadoBorradorId = $this->estadoCotizacionId('borrador');
+
+        DB::transaction(function () use ($request, $cotizacion, $estadoAnterior, $estadoBorradorId) {
+            $cotizacion->update(['estado_cotizacion_id' => $estadoBorradorId]);
+
+            CotizacionHistorial::create([
+                'cotizacion_id' => $cotizacion->id,
+                'estado_anterior_id' => $estadoAnterior,
+                'estado_nuevo_id' => $estadoBorradorId,
+                'comentario' => $request->input('motivo') ?: 'Envio a revision cancelado por el usuario.',
+                'user_id' => $request->user()->id,
+            ]);
+        });
+
+        return response()->json([
+            'message' => 'El envio a revision fue cancelado y la cotizacion volvio a borrador.',
+            'cotizacion' => $cotizacion->refresh()->load(['cliente', 'estadoCotizacion', 'user', 'delegado', 'delegadoCotizacion']),
+        ]);
+    }
+
     public function destroy(Request $request, Cotizacion $cotizacion)
     {
         $this->ensureCanEditCotizacion($request, $cotizacion);
@@ -1273,6 +1306,33 @@ class CotizacionController extends Controller
                 'delegado',
                 'delegadoCotizacion',
             ]),
+        ]);
+    }
+
+    public function cancelarModificacion(Request $request, CotizacionModificacion $modificacion)
+    {
+        $this->ensureCanEditModification($request, $modificacion);
+
+        if (! in_array($modificacion->estado, [
+            CotizacionModificacion::ESTADO_BORRADOR,
+            CotizacionModificacion::ESTADO_EN_REVISION,
+        ], true)) {
+            abort(422, 'Solo se puede cancelar una modificacion pendiente.');
+        }
+
+        $request->validate([
+            'motivo' => 'nullable|string|max:1000',
+        ]);
+
+        $modificacion->update([
+            'estado' => CotizacionModificacion::ESTADO_CANCELADA,
+            'comentario_revision' => $request->input('motivo') ?: 'Modificacion cancelada por el usuario.',
+            'submitted_at' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'La modificacion fue cancelada; la version vigente permanece intacta.',
+            'modificacion' => $modificacion->refresh()->load(['cotizacion', 'solicitante']),
         ]);
     }
 

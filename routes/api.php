@@ -433,6 +433,9 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
     Route::patch('/modificaciones/{modificacion}/enviar-revision', [CotizacionController::class, 'enviarModificacionRevision'])
         ->middleware('permission:cotizaciones.revision');
 
+    Route::patch('/modificaciones/{modificacion}/cancelar', [CotizacionController::class, 'cancelarModificacion'])
+        ->middleware('permission:cotizaciones.revision');
+
     Route::patch('/modificaciones/{modificacion}/aprobar', [CotizacionController::class, 'aprobarModificacion'])
         ->middleware('permission:cotizaciones.aprobar');
 
@@ -459,6 +462,9 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
         ->middleware('permission:cotizaciones.delegar');
 
     Route::patch('/{cotizacion}/enviar-revision', [CotizacionController::class, 'enviarRevision'])
+        ->middleware('permission:cotizaciones.revision');
+
+    Route::patch('/{cotizacion}/cancelar-revision', [CotizacionController::class, 'cancelarRevision'])
         ->middleware('permission:cotizaciones.revision');
 
     Route::get('/{id}/historial', [CotizacionController::class, 'historial'])

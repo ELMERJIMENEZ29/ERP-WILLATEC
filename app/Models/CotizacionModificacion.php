@@ -33,6 +33,8 @@ class CotizacionModificacion extends Model
 
     public const ESTADO_RECHAZADA = 'rechazada';
 
+    public const ESTADO_CANCELADA = 'cancelada';
+
     protected $table = 'cotizacion_modificaciones';
 
     protected $fillable = [
