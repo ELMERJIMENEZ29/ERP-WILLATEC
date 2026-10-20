@@ -175,6 +175,21 @@ class CotizacionController extends Controller
     // COTIZACIONES
     // =========================
 
+    public function ejecutivos(): \Illuminate\Http\JsonResponse
+    {
+        $ejecutivos = User::query()
+            ->where('activo', true)
+            ->whereHas('roles', function ($query): void {
+                $query->whereIn('name', ['ventas', 'superadmin']);
+            })
+            ->with('roles:id,name')
+            ->orderBy('nombres')
+            ->orderBy('apellidos')
+            ->get(['id', 'nombres', 'apellidos', 'email', 'activo']);
+
+        return response()->json($ejecutivos);
+    }
+
     public function index(Request $request)
     {
         $request->validate([

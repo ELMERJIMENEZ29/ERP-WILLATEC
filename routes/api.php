@@ -371,6 +371,7 @@ Route::prefix('productos-externos')->middleware(['auth:sanctum', 'token.idle'])-
 Route::prefix('licitaciones')
     ->middleware(['auth:sanctum', 'token.idle'])
     ->group(function () {
+        Route::get('/ejecutivos', [LicitacionController::class, 'ejecutivos'])->middleware('permission:licitaciones');
         Route::get('/', [LicitacionController::class, 'index'])->middleware('permission:licitaciones');
         Route::post('/', [LicitacionController::class, 'store'])->middleware('permission:licitaciones.crear');
         Route::get('/por-cotizacion/{cotizacion}', [LicitacionController::class, 'showByCotizacion'])->middleware('permission:licitaciones');
@@ -402,6 +403,9 @@ Route::prefix('woocommerce')->middleware(['auth:sanctum', 'token.idle'])->group(
 Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     // â”€â”€ RUTAS ESTÃTICAS PRIMERO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     Route::get('/', [CotizacionController::class, 'index'])
+        ->middleware('permission:cotizaciones');
+
+    Route::get('/ejecutivos', [CotizacionController::class, 'ejecutivos'])
         ->middleware('permission:cotizaciones');
 
     Route::post('/', [CotizacionController::class, 'store'])
