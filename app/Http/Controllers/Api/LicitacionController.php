@@ -18,11 +18,27 @@ use App\Notifications\OportunidadAtendidaNotification;
 use App\Notifications\OportunidadComentarioNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class LicitacionController extends Controller
 {
+    public function ejecutivos(): \Illuminate\Http\JsonResponse
+    {
+        $ejecutivos = User::query()
+            ->where('activo', true)
+            ->whereHas('roles', function ($query): void {
+                $query->whereIn('name', ['ventas', 'superadmin']);
+            })
+            ->with('roles:id,name')
+            ->orderBy('nombres')
+            ->orderBy('apellidos')
+            ->get(['id', 'nombres', 'apellidos', 'email', 'activo']);
+
+        return response()->json($ejecutivos);
+    }
+
     public function index(Request $request)
     {
         $validated = $request->validate([
@@ -129,6 +145,16 @@ class LicitacionController extends Controller
     public function showArchivo(LicitacionArchivo $archivo)
     {
         return response()->json($this->serializeArchivo($archivo));
+    }
+
+    public function procesarAlertasVencimiento()
+    {
+        $exitCode = Artisan::call('oportunidades:enviar-alertas');
+
+        return response()->json([
+            'ok' => $exitCode === 0,
+            'output' => trim(Artisan::output()),
+        ]);
     }
 
     public function update(Request $request, Licitacion $licitacion)
@@ -614,7 +640,19 @@ class LicitacionController extends Controller
         ];
 
         if ($lite) {
-            return $relations;
+            return [
+                ...$relations,
+                'cotizaciones' => fn ($query) => $query
+                    ->with(['cotizacion.modificaciones' => fn ($modificacionQuery) => $modificacionQuery
+                        ->whereIn('estado', [
+                            CotizacionModificacion::ESTADO_BORRADOR,
+                            CotizacionModificacion::ESTADO_EN_REVISION,
+                        ])
+                        ->latest('submitted_at')
+                        ->latest('id'), 'cotizacion.estadoCotizacion'])
+                    ->latest('creado_en')
+                    ->latest('id'),
+            ];
         }
 
         return [
@@ -690,7 +728,7 @@ class LicitacionController extends Controller
             'comentarios' => $withDetails ? $licitacion->comentarios->map(fn (LicitacionComentario $comentario) => $this->serializeComentario($comentario))->values() : [],
             'archivos' => $withDetails ? $archivos : [],
             'historial' => $withDetails ? $licitacion->historial->map(fn (LicitacionHistorial $historial) => $this->serializeHistorial($historial))->values() : [],
-            'cotizaciones' => $withDetails ? $licitacion->cotizaciones->map(fn (LicitacionCotizacion $cotizacion) => $this->serializeCotizacion($cotizacion))->values() : [],
+            'cotizaciones' => $licitacion->cotizaciones->map(fn (LicitacionCotizacion $cotizacion) => $this->serializeCotizacion($cotizacion))->values(),
         ];
     }
 
@@ -743,7 +781,13 @@ class LicitacionController extends Controller
      */
     private function serializeCotizacion(LicitacionCotizacion $cotizacion): array
     {
-        $modificacionPendiente = $cotizacion->cotizacion?->modificaciones?->first();
+        $modificacionPendiente = $cotizacion->cotizacion?->modificaciones()
+            ->whereIn('estado', [
+                CotizacionModificacion::ESTADO_BORRADOR,
+                CotizacionModificacion::ESTADO_EN_REVISION,
+            ])
+            ->latest('id')
+            ->first();
         $estadoReal = $cotizacion->cotizacion?->estadoCotizacion?->nombre ?? $cotizacion->estado;
         $estaAprobada = mb_strtolower((string) $estadoReal) === 'aprobada';
         $puedeDescargarPdf = $estaAprobada && ! $modificacionPendiente;

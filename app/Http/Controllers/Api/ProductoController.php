@@ -203,8 +203,6 @@ class ProductoController extends Controller
     // Crear producto
     public function store(StoreProductoRequest $request, ProductoSkuService $skuService)
     {
-        $this->ensureCanManageInternalProducts($request);
-
         $stockActual = (float) ($request->input('stock_actual', $request->input('stock', 0)));
         $stockReservado = (float) $request->input('stock_reservado', 0);
         $costoPromedio = (float) $request->input('costo_unitario', 0);
@@ -269,11 +267,7 @@ class ProductoController extends Controller
     // Actualizar producto
     public function update(UpdateProductoRequest $request, int $id, ProductoSkuService $skuService)
     {
-        $this->ensureCanManageInternalProducts($request);
-
         $producto = Producto::findOrFail($id);
-        $series = $this->normalizarSeries($request->input('series', []));
-        $tieneHistorialInventario = $producto->inventarioMovimientos()->exists() || $producto->series()->exists();
 
         $data = $request->only([
             'nombre',
@@ -313,44 +307,18 @@ class ProductoController extends Controller
             unset($data['sku']);
         }
 
-        if ($tieneHistorialInventario) {
-            unset(
-                $data['stock_actual'],
-                $data['stock_reservado'],
-                $data['stock_minimo'],
-                $data['stock'],
-                $data['valor_stock']
-            );
-        }
-
-        if (! empty($series) && empty($data['serie'])) {
-            $data['serie'] = $series[0];
-        }
+        unset(
+            $data['serie'],
+            $data['stock_actual'],
+            $data['stock_reservado'],
+            $data['stock'],
+            $data['costo_unitario'],
+            $data['costo_promedio'],
+            $data['valor_stock']
+        );
 
         if ($request->has('activo')) {
             $data['activo'] = filter_var($request->activo, FILTER_VALIDATE_BOOLEAN);
-        }
-
-        if (! $tieneHistorialInventario && ($request->filled('stock_actual') || $request->filled('stock_reservado') || $request->filled('stock'))) {
-            $stockActual = (float) ($data['stock_actual'] ?? $request->input('stock', $producto->stock_actual ?? 0));
-            $stockReservado = (float) ($data['stock_reservado'] ?? $producto->stock_reservado ?? 0);
-
-            $data['stock_actual'] = $stockActual;
-            $data['stock_reservado'] = $stockReservado;
-            $data['stock_disponible'] = max(0, $stockActual - $stockReservado);
-            $data['stock'] = (int) round($stockActual);
-        }
-
-        if ($request->filled('costo_unitario')) {
-            $data['costo_promedio'] = (float) $request->input('costo_unitario');
-        }
-
-        if (array_key_exists('costo_promedio', $data) || array_key_exists('stock_actual', $data)) {
-            $stockActual = $tieneHistorialInventario
-                ? (float) $producto->stock_actual
-                : (float) ($data['stock_actual'] ?? $producto->stock_actual ?? 0);
-            $costoPromedio = (float) ($data['costo_promedio'] ?? $producto->costo_promedio ?? $producto->costo_unitario ?? 0);
-            $data['valor_stock'] = round($stockActual * $costoPromedio, 2);
         }
 
         if ($request->hasFile('imagen')) {
@@ -369,8 +337,6 @@ class ProductoController extends Controller
             ])->save();
         }
 
-        $this->syncSeriesProducto($producto, $series);
-        $this->persistSeriesStockSnapshot($producto);
         $producto->load(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'woocommerceProducto']);
 
         return response()->json([
@@ -382,8 +348,6 @@ class ProductoController extends Controller
     // Eliminar Producto
     public function destroy(Request $request, int $id)
     {
-        $this->ensureCanManageInternalProducts($request);
-
         $producto = Producto::withCount([
             'inventarioMovimientos',
             'cotizacionItems',
@@ -495,13 +459,6 @@ class ProductoController extends Controller
             'stock' => $stockActual,
             'valor_stock' => round($stockActual * $costoPromedio, 2),
         ])->save();
-    }
-
-    private function ensureCanManageInternalProducts(Request $request): void
-    {
-        if ($request->user()?->hasRole('ventas')) {
-            abort(403, 'El rol ventas solo puede visualizar productos internos.');
-        }
     }
 
     private function buildNextInternalCode(): string

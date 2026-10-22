@@ -26,6 +26,7 @@ use App\Models\User;
 use App\Notifications\CotizacionAprobadaNotification;
 use App\Notifications\CotizacionEnviadaRevisionNotification;
 use App\Notifications\CotizacionModificacionAprobadaNotification;
+use App\Notifications\CotizacionModificacionAutoaprobadaNotification;
 use App\Notifications\CotizacionModificacionEnRevisionNotification;
 use App\Notifications\CotizacionModificacionRechazadaNotification;
 use App\Notifications\CotizacionModificacionSolicitadaNotification;
@@ -37,8 +38,8 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class CotizacionController extends Controller
 {
@@ -173,6 +174,21 @@ class CotizacionController extends Controller
     // =========================
     // COTIZACIONES
     // =========================
+
+    public function ejecutivos(): \Illuminate\Http\JsonResponse
+    {
+        $ejecutivos = User::query()
+            ->where('activo', true)
+            ->whereHas('roles', function ($query): void {
+                $query->whereIn('name', ['ventas', 'superadmin']);
+            })
+            ->with('roles:id,name')
+            ->orderBy('nombres')
+            ->orderBy('apellidos')
+            ->get(['id', 'nombres', 'apellidos', 'email', 'activo']);
+
+        return response()->json($ejecutivos);
+    }
 
     public function index(Request $request)
     {
@@ -342,6 +358,8 @@ class CotizacionController extends Controller
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
             'adelanto' => 'sometimes|boolean',
             'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
+            'cuota_mensual' => 'sometimes|boolean',
+            'cuota_mensual_meses' => 'nullable|integer|min:1|max:120',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
@@ -370,6 +388,8 @@ class CotizacionController extends Controller
             'adelanto_porcentaje' => $request->boolean('adelanto')
                 ? $request->input('adelanto_porcentaje')
                 : null,
+            'cuota_mensual' => $request->boolean('cuota_mensual'),
+            'cuota_mensual_meses' => max(1, min($request->integer('cuota_mensual_meses') ?: 12, 120)),
             'entrega_provincia' => $request->boolean('entrega_provincia'),
             'entrega_destino' => $request->boolean('entrega_provincia')
                 ? $request->input('entrega_destino')
@@ -420,6 +440,8 @@ class CotizacionController extends Controller
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
             'adelanto' => 'sometimes|boolean',
             'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
+            'cuota_mensual' => 'sometimes|boolean',
+            'cuota_mensual_meses' => 'nullable|integer|min:1|max:120',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
@@ -476,6 +498,8 @@ class CotizacionController extends Controller
                 'adelanto_porcentaje' => $request->boolean('adelanto')
                     ? $request->input('adelanto_porcentaje')
                     : null,
+                'cuota_mensual' => $request->boolean('cuota_mensual'),
+                'cuota_mensual_meses' => max(1, min($request->integer('cuota_mensual_meses') ?: 12, 120)),
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
@@ -552,6 +576,39 @@ class CotizacionController extends Controller
         ]);
     }
 
+    public function cancelarRevision(Request $request, Cotizacion $cotizacion)
+    {
+        $this->ensureCanEditCotizacion($request, $cotizacion);
+
+        if ((int) $cotizacion->estado_cotizacion_id !== (int) $this->estadoCotizacionId('enviada')) {
+            abort(422, 'Solo se puede cancelar una cotizacion enviada a revision.');
+        }
+
+        $request->validate([
+            'motivo' => 'nullable|string|max:1000',
+        ]);
+
+        $estadoAnterior = $cotizacion->estado_cotizacion_id;
+        $estadoBorradorId = $this->estadoCotizacionId('borrador');
+
+        DB::transaction(function () use ($request, $cotizacion, $estadoAnterior, $estadoBorradorId) {
+            $cotizacion->update(['estado_cotizacion_id' => $estadoBorradorId]);
+
+            CotizacionHistorial::create([
+                'cotizacion_id' => $cotizacion->id,
+                'estado_anterior_id' => $estadoAnterior,
+                'estado_nuevo_id' => $estadoBorradorId,
+                'comentario' => $request->input('motivo') ?: 'Envio a revision cancelado por el usuario.',
+                'user_id' => $request->user()->id,
+            ]);
+        });
+
+        return response()->json([
+            'message' => 'El envio a revision fue cancelado y la cotizacion volvio a borrador.',
+            'cotizacion' => $cotizacion->refresh()->load(['cliente', 'estadoCotizacion', 'user', 'delegado', 'delegadoCotizacion']),
+        ]);
+    }
+
     public function destroy(Request $request, Cotizacion $cotizacion)
     {
         $this->ensureCanEditCotizacion($request, $cotizacion);
@@ -597,7 +654,7 @@ class CotizacionController extends Controller
             'nota' => 'nullable|string',
             'garantia_meses' => 'nullable|integer|min:0|max:255',
             'disponibilidad_tipo' => 'required|in:stock,importacion',
-            'disponibilidad_dias' => 'required|integer|min:1|max:50',
+            'disponibilidad_dias' => 'required|integer|min:1|max:200',
             'producto_id' => 'nullable|exists:productos,id',
             'producto_externo_id' => 'nullable|exists:productos_externos,id',
             'proveedor' => 'nullable|string',
@@ -715,7 +772,7 @@ class CotizacionController extends Controller
             'stock' => 'nullable|integer|min:0',
             'garantia_meses' => 'nullable|integer|min:0|max:255',
             'disponibilidad_tipo' => 'nullable|in:stock,importacion',
-            'disponibilidad_dias' => 'nullable|integer|min:1|max:50',
+            'disponibilidad_dias' => 'nullable|integer|min:1|max:200',
             'producto_id' => 'nullable|exists:productos,id',
             'producto_externo_id' => 'nullable|exists:productos_externos,id',
             'proveedor' => 'nullable|string',
@@ -947,7 +1004,9 @@ class CotizacionController extends Controller
     {
         $request->validate([
             'tipo' => 'required|string',
+            'descripcion' => 'nullable|string',
             'monto' => 'required|numeric|min:0',
+            'imagen_evidencia' => 'nullable|string|max:7000000',
             'destino_entrega' => 'nullable|string|max:150',
         ]);
 
@@ -960,6 +1019,8 @@ class CotizacionController extends Controller
                 'cotizacion_id' => $cotizacionId,
                 'tipo' => $request->tipo,
                 'monto' => $request->monto,
+                'descripcion' => $request->input('descripcion'),
+                'imagen_evidencia' => $request->input('imagen_evidencia'),
                 'destino_entrega' => Cotizacion::findOrFail($cotizacionId)->entrega_multidestino ? $request->input('destino_entrega') : null,
             ]);
 
@@ -1061,6 +1122,7 @@ class CotizacionController extends Controller
 
         $request->validate([
             'motivo' => 'required|string|max:1000',
+            'version_id' => 'required|integer|exists:cotizacion_versiones,id',
         ]);
 
         $modificacion = null;
@@ -1071,6 +1133,14 @@ class CotizacionController extends Controller
                 $request->user()->id,
                 'Version original antes de solicitud de modificacion.'
             );
+            $versionSeleccionada = $cotizacion->versiones()
+                ->whereKey($request->integer('version_id'))
+                ->first();
+
+            if (! $versionSeleccionada) {
+                abort(422, 'La version seleccionada no pertenece a esta cotizacion.');
+            }
+
             $versionVigente = $this->latestCotizacionVersion($cotizacion) ?? $versionOriginal;
 
             $pendiente = $cotizacion->modificaciones()
@@ -1091,7 +1161,7 @@ class CotizacionController extends Controller
                 'version_number' => $versionVigente->version_number + 1,
                 'estado' => CotizacionModificacion::ESTADO_BORRADOR,
                 'motivo' => $request->string('motivo')->toString(),
-                'propuesta' => $this->buildCotizacionEditablePayload($cotizacion),
+                'propuesta' => $this->buildCotizacionEditablePayloadFromSnapshot($versionSeleccionada->snapshot),
                 'requested_by' => $request->user()->id,
             ]);
         });
@@ -1154,6 +1224,47 @@ class CotizacionController extends Controller
             'comentario_reenvio_revision' => 'nullable|string|max:1000',
         ]);
 
+        $modificacion->loadMissing('cotizacion');
+
+        if (! $this->modificacionTocaMontos($modificacion->cotizacion, $modificacion->propuesta ?? [])) {
+            $version = null;
+
+            DB::transaction(function () use ($request, $modificacion, &$version) {
+                $version = $this->aprobarModificacionInternamente(
+                    $request,
+                    $modificacion,
+                    'Aprobacion automatica: la modificacion no altera montos.'
+                );
+            });
+
+            $modificacion->refresh()->load(['cotizacion', 'solicitante']);
+
+            if ($modificacion->solicitante) {
+                $modificacion->solicitante->notify(new CotizacionModificacionAprobadaNotification($modificacion, $request->user()));
+            }
+
+            //Informar a los superadministradores de la autoaprobacion
+            $this->notifySuperadmins(new CotizacionModificacionAutoaprobadaNotification($modificacion, $modificacion->solicitante ?? $request->user()));
+
+            $this->notifyLicitacionUsersIfLinked($modificacion->cotizacion->refresh()->load('estadoCotizacion'));
+
+            return response()->json([
+                'message' => 'Modificacion aprobada automaticamente porque no altera montos',
+                'version' => $version,
+                'modificacion' => $modificacion->refresh()->load(['cotizacion', 'solicitante']),
+                'cotizacion' => $modificacion->cotizacion->refresh()->load([
+                    'items.proveedores',
+                    'items.destinosEntrega',
+                    'costosAdicionales',
+                    'cliente',
+                    'estadoCotizacion',
+                    'user',
+                    'delegado',
+                    'delegadoCotizacion',
+                ]),
+            ]);
+        }
+
         $modificacion->update([
             'estado' => CotizacionModificacion::ESTADO_EN_REVISION,
             'comentario_reenvio_revision' => $request->filled('comentario_reenvio_revision')
@@ -1182,39 +1293,11 @@ class CotizacionController extends Controller
         $version = null;
 
         DB::transaction(function () use ($request, $modificacion, &$version) {
-            $cotizacion = $modificacion->cotizacion()->lockForUpdate()->firstOrFail();
-            $this->ensureCotizacionIsApproved($cotizacion);
-            $this->ensureCotizacionVersionSnapshot(
-                $cotizacion,
-                $modificacion->requested_by,
-                'Version original antes de aprobar modificacion.'
+            $version = $this->aprobarModificacionInternamente(
+                $request,
+                $modificacion,
+                $request->input('comentario_revision')
             );
-            $nextVersionNumber = ($this->latestCotizacionVersion($cotizacion)?->version_number ?? 1) + 1;
-
-            $this->applyCotizacionProposalPayload($request, $cotizacion, $modificacion->propuesta);
-
-            $cotizacion->update([
-                'estado_cotizacion_id' => $this->estadoCotizacionId('aprobada'),
-            ]);
-
-            $version = CotizacionVersion::create([
-                'cotizacion_id' => $cotizacion->id,
-                'version_number' => $nextVersionNumber,
-                'numero_version' => $this->numeroVersion($cotizacion, $nextVersionNumber),
-                'snapshot' => $this->buildCotizacionSnapshot($cotizacion->refresh()),
-                'created_by' => $modificacion->requested_by,
-                'approved_by' => $request->user()->id,
-                'approved_at' => now(),
-                'notas' => $modificacion->motivo,
-            ]);
-
-            $modificacion->update([
-                'estado' => CotizacionModificacion::ESTADO_APROBADA,
-                'version_number' => $nextVersionNumber,
-                'reviewed_by' => $request->user()->id,
-                'comentario_revision' => $request->input('comentario_revision'),
-                'reviewed_at' => now(),
-            ]);
         });
 
         $modificacion->refresh()->load(['cotizacion', 'solicitante']);
@@ -1238,6 +1321,33 @@ class CotizacionController extends Controller
                 'delegado',
                 'delegadoCotizacion',
             ]),
+        ]);
+    }
+
+    public function cancelarModificacion(Request $request, CotizacionModificacion $modificacion)
+    {
+        $this->ensureCanEditModification($request, $modificacion);
+
+        if (! in_array($modificacion->estado, [
+            CotizacionModificacion::ESTADO_BORRADOR,
+            CotizacionModificacion::ESTADO_EN_REVISION,
+        ], true)) {
+            abort(422, 'Solo se puede cancelar una modificacion pendiente.');
+        }
+
+        $request->validate([
+            'motivo' => 'nullable|string|max:1000',
+        ]);
+
+        $modificacion->update([
+            'estado' => CotizacionModificacion::ESTADO_CANCELADA,
+            'comentario_revision' => $request->input('motivo') ?: 'Modificacion cancelada por el usuario.',
+            'submitted_at' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'La modificacion fue cancelada; la version vigente permanece intacta.',
+            'modificacion' => $modificacion->refresh()->load(['cotizacion', 'solicitante']),
         ]);
     }
 
@@ -1276,6 +1386,48 @@ class CotizacionController extends Controller
         ]);
     }
 
+    private function aprobarModificacionInternamente(
+        Request $request,
+        CotizacionModificacion $modificacion,
+        ?string $comentarioRevision = null
+    ): CotizacionVersion {
+        $cotizacion = $modificacion->cotizacion()->lockForUpdate()->firstOrFail();
+        $this->ensureCotizacionIsApproved($cotizacion);
+        $this->ensureCotizacionVersionSnapshot(
+            $cotizacion,
+            $modificacion->requested_by,
+            'Version original antes de aprobar modificacion.'
+        );
+        $nextVersionNumber = ($this->latestCotizacionVersion($cotizacion)?->version_number ?? 1) + 1;
+
+        $this->applyCotizacionProposalPayload($request, $cotizacion, $modificacion->propuesta);
+
+        $cotizacion->update([
+            'estado_cotizacion_id' => $this->estadoCotizacionId('aprobada'),
+        ]);
+
+        $version = CotizacionVersion::create([
+            'cotizacion_id' => $cotizacion->id,
+            'version_number' => $nextVersionNumber,
+            'numero_version' => $this->numeroVersion($cotizacion, $nextVersionNumber),
+            'snapshot' => $this->buildCotizacionSnapshot($cotizacion->refresh()),
+            'created_by' => $modificacion->requested_by,
+            'approved_by' => $request->user()->id,
+            'approved_at' => now(),
+            'notas' => $modificacion->motivo,
+        ]);
+
+        $modificacion->update([
+            'estado' => CotizacionModificacion::ESTADO_APROBADA,
+            'version_number' => $nextVersionNumber,
+            'reviewed_by' => $request->user()->id,
+            'comentario_revision' => $comentarioRevision,
+            'reviewed_at' => now(),
+        ]);
+
+        return $version;
+    }
+
     public function exportarPdf(Request $request, Cotizacion $cotizacion)
     {
         $cotizacion = Cotizacion::with([
@@ -1290,7 +1442,11 @@ class CotizacionController extends Controller
             'estadoCotizacion',
         ])->findOrFail($cotizacion->id);
 
-        if ($request->boolean('desde_oportunidad')) {
+        $user = $request->user();
+        $soloPdfDesdeOportunidad = $user?->can('licitaciones.cotizaciones_pdf')
+            || ($user?->can('licitaciones') && ! $user?->can('cotizaciones.exportar'));
+
+        if ($request->boolean('desde_oportunidad') || $soloPdfDesdeOportunidad) {
             $this->ensureCanExportPdfFromOpportunity($cotizacion);
         }
 
@@ -1423,6 +1579,8 @@ class CotizacionController extends Controller
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
             'adelanto' => 'sometimes|boolean',
             'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
+            'cuota_mensual' => 'sometimes|boolean',
+            'cuota_mensual_meses' => 'nullable|integer|min:1|max:120',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
@@ -1457,6 +1615,8 @@ class CotizacionController extends Controller
             'costos' => 'nullable|array',
 
             'costos.*.tipo' => 'required|string',
+            'costos.*.descripcion' => 'nullable|string',
+            'costos.*.imagen_evidencia' => 'nullable|string|max:7000000',
             'costos.*.destino_entrega' => 'nullable|string|max:150',
             'costos.*.monto' => 'required|numeric|min:0',
         ]);
@@ -1488,6 +1648,8 @@ class CotizacionController extends Controller
                 'adelanto_porcentaje' => $request->boolean('adelanto')
                     ? $request->input('adelanto_porcentaje')
                     : null,
+                'cuota_mensual' => $request->boolean('cuota_mensual'),
+                'cuota_mensual_meses' => max(1, min($request->integer('cuota_mensual_meses') ?: 12, 120)),
                 'entrega_provincia' => $request->boolean('entrega_provincia'),
                 'entrega_destino' => $request->boolean('entrega_provincia')
                     ? $request->input('entrega_destino')
@@ -1581,6 +1743,7 @@ class CotizacionController extends Controller
                     'cotizacion_id' => $cotizacion->id,
                     'tipo' => $costo['tipo'],
                     'descripcion' => $costo['descripcion'] ?? null,
+                    'imagen_evidencia' => $costo['imagen_evidencia'] ?? null,
                     'destino_entrega' => $request->boolean('entrega_multidestino') ? ($costo['destino_entrega'] ?? null) : null,
                     'monto' => $costo['monto'],
                 ]);
@@ -1663,6 +1826,8 @@ class CotizacionController extends Controller
             'costos' => 'nullable|array',
 
             'costos.*.tipo' => 'required|string',
+            'costos.*.descripcion' => 'nullable|string',
+            'costos.*.imagen_evidencia' => 'nullable|string|max:7000000',
             'costos.*.destino_entrega' => 'nullable|string|max:150',
             'costos.*.monto' => 'required|numeric|min:0',
         ]);
@@ -1802,6 +1967,7 @@ class CotizacionController extends Controller
                     'cotizacion_id' => $cotizacion->id,
                     'tipo' => $costo['tipo'],
                     'descripcion' => $costo['descripcion'] ?? null,
+                    'imagen_evidencia' => $costo['imagen_evidencia'] ?? null,
                     'destino_entrega' => $request->boolean('entrega_multidestino') ? ($costo['destino_entrega'] ?? null) : null,
                     'monto' => $costo['monto'],
                 ]);
@@ -1848,6 +2014,11 @@ class CotizacionController extends Controller
         $data['adelanto_porcentaje'] = $data['adelanto']
             ? ($data['adelanto_porcentaje'] ?? null)
             : null;
+        $data['cuota_mensual'] = (bool) ($data['cuota_mensual'] ?? false);
+        $data['cuota_mensual_meses'] = max(
+            1,
+            min((int) ($data['cuota_mensual_meses'] ?? 12), 120),
+        );
         $data['entrega_destino'] = $data['entrega_provincia']
             ? ($data['entrega_destino'] ?? null)
             : null;
@@ -1892,6 +2063,8 @@ class CotizacionController extends Controller
                 'forma_pago',
                 'adelanto',
                 'adelanto_porcentaje',
+                'cuota_mensual',
+                'cuota_mensual_meses',
                 'entrega_provincia',
                 'entrega_destino',
                 'entrega_multidestino',
@@ -1983,6 +2156,7 @@ class CotizacionController extends Controller
                 ->map(fn (CotizacionCostosAdicional $costo): array => $costo->only([
                     'tipo',
                     'descripcion',
+                    'imagen_evidencia',
                     'destino_entrega',
                     'monto',
                 ]))
@@ -1996,6 +2170,15 @@ class CotizacionController extends Controller
     private function buildCotizacionEditablePayload(Cotizacion $cotizacion): array
     {
         $snapshot = $this->buildCotizacionSnapshot($cotizacion);
+        return $this->buildCotizacionEditablePayloadFromSnapshot($snapshot);
+    }
+
+    /**
+     * @param  array<string, mixed>  $snapshot
+     * @return array<string, mixed>
+     */
+    private function buildCotizacionEditablePayloadFromSnapshot(array $snapshot): array
+    {
         $header = $snapshot['cotizacion'];
 
         return [
@@ -2018,6 +2201,152 @@ class CotizacionController extends Controller
             'items' => $snapshot['items'],
             'costos' => $snapshot['costos'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function modificacionTocaMontos(Cotizacion $cotizacion, array $payload): bool
+    {
+        if (empty($payload['items']) || ! is_array($payload['items'])) {
+            return true;
+        }
+
+        $snapshot = $this->buildCotizacionSnapshot($cotizacion);
+
+        return $this->firmaMonetariaCotizacion($snapshot['cotizacion'], $snapshot['items'], $snapshot['costos'])
+            !== $this->firmaMonetariaCotizacion($payload, $payload['items'], $payload['costos'] ?? []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $header
+     * @param  array<int, array<string, mixed>>  $items
+     * @param  array<int, array<string, mixed>>  $costos
+     * @return array<string, mixed>
+     */
+    private function firmaMonetariaCotizacion(array $header, array $items, array $costos): array
+    {
+        return [
+            'header' => [
+                'plantilla_id' => $this->normalizarEnteroFirma($header['plantilla_id'] ?? null),
+                'moneda_id' => $this->normalizarEnteroFirma($header['moneda_id'] ?? null),
+                'modo_distribucion' => $header['modo_distribucion'] ?? null,
+                'adelanto' => (bool) ($header['adelanto'] ?? false),
+                'adelanto_porcentaje' => $this->normalizarNumeroFirma($header['adelanto_porcentaje'] ?? null),
+                'entrega_provincia' => (bool) ($header['entrega_provincia'] ?? false),
+                'entrega_destino' => $this->normalizarTextoFirma($header['entrega_destino'] ?? null),
+                'entrega_multidestino' => (bool) ($header['entrega_multidestino'] ?? false),
+            ],
+            'items' => $this->firmasMonetariasItems($items),
+            'costos' => $this->firmasMonetariasCostos($costos),
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function firmasMonetariasItems(array $items): array
+    {
+        $firmas = array_map(function (array $item): array {
+            $proveedores = array_map(fn (array $proveedor): array => [
+                'nombre' => $this->normalizarTextoFirma($proveedor['nombre'] ?? null),
+                'precio' => $this->normalizarNumeroFirma($proveedor['precio'] ?? null),
+            ], $item['proveedores'] ?? []);
+
+            usort($proveedores, fn (array $a, array $b): int => json_encode($a) <=> json_encode($b));
+
+            $destinos = array_map(fn (array $destino): array => [
+                'destino_entrega' => $this->normalizarTextoFirma($destino['destino_entrega'] ?? null),
+                'cantidad' => $this->normalizarNumeroFirma($destino['cantidad'] ?? null),
+                'margen' => $this->normalizarNumeroFirma($destino['margen'] ?? null),
+            ], $item['destinos_entrega'] ?? []);
+
+            usort($destinos, fn (array $a, array $b): int => json_encode($a) <=> json_encode($b));
+
+            return [
+                'cantidad' => $this->normalizarNumeroFirma($item['cantidad'] ?? null),
+                'aplica_costos_adicionales' => (bool) ($item['aplica_costos_adicionales'] ?? true),
+                'destino_entrega' => $this->normalizarTextoFirma($item['destino_entrega'] ?? null),
+                'costo_base' => $this->normalizarNumeroFirma($item['costo_base'] ?? null),
+                'margen' => $this->normalizarNumeroFirma($item['margen'] ?? null),
+                'garantia_meses' => $this->normalizarEnteroFirma($item['garantia_meses'] ?? null),
+                'producto_id' => $this->normalizarEnteroFirma($item['producto_id'] ?? null),
+                'producto_externo_id' => $this->normalizarEnteroFirma($item['producto_externo_id'] ?? null),
+                'importacion_calculo' => $this->normalizarValorFirma($item['importacion_calculo'] ?? null),
+                'proveedores' => $proveedores,
+                'destinos_entrega' => $destinos,
+            ];
+        }, $items);
+
+        usort($firmas, fn (array $a, array $b): int => json_encode($a) <=> json_encode($b));
+
+        return $firmas;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $costos
+     * @return array<int, array<string, mixed>>
+     */
+    private function firmasMonetariasCostos(array $costos): array
+    {
+        $firmas = array_map(fn (array $costo): array => [
+            'tipo' => $this->normalizarTextoFirma($costo['tipo'] ?? null),
+            'destino_entrega' => $this->normalizarTextoFirma($costo['destino_entrega'] ?? null),
+            'monto' => $this->normalizarNumeroFirma($costo['monto'] ?? null),
+        ], $costos);
+
+        usort($firmas, fn (array $a, array $b): int => json_encode($a) <=> json_encode($b));
+
+        return $firmas;
+    }
+
+    private function normalizarNumeroFirma(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return number_format((float) $value, 4, '.', '');
+    }
+
+    private function normalizarEnteroFirma(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    private function normalizarTextoFirma(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $text = trim(mb_strtolower((string) $value));
+
+        return $text === '' ? null : $text;
+    }
+
+    private function normalizarValorFirma(mixed $value): mixed
+    {
+        if (is_array($value)) {
+            ksort($value);
+
+            return array_map(fn (mixed $item): mixed => $this->normalizarValorFirma($item), $value);
+        }
+
+        if (is_numeric($value)) {
+            return $this->normalizarNumeroFirma($value);
+        }
+
+        if (is_string($value)) {
+            return $this->normalizarTextoFirma($value);
+        }
+
+        return $value;
     }
 
     /**
@@ -2062,6 +2391,8 @@ class CotizacionController extends Controller
             'adelanto_porcentaje' => ! empty($payload['adelanto'])
                 ? ($payload['adelanto_porcentaje'] ?? null)
                 : null,
+            'cuota_mensual' => (bool) ($payload['cuota_mensual'] ?? false),
+            'cuota_mensual_meses' => max(1, min((int) ($payload['cuota_mensual_meses'] ?? 12), 120)),
             'entrega_provincia' => (bool) ($payload['entrega_provincia'] ?? false),
             'entrega_destino' => ! empty($payload['entrega_provincia'])
                 ? ($payload['entrega_destino'] ?? null)
@@ -2129,6 +2460,7 @@ class CotizacionController extends Controller
                 'cotizacion_id' => $cotizacion->id,
                 'tipo' => $costo['tipo'],
                 'descripcion' => $costo['descripcion'] ?? null,
+                'imagen_evidencia' => $costo['imagen_evidencia'] ?? null,
                 'destino_entrega' => ! empty($payload['entrega_multidestino']) ? ($costo['destino_entrega'] ?? null) : null,
                 'monto' => $costo['monto'],
             ]);
@@ -2155,6 +2487,8 @@ class CotizacionController extends Controller
             'forma_pago' => 'nullable|in:'.implode(',', self::FORMAS_PAGO),
             'adelanto' => 'sometimes|boolean',
             'adelanto_porcentaje' => 'nullable|numeric|min:0.01|max:99.99',
+            'cuota_mensual' => 'sometimes|boolean',
+            'cuota_mensual_meses' => 'nullable|integer|min:1|max:120',
             'entrega_provincia' => 'sometimes|boolean',
             'entrega_destino' => 'nullable|string|max:150',
             'entrega_multidestino' => 'sometimes|boolean',
@@ -2177,7 +2511,7 @@ class CotizacionController extends Controller
             'items.*.unidad_medida' => 'nullable|string|max:50',
             'items.*.garantia_meses' => 'nullable|integer|min:0|max:255',
             'items.*.disponibilidad_tipo' => 'nullable|in:stock,importacion',
-            'items.*.disponibilidad_dias' => 'nullable|integer|min:1|max:50',
+            'items.*.disponibilidad_dias' => 'nullable|integer|min:1|max:200',
             'items.*.proveedor' => 'nullable|string|max:255',
             'items.*.link_proveedor' => 'nullable|string',
             'items.*.stock' => 'nullable|integer|min:0',
@@ -2195,6 +2529,7 @@ class CotizacionController extends Controller
             'costos' => 'nullable|array',
             'costos.*.tipo' => 'required|string',
             'costos.*.descripcion' => 'nullable|string',
+            'costos.*.imagen_evidencia' => 'nullable|string|max:7000000',
             'costos.*.destino_entrega' => 'nullable|string|max:150',
             'costos.*.monto' => 'required|numeric|min:0',
         ];

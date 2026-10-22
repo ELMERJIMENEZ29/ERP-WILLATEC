@@ -1141,6 +1141,11 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                             <td class="total-label">Total</td>
                             <td class="total-amount">{{ $simbolo }} {{ number_format((float) $cotizacion->total, 2) }}</td>
                         </tr>
+                        @if($cotizacion->cuota_mensual)
+                            <tr>
+                        <td colspan="2" style="border: 1px solid #B9CBE5; background: #F2F7FC; color: #1F3B63; font-weight: 700; text-align: center; padding: 7px 8px;">Cuota Mensual: {{ $simbolo }} {{ number_format((float) $cotizacion->total / max(1, (int) ($cotizacion->cuota_mensual_meses ?? 12)), 2) }} incl. IGV &nbsp;|&nbsp; Periodo: {{ (int) ($cotizacion->cuota_mensual_meses ?? 12) }} meses</td>
+                            </tr>
+                        @endif
                         <tr class="currency">
                             <td colspan="2">Moneda: {{ $codigoMoneda }} {{ $simbolo }}</td>
                         </tr>

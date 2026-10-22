@@ -22,6 +22,8 @@ class Cotizacion extends Model
         'forma_pago',
         'adelanto',
         'adelanto_porcentaje',
+        'cuota_mensual',
+        'cuota_mensual_meses',
         'entrega_provincia',
         'entrega_destino',
         'entrega_multidestino',
@@ -168,6 +170,8 @@ class Cotizacion extends Model
             'total_gasto' => 'decimal:2',
             'adelanto' => 'boolean',
             'adelanto_porcentaje' => 'decimal:2',
+            'cuota_mensual' => 'boolean',
+            'cuota_mensual_meses' => 'integer',
             'entrega_provincia' => 'boolean',
             'entrega_multidestino' => 'boolean',
         ];
