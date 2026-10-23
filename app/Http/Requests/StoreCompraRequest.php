@@ -124,7 +124,8 @@ class StoreCompraRequest extends FormRequest
 
                 if (
                     $this->boolean('autorizar_sobrecompra') &&
-                    ! $this->user()?->hasAnyRole(['superadmin', 'admin'])
+                    ! $this->user()?->hasAnyRole(['superadmin', 'admin']) &&
+                    ! $this->user()?->can('compras.sobrecompra')
                 ) {
                     $validator->errors()->add(
                         'autorizar_sobrecompra',

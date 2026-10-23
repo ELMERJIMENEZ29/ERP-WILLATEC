@@ -121,6 +121,8 @@ class OcRecibidaController extends Controller
                     ->latest(),
                 'cotizacion',
                 'cliente',
+                'requerimientosCompra:id,oc_recibida_id,estado,numero',
+                'requerimientosCompra.items:id,requerimiento_compra_id,oc_recibida_item_id',
                 'usuario:id,nombres,apellidos,email',
             ])
         );

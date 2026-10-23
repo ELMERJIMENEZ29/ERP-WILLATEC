@@ -27,6 +27,7 @@ class RequerimientoCompraController extends Controller
         $query = RequerimientoCompra::query()
             ->with([
                 'ocRecibida:id,numero,cliente_nombre,cotizacion_id',
+                'ocRecibida.cotizacion:id,numero',
                 'items.producto:id,nombre,sku,codigo',
                 'items.productoExterno:id,descripcion,codigo,marca,costo_base_referencial,moneda_id',
                 'items.cotizacionItem:id,cotizacion_id,costo_base,costo_unitario',
@@ -135,6 +136,7 @@ class RequerimientoCompraController extends Controller
                 'items.producto',
                 'items.productoExterno:id,descripcion,codigo,marca,costo_base_referencial,moneda_id',
                 'ocRecibida',
+                'ocRecibida.cotizacion:id,numero',
                 'solicitadoPor:id,nombres,apellidos,email',
                 'asignadoA:id,nombres,apellidos,email',
             ]),

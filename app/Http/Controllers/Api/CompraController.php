@@ -26,6 +26,10 @@ class CompraController extends Controller
                 'moneda',
                 'ocEmitida',
                 'creadoPor',
+                'items:id,compra_id,requerimiento_compra_item_id,oc_emitida_item_id,producto_id,producto_externo_id,descripcion,cantidad,cantidad_recibida,costo_unitario_estimado,moneda_id,estado',
+                'items.requerimientoCompraItem.requerimiento.ocRecibida:id,numero,cotizacion_id,cliente_nombre',
+                'items.requerimientoCompraItem.requerimiento.ocRecibida.cotizacion:id,numero',
+                'items.ocEmitidaItem.ocEmitida:id,numero,proveedor_id',
             ])
             ->withCount('items')
             ->latest('id');
@@ -108,6 +112,8 @@ class CompraController extends Controller
                 'ocEmitida',
                 'creadoPor',
                 'items.requerimientoCompraItem.requerimiento',
+                'items.requerimientoCompraItem.requerimiento.ocRecibida:id,numero,cotizacion_id,cliente_nombre',
+                'items.requerimientoCompraItem.requerimiento.ocRecibida.cotizacion:id,numero',
                 'items.producto',
                 'items.productoExterno',
                 'items.moneda',

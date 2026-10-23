@@ -61,6 +61,14 @@ class AlertaOperativaController extends Controller
                     ->count(),
             ],
             [
+                'codigo' => 'compra_sin_comprobante',
+                'titulo' => 'Compras recibidas sin comprobante',
+                'total' => Compra::query()
+                    ->whereIn('estado', [Compra::ESTADO_PARCIALMENTE_RECIBIDA, Compra::ESTADO_RECIBIDA])
+                    ->whereDoesntHave('comprobantes', fn ($query) => $query->where('estado', Comprobante::ESTADO_REGISTRADO))
+                    ->count(),
+            ],
+            [
                 'codigo' => 'comprobante_observado',
                 'titulo' => 'Comprobantes observados',
                 'total' => Comprobante::query()
@@ -74,6 +82,16 @@ class AlertaOperativaController extends Controller
                     ->where('estado', '!=', CuentaPorPagar::ESTADO_ANULADA)
                     ->where('saldo', '>', 0)
                     ->whereDate('fecha_vencimiento', '<', $today)
+                    ->count(),
+            ],
+            [
+                'codigo' => 'cxp_por_vencer',
+                'titulo' => 'CxP próximas a vencer',
+                'total' => CuentaPorPagar::query()
+                    ->whereNotIn('estado', [CuentaPorPagar::ESTADO_ANULADA, CuentaPorPagar::ESTADO_PAGADA])
+                    ->where('saldo', '>', 0)
+                    ->whereDate('fecha_vencimiento', '>=', $today)
+                    ->whereDate('fecha_vencimiento', '<=', now()->addDays(3)->toDateString())
                     ->count(),
             ],
             [

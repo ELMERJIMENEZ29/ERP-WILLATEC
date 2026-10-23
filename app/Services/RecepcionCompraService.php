@@ -37,15 +37,41 @@ class RecepcionCompraService
                 ]);
             }
 
-            $recepcion = RecepcionCompra::create([
-                'numero' => $this->generarNumero(),
-                'compra_id' => $compra->id,
-                'proveedor_id' => $compra->proveedor_id,
-                'fecha_recepcion' => $data['fecha_recepcion'] ?? now()->toDateString(),
-                'estado' => RecepcionCompra::ESTADO_BORRADOR,
-                'observacion' => $data['observacion'] ?? null,
-                'recibido_por' => $request->user()?->id,
-            ]);
+            // Una compra no debe acumular borradores invisibles. Si el usuario
+            // vuelve a intentarlo, reutilizamos el borrador activo y sustituimos
+            // sus cantidades por las actuales del formulario.
+            $borradores = RecepcionCompra::query()
+                ->where('compra_id', $compra->id)
+                ->where('estado', RecepcionCompra::ESTADO_BORRADOR)
+                ->lockForUpdate()
+                ->latest('id')
+                ->get();
+            $recepcion = $borradores->first();
+
+            foreach ($borradores->skip(1) as $borradorAnterior) {
+                $borradorAnterior->items()->delete();
+                $borradorAnterior->forceFill(['estado' => RecepcionCompra::ESTADO_CANCELADA])->save();
+            }
+
+            if ($recepcion) {
+                $recepcion->items()->delete();
+                $recepcion->forceFill([
+                    'proveedor_id' => $compra->proveedor_id,
+                    'fecha_recepcion' => $data['fecha_recepcion'] ?? now()->toDateString(),
+                    'observacion' => $data['observacion'] ?? null,
+                    'recibido_por' => $request->user()?->id,
+                ])->save();
+            } else {
+                $recepcion = RecepcionCompra::create([
+                    'numero' => $this->generarNumero(),
+                    'compra_id' => $compra->id,
+                    'proveedor_id' => $compra->proveedor_id,
+                    'fecha_recepcion' => $data['fecha_recepcion'] ?? now()->toDateString(),
+                    'estado' => RecepcionCompra::ESTADO_BORRADOR,
+                    'observacion' => $data['observacion'] ?? null,
+                    'recibido_por' => $request->user()?->id,
+                ]);
+            }
 
             $itemsPorId = $compra->items->keyBy('id');
 

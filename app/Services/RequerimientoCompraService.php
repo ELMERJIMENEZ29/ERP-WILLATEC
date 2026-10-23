@@ -175,7 +175,7 @@ class RequerimientoCompraService
     {
         return (float) RequerimientoCompraItem::query()
             ->where('oc_recibida_item_id', $item->id)
-            ->whereHas('requerimiento', fn ($query) => $query->whereIn('estado', RequerimientoCompra::estadosActivos()))
+            ->whereHas('requerimiento', fn ($query) => $query->where('estado', '!=', RequerimientoCompra::ESTADO_CANCELADO))
             ->get()
             ->sum(fn (RequerimientoCompraItem $item): float => max(
                 0,

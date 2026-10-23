@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\ComprobanteController;
 use App\Http\Controllers\Api\CotizacionController;
 use App\Http\Controllers\Api\CuentaPorCobrarController;
 use App\Http\Controllers\Api\CuentaPorPagarController;
+use App\Http\Controllers\Api\ChequeController;
 use App\Http\Controllers\Api\EmpresaConfiguracionController;
 use App\Http\Controllers\Api\HostingController;
 use App\Http\Controllers\Api\InventarioController;
@@ -92,6 +93,10 @@ function permissionCatalog(): array
         ['key' => 'ordenes_compra.requerimientos', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Gestionar requerimientos', 'description' => 'Consultar y generar requerimientos.'],
         ['key' => 'ordenes_compra.emitir', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Emitir OC', 'description' => 'Registrar y actualizar OC emitidas.'],
         ['key' => 'ordenes_compra.pdf', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Ver PDF de OC', 'description' => 'Generar y consultar PDF de OC.'],
+        ['key' => 'compras.recepciones', 'module' => 'Compras', 'parent' => 'compras', 'label' => 'Gestionar recepciones', 'description' => 'Crear, confirmar y cancelar recepciones de compra.'],
+        ['key' => 'compras.sobrecompra', 'module' => 'Compras', 'parent' => 'compras', 'label' => 'Autorizar sobrecompras', 'description' => 'Permitir compras por encima del saldo requerido y enviar el excedente a stock.'],
+        ['key' => 'contabilidad.cheques', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar cheques', 'description' => 'Registrar, entregar, cobrar y adjuntar evidencia de cheques.'],
+        ['key' => 'contabilidad.bancos', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar bancos', 'description' => 'Agregar y administrar bancos para cheques.'],
         ['key' => 'inventario', 'module' => 'Inventario', 'label' => 'Ver inventario', 'description' => 'Acceso a kardex y movimientos.'],
         ['key' => 'inventario.kardex_entrada', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Registrar entrada Kardex', 'description' => 'Permite crear entradas de inventario.'],
         ['key' => 'inventario.kardex_salida', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Registrar salida Kardex', 'description' => 'Permite crear salidas de inventario.'],
@@ -635,6 +640,17 @@ Route::prefix('contabilidad/cuentas-por-pagar')->middleware(['auth:sanctum', 'to
 
 Route::patch('/contabilidad/pagos/{pago}/anular', [CuentaPorPagarController::class, 'anularPago'])
     ->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin|contabilidad']);
+
+Route::prefix('contabilidad/cheques')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
+    Route::get('/bancos', [ChequeController::class, 'bancos'])->middleware('permission:contabilidad.cheques');
+    Route::post('/bancos', [ChequeController::class, 'storeBanco'])->middleware('permission:contabilidad.bancos');
+    Route::delete('/bancos/{banco}', [ChequeController::class, 'destroyBanco'])->middleware('permission:contabilidad.bancos');
+    Route::get('/', [ChequeController::class, 'index'])->middleware('permission:contabilidad.cheques');
+    Route::post('/', [ChequeController::class, 'store'])->middleware('permission:contabilidad.cheques');
+    Route::patch('/{cheque}/estado', [ChequeController::class, 'updateStatus'])->middleware('permission:contabilidad.cheques');
+    Route::post('/{cheque}/evidencia', [ChequeController::class, 'evidencia'])->middleware('permission:contabilidad.cheques');
+    Route::delete('/{cheque}', [ChequeController::class, 'destroy'])->middleware('permission:contabilidad.cheques');
+});
 
 Route::prefix('contabilidad/cuentas-por-cobrar')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [CuentaPorCobrarController::class, 'index'])
