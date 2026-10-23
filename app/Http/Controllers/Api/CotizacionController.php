@@ -633,6 +633,105 @@ class CotizacionController extends Controller
         ]);
     }
 
+    public function duplicar(Request $request, Cotizacion $cotizacion)
+    {
+        $cotizacion->load([
+            'items.proveedores',
+            'items.destinosEntrega',
+            'costosAdicionales',
+        ]);
+
+        $duplicada = DB::transaction(function () use ($request, $cotizacion): Cotizacion {
+            $estadoBorradorId = $this->estadoCotizacionId('borrador');
+            $numeroOrigen = (string) $cotizacion->numero;
+            $numero = $this->service->generarNumero();
+
+            $datos = $cotizacion->getAttributes();
+            unset($datos['id'], $datos['numero'], $datos['fecha'], $datos['estado_cotizacion_id'], $datos['delegado_id'], $datos['delegado_cotizacion_id'], $datos['user_id'], $datos['created_at'], $datos['updated_at']);
+
+            $datos['numero'] = $numero;
+            $datos['fecha'] = $this->todayBusinessDate();
+            $datos['estado_cotizacion_id'] = $estadoBorradorId;
+            $datos['user_id'] = $request->user()->id;
+            $datos['delegado_id'] = null;
+            $datos['delegado_cotizacion_id'] = null;
+            $datos['subtotal'] = 0;
+            $datos['igv'] = 0;
+            $datos['total'] = 0;
+            $datos['ganancia'] = 0;
+            $datos['total_gasto'] = 0;
+
+            $duplicada = Cotizacion::create($datos);
+
+            $estadoItemPendienteId = EstadoCotizacionItem::query()
+                ->where('nombre', 'like', '%pendiente%')
+                ->value('id') ?? 1;
+
+            foreach ($cotizacion->items as $item) {
+                $itemDatos = $item->getAttributes();
+                unset($itemDatos['id'], $itemDatos['cotizacion_id'], $itemDatos['created_at'], $itemDatos['updated_at']);
+                $itemDatos['cotizacion_id'] = $duplicada->id;
+                $itemDatos['estado_cotizacion_item_id'] = $estadoItemPendienteId;
+                $nuevoItem = CotizacionItem::create($itemDatos);
+
+                foreach ($item->proveedores as $proveedor) {
+                    $proveedorDatos = $proveedor->getAttributes();
+                    unset($proveedorDatos['id'], $proveedorDatos['cotizacion_item_id'], $proveedorDatos['created_at'], $proveedorDatos['updated_at']);
+                    $proveedorDatos['cotizacion_item_id'] = $nuevoItem->id;
+                    CotizacionItemProveedor::create($proveedorDatos);
+                }
+
+                foreach ($item->destinosEntrega as $destino) {
+                    $destinoDatos = $destino->getAttributes();
+                    unset($destinoDatos['id'], $destinoDatos['cotizacion_item_id'], $destinoDatos['created_at'], $destinoDatos['updated_at']);
+                    $destinoDatos['cotizacion_item_id'] = $nuevoItem->id;
+                    CotizacionItemDestino::create($destinoDatos);
+                }
+            }
+
+            foreach ($cotizacion->costosAdicionales as $costo) {
+                $costoDatos = $costo->getAttributes();
+                unset($costoDatos['id'], $costoDatos['cotizacion_id'], $costoDatos['created_at'], $costoDatos['updated_at']);
+                $costoDatos['cotizacion_id'] = $duplicada->id;
+                CotizacionCostosAdicional::create($costoDatos);
+            }
+
+            $this->service->recalcular($duplicada);
+
+            CotizacionHistorial::create([
+                'cotizacion_id' => $duplicada->id,
+                'estado_anterior_id' => null,
+                'estado_nuevo_id' => $estadoBorradorId,
+                'comentario' => "Cotización creada a partir de la cotización {$numeroOrigen}.",
+                'user_id' => $request->user()->id,
+            ]);
+
+            CotizacionHistorial::create([
+                'cotizacion_id' => $cotizacion->id,
+                'estado_anterior_id' => $cotizacion->estado_cotizacion_id,
+                'estado_nuevo_id' => $cotizacion->estado_cotizacion_id,
+                'comentario' => "Cotización duplicada por {$request->user()->nombres} {$request->user()->apellidos}: {$numero}.",
+                'user_id' => $request->user()->id,
+            ]);
+
+            return $duplicada->refresh();
+        });
+
+        return response()->json([
+            'message' => "Cotización {$cotizacion->numero} duplicada correctamente.",
+            'cotizacion' => $duplicada->load([
+                'items.productoExterno',
+                'items.proveedores',
+                'items.destinosEntrega',
+                'costosAdicionales',
+                'cliente',
+                'plantilla',
+                'moneda',
+                'estadoCotizacion',
+            ]),
+        ], 201);
+    }
+
     // =========================
     // ITEMS
     // =========================

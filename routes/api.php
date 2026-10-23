@@ -459,6 +459,9 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
     Route::put('/{id}/completa', [CotizacionController::class, 'updateCompleta'])
         ->middleware('permission:cotizaciones.editar');
 
+    Route::post('/{cotizacion}/duplicar', [CotizacionController::class, 'duplicar'])
+        ->middleware('permission:cotizaciones.crear');
+
     Route::patch('/{id}/recalcular', [CotizacionController::class, 'recalcular'])
         ->middleware('permission:cotizaciones.editar');
 

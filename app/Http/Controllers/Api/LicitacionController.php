@@ -329,6 +329,15 @@ class LicitacionController extends Controller
         ]);
 
         $cotizacionOrigen = Cotizacion::with(['estadoCotizacion', 'moneda'])->findOrFail($validated['cotizacion_id']);
+        if ($licitacion->tipo !== 'privado' && $licitacion->cotizaciones()->exists()) {
+            return response()->json([
+                'message' => 'Esta oportunidad solo puede tener una cotizacion vinculada.',
+                'errors' => [
+                    'cotizacion_id' => ['Las oportunidades de licitacion y WHEREX mantienen una sola cotizacion.'],
+                ],
+            ], 422);
+        }
+
         $existingRelacion = LicitacionCotizacion::with('licitacion:id,tipo,empresa,requerimiento')
             ->where('cotizacion_id', $cotizacionOrigen->id)
             ->where('licitacion_id', '<>', $licitacion->id)
@@ -976,7 +985,22 @@ class LicitacionController extends Controller
             return $user->hasRole('licitacion') || $this->isCreator($request, $licitacion);
         }
 
-        return (int) ($licitacion->asignado_a ?: $licitacion->ejecutivo_id) === (int) $user->id;
+        if ((int) ($licitacion->asignado_a ?: $licitacion->ejecutivo_id) !== (int) $user->id) {
+            return false;
+        }
+
+        if ($licitacion->tipo !== 'privado') {
+            return true;
+        }
+
+        $cotizaciones = $licitacion->cotizaciones()
+            ->with('cotizacion.estadoCotizacion')
+            ->get();
+
+        return $cotizaciones->isNotEmpty()
+            && $cotizaciones->every(fn (LicitacionCotizacion $relacion): bool =>
+                $relacion->cotizacion !== null && $this->isApprovedCotizacion($relacion->cotizacion)
+            );
     }
 
     /**
