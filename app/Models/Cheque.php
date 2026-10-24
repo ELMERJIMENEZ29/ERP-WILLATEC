@@ -38,4 +38,10 @@ class Cheque extends Model
         return $this->belongsToMany(Compra::class, 'cheque_aplicaciones')
             ->withPivot(['monto_aplicado'])->withTimestamps();
     }
+
+    public function cuentasPorPagar(): BelongsToMany
+    {
+        return $this->belongsToMany(CuentaPorPagar::class, 'cheque_aplicaciones', 'cheque_id', 'cuenta_por_pagar_id')
+            ->withPivot(['compra_id', 'monto_aplicado'])->withTimestamps();
+    }
 }

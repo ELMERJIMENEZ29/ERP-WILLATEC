@@ -62,6 +62,10 @@ class ComprobanteService
                 ]);
             }
 
+            if ($comprobante->tipo_operacion === Comprobante::TIPO_OPERACION_COMPRA) {
+                $this->cuentaPorPagarService->vincularComprobanteProvisional($comprobante);
+            }
+
             return $comprobante->fresh($this->relaciones());
         });
     }

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Comprobante;
+use App\Models\Compra;
 use App\Models\CuentaPorPagar;
 use App\Models\Pago;
 use Illuminate\Support\Facades\DB;
@@ -10,6 +11,71 @@ use Illuminate\Validation\ValidationException;
 
 class CuentaPorPagarService
 {
+    public function crearDesdeCompra(Compra $compra, ?int $userId = null): CuentaPorPagar
+    {
+        return DB::transaction(function () use ($compra, $userId) {
+            $compra = Compra::query()->with(['proveedor', 'moneda'])->lockForUpdate()->findOrFail($compra->id);
+            $existente = CuentaPorPagar::query()->where('compra_id', $compra->id)->first();
+
+            if ($existente) {
+                return $existente->fresh($this->relaciones());
+            }
+
+            $proveedor = $compra->proveedor;
+            $fechaEmision = $compra->fecha_compra?->toDateString() ?? now()->toDateString();
+            $fechaVencimiento = $proveedor?->tiene_credito
+                ? now()->parse($fechaEmision)->addDays((int) $proveedor->dias_credito)->toDateString()
+                : $fechaEmision;
+            $total = round((float) ($compra->total_estimado ?? 0), 2);
+
+            $cuenta = CuentaPorPagar::create([
+                'comprobante_id' => null,
+                'compra_id' => $compra->id,
+                'proveedor_id' => $compra->proveedor_id,
+                'moneda_id' => $compra->moneda_id,
+                'fecha_emision' => $fechaEmision,
+                'fecha_vencimiento' => $fechaVencimiento,
+                'total' => $total,
+                'monto_pagado' => 0,
+                'saldo' => $total,
+                'estado' => CuentaPorPagar::ESTADO_PENDIENTE,
+                'observacion' => "Compra {$compra->numero} pendiente de comprobante.",
+                'creado_por' => $userId,
+            ]);
+
+            return $cuenta->fresh($this->relaciones());
+        });
+    }
+
+    public function vincularComprobanteProvisional(Comprobante $comprobante): void
+    {
+        if (! $comprobante->compra_id) {
+            return;
+        }
+
+        $cuenta = CuentaPorPagar::query()
+            ->where('compra_id', $comprobante->compra_id)
+            ->whereNull('comprobante_id')
+            ->lockForUpdate()
+            ->first();
+
+        if (! $cuenta) {
+            return;
+        }
+
+        $cuenta->update([
+            'comprobante_id' => $comprobante->id,
+            'proveedor_id' => $comprobante->proveedor_id,
+            'moneda_id' => $comprobante->moneda_id,
+            'fecha_emision' => $comprobante->fecha_emision,
+            'fecha_vencimiento' => $comprobante->fecha_vencimiento ?: $cuenta->fecha_vencimiento,
+            'total' => $comprobante->total,
+            'observacion' => 'Actualizada con el comprobante registrado.',
+        ]);
+
+        $this->recalcular($cuenta);
+    }
+
     public function crearDesdeComprobante(
         Comprobante $comprobante,
         array $data = [],

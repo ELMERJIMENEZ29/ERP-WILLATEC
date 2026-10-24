@@ -7,15 +7,19 @@ use App\Http\Requests\ConfirmarCompraRequest;
 use App\Http\Requests\StoreCompraRequest;
 use App\Models\Compra;
 use App\Services\CompraService;
+use App\Services\CuentaPorPagarService;
 use App\Services\WorkflowNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class CompraController extends Controller
 {
     public function __construct(
         private readonly CompraService $compraService,
-        private readonly WorkflowNotificationService $notifications
+        private readonly WorkflowNotificationService $notifications,
+        private readonly CuentaPorPagarService $cuentaPorPagarService
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -130,6 +134,14 @@ class CompraController extends Controller
         $recepcionesAntes = $compra->recepciones()->pluck('id');
         $compra = $this->compraService->confirmar($compra, $request->user()?->id);
         if ($debeNotificar) {
+            $cuentaPorPagar = $this->cuentaPorPagarService->crearDesdeCompra($compra, $request->user()?->id);
+            $this->notifications->contabilidad(
+                'CxP provisional creada',
+                "La compra {$compra->numero} tiene una cuenta por pagar pendiente de comprobante por {$cuentaPorPagar->total}.",
+                '/contabilidad/cuentas-por-pagar',
+                'cxp_provisional_creada',
+                ['cuenta_por_pagar_id' => $cuentaPorPagar->id, 'compra_id' => $compra->id]
+            );
             $this->notifications->compras('Compra confirmada', "La compra {$compra->numero} fue confirmada y está pendiente de recepción.", '/compras/recepciones', 'compra_confirmada', ['compra_id' => $compra->id]);
             $recepcion = $compra->recepciones->first(fn ($item) => ! $recepcionesAntes->contains($item->id));
             if ($recepcion) {
@@ -144,8 +156,23 @@ class CompraController extends Controller
         Request $request,
         Compra $compra
     ): JsonResponse {
-        return response()->json(
-            $this->compraService->cancelar($compra)
-        );
+        $cuentas = $compra->cuentasPorPagar()->with('pagos')->get();
+        if ($cuentas->contains(fn ($cuenta) => $cuenta->pagos->contains(fn ($pago) => $pago->estado === 'registrado'))) {
+            throw ValidationException::withMessages([
+                'compra' => 'No se puede cancelar la compra porque su cuenta por pagar ya tiene pagos registrados.',
+            ]);
+        }
+
+        $updated = DB::transaction(function () use ($compra, $cuentas) {
+            $updated = $this->compraService->cancelar($compra);
+            foreach ($cuentas as $cuenta) {
+                $this->cuentaPorPagarService->anularCuenta($cuenta);
+            }
+            return $updated;
+        });
+
+        $this->notifications->contabilidad('CxP anulada por cancelación de compra', "La compra {$updated->numero} fue cancelada y sus cuentas por pagar fueron anuladas.", '/contabilidad/cuentas-por-pagar', 'cxp_anulada', ['compra_id' => $updated->id]);
+
+        return response()->json($updated);
     }
 }

@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ChequeController extends Controller
 {
@@ -40,7 +41,7 @@ class ChequeController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = Cheque::query()->with(['banco', 'proveedor', 'moneda', 'creadoPor'])->latest('id');
+        $query = Cheque::query()->with(['banco', 'proveedor', 'moneda', 'creadoPor', 'cuentasPorPagar.compra', 'cuentasPorPagar.comprobante'])->latest('id');
         if ($request->filled('estado')) $query->where('estado', $request->string('estado'));
         if ($request->filled('buscar')) {
             $term = trim((string) $request->input('buscar'));
@@ -72,21 +73,78 @@ class ChequeController extends Controller
             return response()->json(['message' => 'El numero de cheque ya existe para este banco.'], 422);
         }
         $aplicaciones = $data['aplicaciones'] ?? [];
+        if (count($aplicaciones) !== 1 || empty($aplicaciones[0]['cuenta_por_pagar_id'])) {
+            throw ValidationException::withMessages([
+                'aplicaciones' => 'Selecciona una cuenta por pagar para registrar el cheque.',
+            ]);
+        }
+
+        $aplicacion = $aplicaciones[0];
+        $cuenta = CuentaPorPagar::query()
+            ->with('proveedor')
+            ->lockForUpdate()
+            ->findOrFail($aplicacion['cuenta_por_pagar_id']);
+
+        if (! $cuenta->proveedor?->tiene_credito) {
+            throw ValidationException::withMessages([
+                'cuenta_por_pagar_id' => 'Solo se puede registrar un cheque para compras de proveedores con crédito.',
+            ]);
+        }
+
+        if (in_array($cuenta->estado, [CuentaPorPagar::ESTADO_PAGADA, CuentaPorPagar::ESTADO_ANULADA], true) || (float) $cuenta->saldo <= 0) {
+            throw ValidationException::withMessages([
+                'cuenta_por_pagar_id' => 'La cuenta por pagar seleccionada ya no tiene saldo disponible.',
+            ]);
+        }
+
+        $chequeActivo = DB::table('cheque_aplicaciones')
+            ->join('cheques', 'cheques.id', '=', 'cheque_aplicaciones.cheque_id')
+            ->where('cheque_aplicaciones.cuenta_por_pagar_id', $cuenta->id)
+            ->whereNotIn('cheques.estado', ['anulado', 'devuelto'])
+            ->exists();
+        if ($chequeActivo) {
+            throw ValidationException::withMessages([
+                'cuenta_por_pagar_id' => 'Esta cuenta ya tiene un cheque activo asociado.',
+            ]);
+        }
+
+        if ($cuenta->compra_id && DB::table('cheque_aplicaciones')
+            ->join('cheques', 'cheques.id', '=', 'cheque_aplicaciones.cheque_id')
+            ->where('cheque_aplicaciones.compra_id', $cuenta->compra_id)
+            ->whereNotIn('cheques.estado', ['anulado', 'devuelto'])
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'cuenta_por_pagar_id' => 'La compra ya tiene un cheque activo asociado.',
+            ]);
+        }
+
+        $monto = (float) $data['monto'];
+        if ($monto > (float) $cuenta->saldo + 0.00001) {
+            throw ValidationException::withMessages([
+                'monto' => 'El monto del cheque no puede superar el saldo de la cuenta por pagar.',
+            ]);
+        }
+
+        if (! empty($data['moneda_id']) && (int) $data['moneda_id'] !== (int) $cuenta->moneda_id) {
+            throw ValidationException::withMessages([
+                'moneda_id' => 'La moneda del cheque debe coincidir con la moneda de la cuenta.',
+            ]);
+        }
+
+        $data['proveedor_id'] = $cuenta->proveedor_id;
+        $data['moneda_id'] = $cuenta->moneda_id;
         unset($data['aplicaciones']);
         $data['creado_por'] = $request->user()?->id;
         $cheque = Cheque::create($data);
-        foreach ($aplicaciones as $aplicacion) {
-            if (empty($aplicacion['compra_id']) && empty($aplicacion['cuenta_por_pagar_id'])) continue;
-            DB::table('cheque_aplicaciones')->insert([
-                'cheque_id' => $cheque->id,
-                'compra_id' => $aplicacion['compra_id'] ?? null,
-                'cuenta_por_pagar_id' => $aplicacion['cuenta_por_pagar_id'] ?? null,
-                'monto_aplicado' => $aplicacion['monto_aplicado'] ?? null,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
-        return response()->json($cheque->load(['banco', 'proveedor', 'moneda']), 201);
+        DB::table('cheque_aplicaciones')->insert([
+            'cheque_id' => $cheque->id,
+            'compra_id' => $cuenta->compra_id,
+            'cuenta_por_pagar_id' => $cuenta->id,
+            'monto_aplicado' => $monto,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        return response()->json($cheque->load(['banco', 'proveedor', 'moneda', 'cuentasPorPagar.compra', 'cuentasPorPagar.comprobante']), 201);
     }
 
     public function updateStatus(Request $request, Cheque $cheque): JsonResponse
@@ -96,12 +154,21 @@ class ChequeController extends Controller
             'fecha_entrega' => ['nullable', 'date'],
             'fecha_cobro' => ['nullable', 'date'],
         ]);
+        if (in_array($data['estado'], ['anulado', 'devuelto'], true) && $cheque->estado === 'cobrado') {
+            foreach (DB::table('cheque_aplicaciones')->where('cheque_id', $cheque->id)->whereNotNull('cuenta_por_pagar_id')->get() as $application) {
+                $pago = Pago::query()->where('idempotency_key', "cheque:{$cheque->id}:cxp:{$application->cuenta_por_pagar_id}")->first();
+                if (! $pago || $pago->estado === Pago::ESTADO_ANULADO) continue;
+                $pago->update(['estado' => Pago::ESTADO_ANULADO, 'observacion' => 'Pago anulado porque el cheque fue devuelto o anulado.']);
+                $this->cuentaPorPagarService->recalcular(CuentaPorPagar::find($application->cuenta_por_pagar_id));
+            }
+        }
+
         if ($data['estado'] === 'cobrado' && $cheque->estado !== 'cobrado') {
             foreach (DB::table('cheque_aplicaciones')->where('cheque_id', $cheque->id)->whereNotNull('cuenta_por_pagar_id')->get() as $application) {
                 $cuenta = CuentaPorPagar::find($application->cuenta_por_pagar_id);
                 if (! $cuenta || (float) $cuenta->saldo <= 0) continue;
                 $monto = min((float) ($application->monto_aplicado ?: $cheque->monto), (float) $cuenta->saldo);
-                $pago = Pago::firstOrCreate(
+                $pago = Pago::firstOrNew(
                     ['idempotency_key' => "cheque:{$cheque->id}:cxp:{$cuenta->id}"],
                     [
                         'cuenta_por_pagar_id' => $cuenta->id,
@@ -115,11 +182,13 @@ class ChequeController extends Controller
                         'creado_por' => $request->user()?->id,
                     ]
                 );
-                if ($pago->wasRecentlyCreated) $this->cuentaPorPagarService->recalcular($cuenta);
+                $pago->estado = Pago::ESTADO_REGISTRADO;
+                $pago->save();
+                $this->cuentaPorPagarService->recalcular($cuenta);
             }
         }
         $cheque->update($data);
-        return response()->json($cheque->fresh(['banco', 'proveedor', 'moneda']));
+        return response()->json($cheque->fresh(['banco', 'proveedor', 'moneda', 'cuentasPorPagar.compra', 'cuentasPorPagar.comprobante']));
     }
 
     public function evidencia(Request $request, Cheque $cheque): JsonResponse

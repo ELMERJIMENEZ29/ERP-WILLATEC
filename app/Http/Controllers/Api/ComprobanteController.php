@@ -10,6 +10,7 @@ use App\Services\Sunat\SunatXmlService;
 use App\Services\WorkflowNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class ComprobanteController extends Controller
 {
@@ -88,6 +89,51 @@ class ComprobanteController extends Controller
             $request->user()?->id
         );
         $this->notifications->contabilidad('Comprobante registrado', "Se registró el comprobante {$comprobante->serie}-{$comprobante->numero}.", '/contabilidad/comprobantes', 'comprobante_creado', ['comprobante_id' => $comprobante->id]);
+
+        return response()->json($comprobante, 201);
+    }
+
+    public function storeManual(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'compra_id' => ['required', 'integer', 'exists:compras,id'],
+            'tipo_comprobante' => ['required', 'string', 'max:10'],
+            'serie' => ['required', 'string', 'max:20'],
+            'numero' => ['required', 'string', 'max:40'],
+            'fecha_emision' => ['required', 'date'],
+            'fecha_vencimiento' => ['nullable', 'date'],
+            'subtotal' => ['required', 'numeric', 'min:0'],
+            'igv' => ['required', 'numeric', 'min:0'],
+            'total' => ['required', 'numeric', 'min:0'],
+            'moneda_id' => ['nullable', 'integer', 'exists:monedas,id'],
+            'observacion' => ['nullable', 'string', 'max:5000'],
+            'archivo' => ['required', 'file', 'mimes:pdf', 'max:10240'],
+        ]);
+
+        $compra = \App\Models\Compra::query()->with(['items', 'proveedor'])->findOrFail($validated['compra_id']);
+        $validated['tipo_operacion'] = 'compra';
+        $validated['proveedor_id'] = $compra->proveedor_id;
+        $validated['moneda_id'] ??= $compra->moneda_id;
+        $validated['archivo_path'] = $request->file('archivo')->store('contabilidad/comprobantes', 'public');
+        unset($validated['archivo']);
+        $validated['items'] = $compra->items->map(fn ($item) => [
+            'compra_item_id' => $item->id,
+            'descripcion' => $item->descripcion,
+            'cantidad' => $item->cantidad,
+            'valor_unitario' => $item->costo_unitario_estimado ?? 0,
+            'subtotal' => round((float) $item->cantidad * (float) ($item->costo_unitario_estimado ?? 0), 2),
+            'igv' => 0,
+            'total' => round((float) $item->cantidad * (float) ($item->costo_unitario_estimado ?? 0), 2),
+        ])->values()->all();
+
+        try {
+            $comprobante = $this->comprobanteService->crear($validated, $request->user()?->id);
+        } catch (\Throwable $exception) {
+            Storage::disk('public')->delete($validated['archivo_path']);
+            throw $exception;
+        }
+
+        $this->notifications->contabilidad('Comprobante PDF registrado', "Se registró manualmente el comprobante {$comprobante->serie}-{$comprobante->numero}.", '/contabilidad/comprobantes', 'comprobante_creado', ['comprobante_id' => $comprobante->id]);
 
         return response()->json($comprobante, 201);
     }

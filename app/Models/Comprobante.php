@@ -60,6 +60,13 @@ class Comprobante extends Model
         ];
     }
 
+    protected $appends = ['archivo_url'];
+
+    public function getArchivoUrlAttribute(): ?string
+    {
+        return $this->archivo_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->archivo_path) : null;
+    }
+
     public function compra(): BelongsTo
     {
         return $this->belongsTo(Compra::class);

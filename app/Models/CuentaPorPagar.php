@@ -25,6 +25,8 @@ class CuentaPorPagar extends Model
 
     protected $table = 'cuentas_por_pagar';
 
+    protected $appends = ['fecha_vencimiento_origen'];
+
     protected $fillable = [
         'comprobante_id',
         'compra_id',
@@ -79,5 +81,18 @@ class CuentaPorPagar extends Model
     public function pagos(): HasMany
     {
         return $this->hasMany(Pago::class);
+    }
+
+    public function getFechaVencimientoOrigenAttribute(): string
+    {
+        if ($this->comprobante?->fecha_vencimiento) {
+            return 'comprobante';
+        }
+
+        if ($this->proveedor?->tiene_credito) {
+            return 'credito_proveedor';
+        }
+
+        return $this->fecha_vencimiento ? 'contado' : 'sin_fecha';
     }
 }

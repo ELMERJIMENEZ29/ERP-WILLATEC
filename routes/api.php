@@ -97,6 +97,11 @@ function permissionCatalog(): array
         ['key' => 'compras.sobrecompra', 'module' => 'Compras', 'parent' => 'compras', 'label' => 'Autorizar sobrecompras', 'description' => 'Permitir compras por encima del saldo requerido y enviar el excedente a stock.'],
         ['key' => 'contabilidad.cheques', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar cheques', 'description' => 'Registrar, entregar, cobrar y adjuntar evidencia de cheques.'],
         ['key' => 'contabilidad.bancos', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar bancos', 'description' => 'Agregar y administrar bancos para cheques.'],
+        ['key' => 'contabilidad.comprobantes', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar comprobantes', 'description' => 'Registrar, consultar y anular comprobantes.'],
+        ['key' => 'contabilidad.cxp', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar cuentas por pagar', 'description' => 'Consultar cuentas por pagar y su trazabilidad.'],
+        ['key' => 'contabilidad.cxp.pagos', 'module' => 'Contabilidad', 'parent' => 'contabilidad.cxp', 'label' => 'Registrar pagos CxP', 'description' => 'Registrar y anular pagos de cuentas por pagar.'],
+        ['key' => 'contabilidad.cxc', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar cuentas por cobrar', 'description' => 'Consultar cuentas por cobrar y su trazabilidad.'],
+        ['key' => 'contabilidad.alertas', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Consultar alertas contables', 'description' => 'Consultar pendientes contables y de compras.'],
         ['key' => 'inventario', 'module' => 'Inventario', 'label' => 'Ver inventario', 'description' => 'Acceso a kardex y movimientos.'],
         ['key' => 'inventario.kardex_entrada', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Registrar entrada Kardex', 'description' => 'Permite crear entradas de inventario.'],
         ['key' => 'inventario.kardex_salida', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Registrar salida Kardex', 'description' => 'Permite crear salidas de inventario.'],
@@ -600,46 +605,49 @@ Route::prefix('recepciones-compra')->middleware(['auth:sanctum', 'token.idle'])-
 
 Route::prefix('contabilidad/comprobantes')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [ComprobanteController::class, 'index'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.comprobantes|contabilidad');
 
     Route::post('/', [ComprobanteController::class, 'store'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.comprobantes|contabilidad');
+
+    Route::post('/manual', [ComprobanteController::class, 'storeManual'])
+        ->middleware('permission:contabilidad.comprobantes|contabilidad');
 
     Route::post('/preview-xml', [ComprobanteController::class, 'previewXml'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.comprobantes|contabilidad');
 
     Route::get('/{comprobante}', [ComprobanteController::class, 'show'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.comprobantes|contabilidad');
 
     Route::patch('/{comprobante}/anular', [ComprobanteController::class, 'anular'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.comprobantes|contabilidad');
 
     Route::post('/{comprobante}/cuenta-por-pagar', [CuentaPorPagarController::class, 'storeDesdeComprobante'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.cxp|contabilidad');
 
     Route::post('/{comprobante}/cuenta-por-cobrar', [CuentaPorCobrarController::class, 'storeDesdeComprobante'])
         ->middleware('role:superadmin|admin|contabilidad');
 });
 
 Route::get('/operaciones/alertas', [AlertaOperativaController::class, 'index'])
-    ->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin|logistica|contabilidad|ventas']);
+    ->middleware(['auth:sanctum', 'token.idle', 'permission:contabilidad.alertas|compras']);
 
 Route::prefix('contabilidad/cuentas-por-pagar')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [CuentaPorPagarController::class, 'index'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.cxp|contabilidad');
 
     Route::get('/{cuentaPorPagar}', [CuentaPorPagarController::class, 'show'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.cxp|contabilidad');
 
     Route::post('/{cuentaPorPagar}/pagos', [CuentaPorPagarController::class, 'registrarPago'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.cxp.pagos|contabilidad.cxp|contabilidad');
 
     Route::patch('/{cuentaPorPagar}/anular', [CuentaPorPagarController::class, 'anular'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.cxp.pagos|contabilidad.cxp|contabilidad');
 });
 
 Route::patch('/contabilidad/pagos/{pago}/anular', [CuentaPorPagarController::class, 'anularPago'])
-    ->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin|contabilidad']);
+    ->middleware(['auth:sanctum', 'token.idle', 'permission:contabilidad.cxp.pagos|contabilidad.cxp|contabilidad']);
 
 Route::prefix('contabilidad/cheques')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/bancos', [ChequeController::class, 'bancos'])->middleware('permission:contabilidad.cheques');
@@ -654,16 +662,16 @@ Route::prefix('contabilidad/cheques')->middleware(['auth:sanctum', 'token.idle']
 
 Route::prefix('contabilidad/cuentas-por-cobrar')->middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::get('/', [CuentaPorCobrarController::class, 'index'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.cxc|contabilidad');
 
     Route::get('/{cuentaPorCobrar}', [CuentaPorCobrarController::class, 'show'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.cxc|contabilidad');
 
     Route::post('/{cuentaPorCobrar}/cobros', [CuentaPorCobrarController::class, 'registrarCobro'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.cxc|contabilidad');
 
     Route::patch('/{cuentaPorCobrar}/anular', [CuentaPorCobrarController::class, 'anular'])
-        ->middleware('role:superadmin|admin|contabilidad');
+        ->middleware('permission:contabilidad.cxc|contabilidad');
 });
 
 Route::patch('/contabilidad/cobros/{cobro}/anular', [CuentaPorCobrarController::class, 'anularCobro'])
