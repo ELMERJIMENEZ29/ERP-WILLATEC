@@ -222,6 +222,88 @@ class InventarioService
         );
     }
 
+    public function revertirSalida(
+        InventarioMovimiento $movimiento,
+        string $motivo,
+        ?int $createdBy = null,
+        ?string $ipOrigen = null,
+        ?string $userAgent = null
+    ): InventarioMovimiento {
+        $motivo = trim($motivo);
+
+        if ($motivo === '') {
+            throw ValidationException::withMessages([
+                'motivo' => 'El motivo de la reversión es obligatorio.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($movimiento, $motivo, $createdBy, $ipOrigen, $userAgent): InventarioMovimiento {
+            $original = InventarioMovimiento::query()
+                ->with(['productoSeries:id,producto_id,serie,estado', 'productoSerie:id,producto_id,serie,estado'])
+                ->lockForUpdate()
+                ->findOrFail($movimiento->id);
+
+            if ($original->tipo_movimiento !== InventarioMovimiento::TIPO_SALIDA) {
+                throw ValidationException::withMessages([
+                    'movimiento' => 'Solo se pueden revertir salidas de inventario.',
+                ]);
+            }
+
+            $yaRevertido = InventarioMovimiento::query()
+                ->where('referencia_tipo', 'inventario_movimiento_reversion')
+                ->where('referencia_id', $original->id)
+                ->exists();
+
+            if ($yaRevertido) {
+                throw ValidationException::withMessages([
+                    'movimiento' => 'Esta salida ya fue revertida.',
+                ]);
+            }
+
+            $serieIds = $original->productoSeries->pluck('id')->all();
+            if ($original->producto_serie_id) {
+                $serieIds[] = (int) $original->producto_serie_id;
+            }
+            $serieIds = array_values(array_unique(array_map('intval', $serieIds)));
+
+            $idempotencyKey = 'reversion-salida:'.$original->id;
+
+            $this->moverStock(
+                productoId: (int) $original->producto_id,
+                tipoMovimiento: InventarioMovimiento::TIPO_REVERSO,
+                cantidad: (float) $original->cantidad,
+                referenciaTipo: 'inventario_movimiento_reversion',
+                referenciaId: (int) $original->id,
+                origen: 'reversion_salida',
+                idempotencyKey: $idempotencyKey,
+                createdBy: $createdBy,
+                observacion: 'Reversión de salida #'.$original->id.': '.$motivo,
+                ipOrigen: $ipOrigen,
+                userAgent: $userAgent,
+                costoUnitario: (float) ($original->costo_unitario ?? 0),
+                monedaId: $original->moneda_id ? (int) $original->moneda_id : null,
+                documentoTipo: $original->documento_tipo,
+                documentoNumero: $original->documento_numero,
+                documentoPath: $original->documento_path,
+                fechaDocumento: $original->fecha_documento?->toDateString(),
+                proveedor: $original->proveedor,
+                proveedorId: $original->proveedor_id ? (int) $original->proveedor_id : null,
+                productoSerieIds: $serieIds
+            );
+
+            return InventarioMovimiento::query()
+                ->with([
+                    'producto:id,nombre,sku,codigo,serie,marca,modelo',
+                    'productoSerie:id,producto_id,serie,factura_numero,estado',
+                    'productoSeries:id,producto_id,serie,factura_numero,estado',
+                    'moneda:id,codigo,simbolo',
+                    'createdBy:id,nombres,apellidos,email',
+                ])
+                ->where('idempotency_key', $idempotencyKey)
+                ->firstOrFail();
+        });
+    }
+
     public function ajustarStock(
         int $productoId,
         float $nuevoStock,
@@ -369,6 +451,7 @@ class InventarioService
             match ($tipoMovimiento) {
                 InventarioMovimiento::TIPO_ENTRADA,
                 InventarioMovimiento::TIPO_DEVOLUCION,
+                InventarioMovimiento::TIPO_REVERSO,
                 InventarioMovimiento::TIPO_SINCRONIZACION_WOOCOMMERCE => $producto->stock_actual = $stockAntes + ($entradaCantidad = $cantidad),
 
                 InventarioMovimiento::TIPO_SALIDA => $this->aplicarSalida($producto, $cantidad, $liberarReservaAsociada, $salidaCantidad),
@@ -407,7 +490,7 @@ class InventarioService
             $producto->save();
 
             $productoSerieId = null;
-            $seriesRegistradas = $entradaCantidad > 0
+            $seriesRegistradas = $entradaCantidad > 0 && $tipoMovimiento !== InventarioMovimiento::TIPO_REVERSO
                 ? $this->registrarSeriesEntrada(
                     producto: $producto,
                     series: $series ?? [],
@@ -419,6 +502,9 @@ class InventarioService
                     fechaDocumento: $fechaDocumento,
                     createdBy: $createdBy
                 )
+                : [];
+            $seriesRevertidas = $entradaCantidad > 0 && $tipoMovimiento === InventarioMovimiento::TIPO_REVERSO
+                ? $this->registrarSeriesReversion($producto, $productoSerieIds ?? [])
                 : [];
             $seriesSalida = $salidaCantidad > 0
                 ? $this->registrarSeriesSalida(
@@ -473,6 +559,10 @@ class InventarioService
             if (count($seriesRegistradas) > 0) {
                 $movimiento->productoSeries()->sync(
                     collect($seriesRegistradas)->pluck('id')->all()
+                );
+            } elseif (count($seriesRevertidas) > 0) {
+                $movimiento->productoSeries()->sync(
+                    collect($seriesRevertidas)->pluck('id')->all()
                 );
             } elseif (count($seriesSalida) > 0) {
                 $movimiento->productoSeries()->sync(
@@ -687,6 +777,47 @@ class InventarioService
                 'fecha_salida' => $fechaSalida,
                 'oc_recibida_id' => $ocRecibidaId,
                 'cotizacion_item_id' => $cotizacionItemId,
+            ])->save();
+        });
+
+        return $series->all();
+    }
+
+    /**
+     * Restores the exact serials linked to the original output.
+     * @param  array<int, int|string|null>  $productoSerieIds
+     * @return array<int, ProductoSerie>
+     */
+    private function registrarSeriesReversion(Producto $producto, array $productoSerieIds): array
+    {
+        $ids = collect($productoSerieIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $series = ProductoSerie::query()
+            ->where('producto_id', $producto->id)
+            ->whereIn('id', $ids->all())
+            ->lockForUpdate()
+            ->get();
+
+        if ($series->count() !== $ids->count()) {
+            throw ValidationException::withMessages([
+                'producto_serie_ids' => 'No se pudieron restaurar todas las series de la salida original.',
+            ]);
+        }
+
+        $series->each(function (ProductoSerie $serie): void {
+            $serie->forceFill([
+                'estado' => ProductoSerie::ESTADO_DISPONIBLE,
+                'oc_recibida_id' => null,
+                'cotizacion_item_id' => null,
+                'fecha_salida' => null,
             ])->save();
         });
 

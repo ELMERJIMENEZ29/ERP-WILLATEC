@@ -107,6 +107,10 @@ class OcRecibidaController extends Controller
 
     public function show(Request $request, OcRecibida $ocRecibida)
     {
+        // Recalcula la cobertura al abrir la OC para reflejar entradas, devoluciones
+        // y reversiones de Kardex que hayan liberado stock nuevamente.
+        $this->sincronizarCompradoConInventario($ocRecibida, $request);
+
         return response()->json(
             $ocRecibida->load([
                 'items.cotizacionItem.proveedores',
@@ -635,7 +639,7 @@ class OcRecibidaController extends Controller
         }
 
         $inventarioService = app(InventarioService::class);
-        $ocRecibida->loadMissing('cotizacion');
+        $ocRecibida->loadMissing(['cotizacion', 'items.cotizacionItem']);
         $monedaId = $ocRecibida->cotizacion?->moneda_id;
 
         foreach ($ocRecibida->items->where('seleccionado', true) as $item) {
@@ -744,7 +748,7 @@ class OcRecibidaController extends Controller
         }
 
         $inventarioService = app(InventarioService::class);
-        $ocRecibida->loadMissing('cotizacion');
+        $ocRecibida->loadMissing(['cotizacion', 'items.cotizacionItem']);
         $changed = false;
 
         foreach ($ocRecibida->items->where('seleccionado', true) as $item) {

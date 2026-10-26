@@ -89,6 +89,7 @@ function permissionCatalog(): array
         ['key' => 'inventario', 'module' => 'Inventario', 'label' => 'Ver inventario', 'description' => 'Acceso a kardex y movimientos.'],
         ['key' => 'inventario.kardex_entrada', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Registrar entrada Kardex', 'description' => 'Permite crear entradas de inventario.'],
         ['key' => 'inventario.kardex_salida', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Registrar salida Kardex', 'description' => 'Permite crear salidas de inventario.'],
+        ['key' => 'inventario.kardex_revertir', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Revertir salida Kardex', 'description' => 'Permite revertir salidas manuales y restaurar stock.'],
         ['key' => 'inventario.consultar', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Consultar movimientos', 'description' => 'Consultar inventario y movimientos.'],
         ['key' => 'inventario.ajustar', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Ajustar stock', 'description' => 'Ajustar existencias manualmente.'],
         ['key' => 'inventario.documentos', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Gestionar documentos', 'description' => 'Adjuntar documentos a movimientos.'],
@@ -325,6 +326,9 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
 
     Route::post('/inventario/movimientos/{movimiento}/documento', [InventarioController::class, 'actualizarDocumento'])
         ->middleware('permission:inventario');
+
+    Route::post('/inventario/movimientos/{movimiento}/revertir', [InventarioController::class, 'revertirSalida'])
+        ->middleware('permission:inventario.kardex_revertir|inventario.kardex_salida');
 
     Route::get('/proveedores', [ProveedorController::class, 'index'])
         ->middleware('permission:proveedores.consultar');

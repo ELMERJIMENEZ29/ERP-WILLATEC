@@ -421,6 +421,26 @@ class InventarioController extends Controller
         ]);
     }
 
+    public function revertirSalida(Request $request, InventarioMovimiento $movimiento, InventarioService $inventarioService)
+    {
+        $validated = $request->validate([
+            'motivo' => 'required|string|min:5|max:500',
+        ]);
+
+        $reversion = $inventarioService->revertirSalida(
+            movimiento: $movimiento,
+            motivo: $validated['motivo'],
+            createdBy: $request->user()?->id,
+            ipOrigen: $request->ip(),
+            userAgent: $request->userAgent()
+        );
+
+        return response()->json([
+            'message' => 'Salida revertida correctamente. El stock y las series fueron restaurados.',
+            'movimiento' => $reversion,
+        ]);
+    }
+
     private function storeDocumento(UploadedFile $file, string $directory): string
     {
         return $file->store($directory, 'public');
