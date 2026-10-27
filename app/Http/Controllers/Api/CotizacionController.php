@@ -347,6 +347,7 @@ class CotizacionController extends Controller
     public function store(Request $request)
     {
         $request->validate([
+            'oportunidad_id' => 'required|integer|exists:licitaciones,id',
             'cliente_id' => 'required|exists:clientes,id',
             'plantilla_id' => 'required|exists:plantillas,id',
             'titulo' => 'required|string',
@@ -1665,6 +1666,7 @@ class CotizacionController extends Controller
     public function storeCompleta(Request $request)
     {
         $request->validate([
+            'oportunidad_id' => 'required|integer|exists:licitaciones,id',
             'cliente_id' => 'required|exists:clientes,id',
             'plantilla_id' => 'required|exists:plantillas,id',
             'plataforma_id' => 'required|exists:plataformas,id',
