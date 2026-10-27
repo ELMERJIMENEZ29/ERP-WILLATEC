@@ -67,6 +67,7 @@ class OcEmitidaController extends Controller
             'search' => 'nullable|string|max:255',
             'proveedor' => 'nullable|string|max:255',
             'estado' => 'nullable|string|max:50',
+            'user_id' => 'nullable|integer|exists:users,id',
             'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
@@ -82,6 +83,10 @@ class OcEmitidaController extends Controller
             $query->where('estado', $request->estado);
         }
 
+        if ($request->filled('user_id')) {
+            $query->where('user_id', $request->integer('user_id'));
+        }
+
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($query) use ($search): void {
@@ -92,9 +97,25 @@ class OcEmitidaController extends Controller
             });
         }
 
-        return response()->json(
-            $query->latest()->paginate($request->integer('per_page', 10))
-        );
+        $summaryQuery = clone $query;
+        $summary = [
+            'total' => (clone $summaryQuery)->count(),
+            'documentos_pendientes' => (clone $summaryQuery)
+                ->where(function ($documentQuery): void {
+                    $documentQuery
+                        ->whereNull('factura_path')
+                        ->orWhereNull('comprobante_pago_path');
+                })
+                ->count(),
+            'atendidas' => (clone $summaryQuery)
+                ->where('estado', 'atendido')
+                ->count(),
+        ];
+
+        return response()->json([
+            ...$query->latest()->paginate($request->integer('per_page', 10))->toArray(),
+            'summary' => $summary,
+        ]);
     }
 
     public function show(OcEmitida $ocEmitida)

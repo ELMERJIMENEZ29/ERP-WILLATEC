@@ -33,6 +33,10 @@ class ProductoController extends Controller
                 'moneda:id,codigo,simbolo',
                 'series' => fn ($query) => $query
                     ->select(['id', 'producto_id', 'serie', 'factura_numero', 'documento_path', 'estado', 'fecha_ingreso', 'fecha_salida', 'oc_recibida_id', 'cotizacion_item_id'])
+                    ->with([
+                        'ocRecibida:id,numero',
+                        'cotizacionItem:id,descripcion,codigo',
+                    ])
                     ->latest(),
                 'ultimaEntradaConFactura',
                 'woocommerceProducto',
@@ -92,7 +96,14 @@ class ProductoController extends Controller
     // Ver detalle
     public function show(int $id)
     {
-        $producto = Producto::with(['categoria:id,nombre', 'moneda:id,codigo,simbolo', 'series', 'ultimaEntradaConFactura', 'woocommerceProducto'])->findOrFail($id);
+        $producto = Producto::with([
+            'categoria:id,nombre',
+            'moneda:id,codigo,simbolo',
+            'series.ocRecibida:id,numero',
+            'series.cotizacionItem:id,descripcion,codigo',
+            'ultimaEntradaConFactura',
+            'woocommerceProducto',
+        ])->findOrFail($id);
         $producto = $this->applyFacturaFallback($producto);
 
         if (! $producto) {

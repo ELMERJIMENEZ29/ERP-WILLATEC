@@ -71,6 +71,7 @@ class OcRecibidaController extends Controller
         $request->validate([
             'search' => 'nullable|string|max:255',
             'estado' => 'nullable|in:pendiente,en_proceso,por_entrega,atendido,cancelado',
+            'user_id' => 'nullable|integer|exists:users,id',
             'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
@@ -91,6 +92,10 @@ class OcRecibidaController extends Controller
             $query->where('estado', $request->estado);
         }
 
+        if ($request->filled('user_id')) {
+            $query->where('user_id', $request->integer('user_id'));
+        }
+
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($query) use ($search): void {
@@ -100,9 +105,26 @@ class OcRecibidaController extends Controller
             });
         }
 
-        return response()->json(
-            $query->latest()->paginate($request->integer('per_page', 10))
-        );
+        $summaryQuery = clone $query;
+        $summary = [
+            'total' => (clone $summaryQuery)->count(),
+            'documentos_pendientes' => (clone $summaryQuery)
+                ->where(function ($documentQuery): void {
+                    $documentQuery
+                        ->whereNull('orden_compra_cliente_path')
+                        ->orWhereNull('guia_emision_path')
+                        ->orWhereNull('factura_path');
+                })
+                ->count(),
+            'atendidas' => (clone $summaryQuery)
+                ->where('estado', OcRecibida::ESTADO_ATENDIDO)
+                ->count(),
+        ];
+
+        return response()->json([
+            ...$query->latest()->paginate($request->integer('per_page', 10))->toArray(),
+            'summary' => $summary,
+        ]);
     }
 
     public function show(Request $request, OcRecibida $ocRecibida)
