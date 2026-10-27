@@ -1582,8 +1582,8 @@ class CotizacionController extends Controller
     {
         $estado = mb_strtolower((string) $cotizacion->estadoCotizacion?->nombre);
 
-        if ($estado !== 'aprobada') {
-            abort(422, 'La cotizacion vinculada solo puede descargarse desde la oportunidad cuando este aprobada.');
+        if (! in_array($estado, ['aprobada', 'oc registrada', 'oc_registrada'], true)) {
+            abort(422, 'La cotizacion vinculada solo puede descargarse desde la oportunidad cuando este aprobada o tenga una OC registrada.');
         }
 
         $hasPendingModification = $cotizacion->modificaciones()
