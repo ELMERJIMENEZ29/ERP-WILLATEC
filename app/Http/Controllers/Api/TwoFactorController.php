@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use PragmaRX\Google2FA\Google2FA;
 use BaconQrCode\Renderer\ImageRenderer;
@@ -110,6 +111,35 @@ class TwoFactorController extends Controller
 
         return response()->json([
             'message' => '2FA desactivado',
+        ]);
+    }
+
+    public function recoveryCodes(Request $request)
+    {
+        $validated = $request->validate([
+            'password' => 'required|string',
+            'code' => 'required|string|size:6',
+        ]);
+
+        $user = $request->user();
+
+        if (! $user->two_factor_secret || ! $user->two_factor_confirmed_at) {
+            return response()->json(['message' => 'El 2FA no esta activo'], 422);
+        }
+
+        if (! Hash::check($validated['password'], $user->password)) {
+            return response()->json(['message' => 'Contrasena incorrecta'], 422);
+        }
+
+        $google2fa = new Google2FA();
+        $secret = Crypt::decryptString($user->two_factor_secret);
+
+        if (! $google2fa->verifyKey($secret, $validated['code'])) {
+            return response()->json(['message' => 'Codigo 2FA invalido'], 422);
+        }
+
+        return response()->json([
+            'recovery_codes' => json_decode($user->two_factor_recovery_codes, true) ?? [],
         ]);
     }
 }

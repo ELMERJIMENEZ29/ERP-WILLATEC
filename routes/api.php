@@ -153,6 +153,8 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
     Route::post('/two-factor/enable', [TwoFactorController::class, 'enable']);
     Route::get('/two-factor/qr', [TwoFactorController::class, 'qr']);
     Route::post('/two-factor/confirm', [TwoFactorController::class, 'confirm']);
+    Route::post('/two-factor/recovery-codes', [TwoFactorController::class, 'recoveryCodes'])
+        ->middleware('throttle:5,1');
     Route::delete('/two-factor/disable', [TwoFactorController::class, 'disable']);
 
     Route::get('/erp/refresh', [AuthController::class, 'refresh'])->middleware('throttle:30,1');
