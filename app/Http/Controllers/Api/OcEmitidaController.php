@@ -134,6 +134,7 @@ class OcEmitidaController extends Controller
             'moneda' => 'nullable|string|max:10',
             'fecha_emision' => 'nullable|date',
             'observaciones' => 'nullable|string',
+            'mostrar_referencia_cotizacion' => 'sometimes|boolean',
             'items' => 'required|array|min:1',
             'items.*.cotizacion_item_id' => 'required|integer|exists:cotizacion_items,id',
             'items.*.cantidad' => 'required|integer|min:1',
@@ -188,6 +189,7 @@ class OcEmitidaController extends Controller
             'moneda' => 'nullable|string|max:10',
             'fecha_emision' => 'nullable|date',
             'observaciones' => 'nullable|string',
+            'mostrar_referencia_cotizacion' => 'sometimes|boolean',
             'items' => 'required|array|min:1',
             'items.*.cotizacion_item_id' => 'required|integer|exists:cotizacion_items,id',
             'items.*.cantidad' => 'required|integer|min:1',
@@ -437,6 +439,9 @@ class OcEmitidaController extends Controller
             'proveedor_contacto' => $proveedorSnapshot?->contacto,
             'proveedor_correo' => $proveedorSnapshot?->correo,
             'observaciones' => $validated['observaciones'] ?? null,
+            'mostrar_referencia_cotizacion' => array_key_exists('mostrar_referencia_cotizacion', $validated)
+                ? (bool) $validated['mostrar_referencia_cotizacion']
+                : ($ocEmitida->mostrar_referencia_cotizacion ?? true),
             'moneda' => strtoupper((string) ($validated['moneda'] ?? $cotizacion->moneda?->codigo ?? 'PEN')),
             'subtotal' => round($subtotal, 2),
             'igv' => $igv,

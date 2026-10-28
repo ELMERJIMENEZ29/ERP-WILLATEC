@@ -1441,6 +1441,7 @@ $orderAngleSvg = 'data:image/svg+xml;base64,' . base64_encode('
             {{-- IZQUIERDA --}}
             <td class="bottom-left">
 
+                @if($ocEmitida->mostrar_referencia_cotizacion ?? true)
                 <div class="optional-title">
                     DATOS OPCIONALES:
                 </div>
@@ -1473,6 +1474,7 @@ $orderAngleSvg = 'data:image/svg+xml;base64,' . base64_encode('
                     @endif
 
                 </div>
+                @endif
 
 
                 @if(filled($ocEmitida->observaciones))

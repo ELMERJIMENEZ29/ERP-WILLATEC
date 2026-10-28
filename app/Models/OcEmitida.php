@@ -26,6 +26,7 @@ class OcEmitida extends Model
         'proveedor_contacto',
         'proveedor_correo',
         'observaciones',
+        'mostrar_referencia_cotizacion',
         'factura_path',
         'factura_uploaded_by',
         'comprobante_pago_path',
@@ -47,6 +48,10 @@ class OcEmitida extends Model
     protected $appends = [
         'documentos_completos',
         'documentos_faltantes',
+    ];
+
+    protected $casts = [
+        'mostrar_referencia_cotizacion' => 'boolean',
     ];
 
     public function items(): HasMany
