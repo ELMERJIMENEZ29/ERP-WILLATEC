@@ -636,13 +636,30 @@ class CotizacionController extends Controller
 
     public function duplicar(Request $request, Cotizacion $cotizacion)
     {
+        $request->validate([
+            'oportunidad_id' => 'required|integer|exists:licitaciones,id',
+        ]);
+
+        $oportunidad = Licitacion::findOrFail($request->integer('oportunidad_id'));
+        $assignedUserId = (int) ($oportunidad->asignado_a ?: $oportunidad->ejecutivo_id);
+
+        if ($assignedUserId > 0 && $assignedUserId !== (int) $request->user()->id) {
+            abort(403, 'Solo el ejecutivo asignado puede duplicar una cotización para esta oportunidad.');
+        }
+
+        if ($oportunidad->tipo !== 'privado' && $oportunidad->cotizaciones()->exists()) {
+            return response()->json([
+                'message' => 'Esta oportunidad ya tiene una cotización vinculada.',
+            ], 422);
+        }
+
         $cotizacion->load([
             'items.proveedores',
             'items.destinosEntrega',
             'costosAdicionales',
         ]);
 
-        $duplicada = DB::transaction(function () use ($request, $cotizacion): Cotizacion {
+        $duplicada = DB::transaction(function () use ($request, $cotizacion, $oportunidad): Cotizacion {
             $estadoBorradorId = $this->estadoCotizacionId('borrador');
             $numeroOrigen = (string) $cotizacion->numero;
             $numero = $this->service->generarNumero();
@@ -713,6 +730,32 @@ class CotizacionController extends Controller
                 'estado_nuevo_id' => $cotizacion->estado_cotizacion_id,
                 'comentario' => "Cotización duplicada por {$request->user()->nombres} {$request->user()->apellidos}: {$numero}.",
                 'user_id' => $request->user()->id,
+            ]);
+
+            $duplicada->load(['estadoCotizacion', 'moneda']);
+            $oportunidad->cotizaciones()->create([
+                'cotizacion_id' => $duplicada->id,
+                'numero' => $duplicada->numero,
+                'estado' => $duplicada->estadoCotizacion?->nombre ?? 'borrador',
+                'monto' => $duplicada->total,
+                'moneda' => $duplicada->moneda?->codigo,
+                'origen' => 'generada',
+                'creado_por_id' => $request->user()->id,
+                'creado_por' => trim($request->user()->nombres.' '.$request->user()->apellidos),
+                'creado_en' => now('America/Lima'),
+            ]);
+
+            $oportunidad->update([
+                'estado' => 'cotizacion_generada',
+                'modificado_por' => trim($request->user()->nombres.' '.$request->user()->apellidos),
+                'modificado_en' => now('America/Lima'),
+            ]);
+
+            $oportunidad->historial()->create([
+                'usuario' => trim($request->user()->nombres.' '.$request->user()->apellidos),
+                'tipo' => 'cotizacion',
+                'descripcion' => "Cotización {$duplicada->numero} duplicada y vinculada a la oportunidad.",
+                'fecha' => now('America/Lima'),
             ]);
 
             return $duplicada->refresh();
