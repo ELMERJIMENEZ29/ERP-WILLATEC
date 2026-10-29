@@ -435,11 +435,22 @@ class LicitacionController extends Controller
     {
         abort_if((int) $cotizacion->licitacion_id !== (int) $licitacion->id, 404);
 
+        $cotizacion->load('cotizacion.estadoCotizacion');
+        $estadoCotizacion = mb_strtolower((string) ($cotizacion->cotizacion?->estadoCotizacion?->nombre ?? $cotizacion->estado));
+        $isDraftOnExpiredOpportunity = $licitacion->estado === 'vencida'
+            && str_contains($estadoCotizacion, 'borrador');
+        $assignedUserId = (int) ($licitacion->asignado_a ?: $licitacion->ejecutivo_id);
+        $isAssignedExecutive = $assignedUserId > 0 && $assignedUserId === (int) $request->user()?->id;
+
         if (! in_array($cotizacion->origen ?? 'vinculada', ['vinculada', 'generada'], true)) {
             abort(403, 'Solo se pueden desvincular cotizaciones vinculadas o generadas desde la oportunidad.');
         }
 
-        if (! $this->canDeleteOwnRecord($request, $cotizacion->creado_por, $cotizacion->creado_por_id)) {
+        $canReleaseDraftFromExpiredOpportunity = $isDraftOnExpiredOpportunity
+            && ($request->user()?->hasRole('superadmin') || $isAssignedExecutive);
+
+        if (! $canReleaseDraftFromExpiredOpportunity
+            && ! $this->canDeleteOwnRecord($request, $cotizacion->creado_por, $cotizacion->creado_por_id)) {
             abort(403, 'Solo puedes desvincular cotizaciones que vinculaste o generaste.');
         }
 
