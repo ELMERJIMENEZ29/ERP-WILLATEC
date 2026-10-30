@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class LicitacionController extends Controller
 {
@@ -100,7 +101,7 @@ class LicitacionController extends Controller
 
     public function store(Request $request)
     {
-        $payload = $this->validatePayload($request);
+        $payload = $this->validatePayload($request, true);
         $payload['created_by'] = $request->user()?->id;
         $payload['creado_por'] = $payload['creado_por'] ?? $this->userDisplayName($request->user());
         $payload['creado_en'] = $payload['creado_en'] ?? now('America/Lima');
@@ -161,6 +162,13 @@ class LicitacionController extends Controller
     {
         $payload = $this->validatePayload($request);
         unset($payload['es_nueva']);
+
+        if (! $this->sameDateTimeValue($licitacion->vigencia, $payload['vigencia'] ?? null)
+            && $payload['vigencia']->lessThanOrEqualTo(now('America/Lima'))) {
+            throw ValidationException::withMessages([
+                'vigencia' => 'La vigencia debe ser posterior a la fecha y hora actual.',
+            ]);
+        }
 
         $this->ensureCanUpdate($request, $licitacion, $payload);
         $payload['modificado_en'] = $payload['modificado_en'] ?? now('America/Lima');
@@ -484,7 +492,7 @@ class LicitacionController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function validatePayload(Request $request): array
+    private function validatePayload(Request $request, bool $requireFutureVigencia = false): array
     {
         $request->merge([
             'tipo' => $this->nullableTrim($request->input('tipo')) ?? 'licitacion',
@@ -564,6 +572,12 @@ class LicitacionController extends Controller
 
         $validated['es_nueva'] = filter_var($validated['es_nueva'] ?? true, FILTER_VALIDATE_BOOLEAN);
         $validated['vigencia'] = $this->parseLimaDateTime($validated['vigencia']);
+
+        if ($requireFutureVigencia && $validated['vigencia']->lessThanOrEqualTo(now('America/Lima'))) {
+            throw ValidationException::withMessages([
+                'vigencia' => 'La vigencia debe ser posterior a la fecha y hora actual.',
+            ]);
+        }
 
         foreach (['asignado_en', 'creado_en', 'modificado_en'] as $dateField) {
             if (! empty($validated[$dateField])) {

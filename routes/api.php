@@ -386,7 +386,7 @@ Route::prefix('licitaciones')
         Route::get('/{licitacion}', [LicitacionController::class, 'show'])->middleware('permission:licitaciones');
         Route::post('/{licitacion}/registrar-vista', [LicitacionController::class, 'registrarVista'])->middleware('permission:licitaciones');
         Route::put('/{licitacion}', [LicitacionController::class, 'update'])->middleware('permission:licitaciones.editar');
-        Route::delete('/{licitacion}', [LicitacionController::class, 'destroy'])->middleware('permission:licitaciones.eliminar');
+        Route::delete('/{licitacion}', [LicitacionController::class, 'destroy'])->middleware('permission:licitaciones');
         Route::post('/{licitacion}/comentarios', [LicitacionController::class, 'addComentario'])->middleware('permission:licitaciones.comentar');
         Route::post('/{licitacion}/archivos', [LicitacionController::class, 'addArchivo'])->middleware('permission:licitaciones.archivos');
         Route::post('/{licitacion}/cotizaciones', [LicitacionController::class, 'addCotizacion'])->middleware('permission:licitaciones.cotizaciones');
