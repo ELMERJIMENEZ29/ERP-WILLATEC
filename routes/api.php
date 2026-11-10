@@ -352,6 +352,7 @@ Route::prefix('productos')->middleware(['auth:sanctum', 'token.idle'])->group(fu
     Route::post('/{producto}/ajustar-stock', [InventarioController::class, 'ajustarStock'])->middleware('permission:inventario.ajustar');
     Route::post('/{producto}/registrar-entrada', [InventarioController::class, 'registrarEntrada'])->middleware('permission:inventario.kardex_entrada');
     Route::post('/{producto}/registrar-salida', [InventarioController::class, 'registrarSalida'])->middleware('permission:inventario.kardex_salida');
+    Route::post('/registrar-salida-partner', [InventarioController::class, 'registrarSalidaPartner'])->middleware('permission:inventario.kardex_salida');
     Route::get('/{producto}/historial-cotizaciones', [ProductoController::class, 'historialCotizaciones'])->middleware('permission:productos');
     Route::get('/{id}', [ProductoController::class, 'show'])->middleware('permission:productos');
 

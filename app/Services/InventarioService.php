@@ -146,7 +146,13 @@ class InventarioService
         ?string $fechaDocumento = null,
         ?int $monedaId = null,
         ?array $productoSerieIds = null,
-        ?string $salidaSerieEstado = null
+        ?string $salidaSerieEstado = null,
+        ?int $clienteId = null,
+        ?string $clienteNombre = null,
+        ?string $clienteRuc = null,
+        ?string $receptorNombre = null,
+        ?string $destinoAreaSede = null,
+        ?string $motivoDetalle = null
     ): Producto {
         return $this->moverStock(
             productoId: $productoId,
@@ -166,7 +172,13 @@ class InventarioService
             fechaDocumento: $fechaDocumento,
             monedaId: $monedaId,
             productoSerieIds: $productoSerieIds,
-            salidaSerieEstado: $salidaSerieEstado
+            salidaSerieEstado: $salidaSerieEstado,
+            clienteId: $clienteId,
+            clienteNombre: $clienteNombre,
+            clienteRuc: $clienteRuc,
+            receptorNombre: $receptorNombre,
+            destinoAreaSede: $destinoAreaSede,
+            motivoDetalle: $motivoDetalle
         );
     }
 
@@ -388,7 +400,13 @@ class InventarioService
         ?array $productoSerieIds = null,
         ?string $salidaSerieEstado = null,
         ?int $ocRecibidaId = null,
-        ?int $cotizacionItemId = null
+        ?int $cotizacionItemId = null,
+        ?int $clienteId = null,
+        ?string $clienteNombre = null,
+        ?string $clienteRuc = null,
+        ?string $receptorNombre = null,
+        ?string $destinoAreaSede = null,
+        ?string $motivoDetalle = null
     ): Producto {
         return DB::transaction(function () use (
             $productoId,
@@ -415,7 +433,13 @@ class InventarioService
             $productoSerieIds,
             $salidaSerieEstado,
             $ocRecibidaId,
-            $cotizacionItemId
+            $cotizacionItemId,
+            $clienteId,
+            $clienteNombre,
+            $clienteRuc,
+            $receptorNombre,
+            $destinoAreaSede,
+            $motivoDetalle
         ): Producto {
             if ($idempotencyKey) {
                 $movimientoExistente = InventarioMovimiento::query()
@@ -554,6 +578,12 @@ class InventarioService
                 'ip_origen' => $ipOrigen,
                 'user_agent' => $userAgent,
                 'created_by' => $createdBy,
+                'cliente_id' => $clienteId,
+                'cliente_nombre' => $clienteNombre,
+                'cliente_ruc' => $clienteRuc,
+                'receptor_nombre' => $receptorNombre,
+                'destino_area_sede' => $destinoAreaSede,
+                'motivo_detalle' => $motivoDetalle,
             ]);
 
             if (count($seriesRegistradas) > 0) {

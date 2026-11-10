@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AjustarStockRequest;
 use App\Models\CotizacionItem;
+use App\Models\Cliente;
 use App\Models\InventarioMovimiento;
 use App\Models\OcRecibida;
 use App\Models\Producto;
@@ -14,6 +15,7 @@ use App\Services\InventarioService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class InventarioController extends Controller
@@ -42,6 +44,7 @@ class InventarioController extends Controller
                 'productoSeries:id,producto_id,serie,factura_numero,estado',
                 'moneda:id,codigo,simbolo',
                 'proveedorCatalogo:id,nombre,ruc',
+                'clienteDestino:id,nombre,ruc,estado',
                 'createdBy:id,nombres,apellidos,email',
             ])
             ->latest();
@@ -355,6 +358,64 @@ class InventarioController extends Controller
         return response()->json([
             'message' => 'Salida registrada en Kardex',
             'producto' => $productoActualizado,
+        ]);
+    }
+
+    public function registrarSalidaPartner(Request $request, InventarioService $inventarioService)
+    {
+        $validated = $request->validate([
+            'cliente_id' => 'required|integer|exists:clientes,id',
+            'motivo_detalle' => 'required|string|max:500',
+            'receptor_nombre' => 'nullable|string|max:150',
+            'destino_area_sede' => 'nullable|string|max:150',
+            'observacion' => 'nullable|string',
+            'documento_numero' => 'nullable|string|max:100',
+            'documento' => 'nullable|file|mimes:pdf,jpg,jpeg,png,xml,doc,docx|max:10240',
+            'items' => 'required|array|min:1',
+            'items.*.producto_id' => 'required|integer|exists:productos,id',
+            'items.*.cantidad' => 'required|numeric|min:0.01',
+            'items.*.producto_serie_ids' => 'nullable|array',
+            'items.*.producto_serie_ids.*' => 'integer|exists:producto_series,id',
+        ]);
+
+        $cliente = Cliente::query()
+            ->where('estado', 'activo')
+            ->findOrFail($validated['cliente_id']);
+        $documentoPath = $request->hasFile('documento')
+            ? $this->storeDocumento($request->file('documento'), 'inventario/salidas')
+            : null;
+
+        DB::transaction(function () use ($validated, $request, $inventarioService, $cliente, $documentoPath): void {
+            foreach ($validated['items'] as $item) {
+                $producto = Producto::query()->findOrFail($item['producto_id']);
+                $series = $item['producto_serie_ids'] ?? [];
+
+                $inventarioService->registrarSalida(
+                    productoId: $producto->id,
+                    cantidad: (float) $item['cantidad'],
+                    referenciaTipo: 'salida_partner',
+                    origen: 'salida_manual',
+                    createdBy: $request->user()?->id,
+                    observacion: $validated['observacion'] ?? null,
+                    ipOrigen: $request->ip(),
+                    userAgent: $request->userAgent(),
+                    documentoTipo: ! empty($validated['documento_numero']) ? 'documento' : null,
+                    documentoNumero: $validated['documento_numero'] ?? null,
+                    documentoPath: $documentoPath,
+                    productoSerieIds: $series,
+                    salidaSerieEstado: ProductoSerie::ESTADO_NO_DISPONIBLE,
+                    clienteId: $cliente->id,
+                    clienteNombre: $cliente->nombre,
+                    clienteRuc: $cliente->ruc,
+                    receptorNombre: $validated['receptor_nombre'] ?? null,
+                    destinoAreaSede: $validated['destino_area_sede'] ?? null,
+                    motivoDetalle: $validated['motivo_detalle']
+                );
+            }
+        });
+
+        return response()->json([
+            'message' => 'Transferencia registrada en Kardex',
         ]);
     }
 

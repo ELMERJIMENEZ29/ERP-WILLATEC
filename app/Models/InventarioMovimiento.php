@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\Auditable;
+use App\Models\Cliente;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -38,6 +39,12 @@ class InventarioMovimiento extends Model
         'proveedor',
         'proveedor_id',
         'created_by',
+        'cliente_id',
+        'cliente_nombre',
+        'cliente_ruc',
+        'receptor_nombre',
+        'destino_area_sede',
+        'motivo_detalle',
     ];
 
     public const TIPO_ENTRADA = 'entrada';
@@ -89,6 +96,12 @@ class InventarioMovimiento extends Model
         'ip_origen',
         'user_agent',
         'created_by',
+        'cliente_id',
+        'cliente_nombre',
+        'cliente_ruc',
+        'receptor_nombre',
+        'destino_area_sede',
+        'motivo_detalle',
     ];
 
     public function producto(): BelongsTo
@@ -124,6 +137,11 @@ class InventarioMovimiento extends Model
     public function proveedorCatalogo(): BelongsTo
     {
         return $this->belongsTo(Proveedor::class, 'proveedor_id');
+    }
+
+    public function clienteDestino(): BelongsTo
+    {
+        return $this->belongsTo(Cliente::class, 'cliente_id');
     }
 
     public function ocAtencionItem(): BelongsTo
