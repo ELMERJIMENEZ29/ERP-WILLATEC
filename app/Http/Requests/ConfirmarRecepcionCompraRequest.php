@@ -15,6 +15,8 @@ class ConfirmarRecepcionCompraRequest extends FormRequest
     {
         return [
             'fecha_recepcion' => ['nullable', 'date'],
+            'guia_remision_numero' => ['nullable', 'string', 'max:100'],
+            'factura_proveedor_numero' => ['nullable', 'string', 'max:100'],
             'observacion' => ['nullable', 'string', 'max:5000'],
             'items' => ['nullable', 'array'],
             'items.*.recepcion_item_id' => ['required_with:items', 'integer', 'exists:recepcion_items,id'],

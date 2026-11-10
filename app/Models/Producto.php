@@ -24,6 +24,7 @@ class Producto extends Model
         'ubicacion_almacen',
         'tipo_producto',
         'controla_stock',
+        'controla_series',
         'stock_minimo',
         'costo_unitario',
         'costo_promedio',
@@ -50,6 +51,7 @@ class Producto extends Model
         'descripcion',
         'tipo_producto',
         'controla_stock',
+        'controla_series',
         'stock_actual',
         'stock_reservado',
         'stock_disponible',
@@ -120,6 +122,7 @@ class Producto extends Model
         return [
             'activo' => 'boolean',
             'controla_stock' => 'boolean',
+            'controla_series' => 'boolean',
             'stock_actual' => 'decimal:2',
             'stock_reservado' => 'decimal:2',
             'stock_disponible' => 'decimal:2',

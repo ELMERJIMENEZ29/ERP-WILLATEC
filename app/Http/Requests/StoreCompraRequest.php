@@ -57,6 +57,7 @@ class StoreCompraRequest extends FormRequest
                 'sometimes',
                 'boolean',
             ],
+            'solicitud_sobrecompra_id' => ['nullable', 'integer', 'exists:solicitudes_sobrecompra,id'],
 
             'items' => [
                 'required',
@@ -122,14 +123,10 @@ class StoreCompraRequest extends FormRequest
                 $modalidad = $this->input('modalidad');
                 $ocEmitidaId = $this->input('oc_emitida_id');
 
-                if (
-                    $this->boolean('autorizar_sobrecompra') &&
-                    ! $this->user()?->hasAnyRole(['superadmin', 'admin']) &&
-                    ! $this->user()?->can('compras.sobrecompra')
-                ) {
+                if ($this->boolean('autorizar_sobrecompra')) {
                     $validator->errors()->add(
                         'autorizar_sobrecompra',
-                        'Solo un administrador puede autorizar una sobrecompra.'
+                        'La sobrecompra requiere una solicitud aprobada; ya no se autoriza directamente desde la compra.'
                     );
                 }
 

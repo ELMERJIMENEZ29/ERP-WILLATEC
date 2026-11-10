@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\ProductoSkuController;
 use App\Http\Controllers\Api\ProveedorController;
 use App\Http\Controllers\Api\RecepcionCompraController;
 use App\Http\Controllers\Api\RequerimientoCompraController;
+use App\Http\Controllers\Api\SolicitudSobrecompraController;
 use App\Http\Controllers\Api\SnakeScoreController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\UserController;
@@ -564,6 +565,12 @@ Route::prefix('requerimientos-compra')->middleware(['auth:sanctum', 'token.idle'
     Route::get('/', [RequerimientoCompraController::class, 'index'])->middleware('permission:ordenes_compra.requerimientos');
     Route::post('/', [RequerimientoCompraController::class, 'store'])->middleware('permission:ordenes_compra.requerimientos');
     Route::get('/{requerimientoCompra}', [RequerimientoCompraController::class, 'show'])->middleware('permission:ordenes_compra.requerimientos');
+});
+
+Route::prefix('solicitudes-sobrecompra')->middleware(['auth:sanctum', 'token.idle', 'role:superadmin|admin|logistica|ventas'])->group(function () {
+    Route::get('/', [SolicitudSobrecompraController::class, 'index']);
+    Route::post('/', [SolicitudSobrecompraController::class, 'store']);
+    Route::patch('/{solicitud}/resolver', [SolicitudSobrecompraController::class, 'resolve']);
 });
 
 Route::prefix('compras')->middleware(['auth:sanctum', 'token.idle'])->group(function () {

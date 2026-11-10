@@ -12,6 +12,7 @@ use App\Models\RecepcionCompra;
 use App\Models\RecepcionItem;
 use App\Models\RequerimientoCompra;
 use App\Models\RequerimientoCompraItem;
+use App\Models\SolicitudSobrecompra;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -28,6 +29,25 @@ class CompraService
     public function crear(array $data, ?int $userId = null): Compra
     {
         return DB::transaction(function () use ($data, $userId) {
+
+            $solicitudSobrecompra = null;
+            if (! empty($data['solicitud_sobrecompra_id'])) {
+                $solicitudSobrecompra = SolicitudSobrecompra::query()->lockForUpdate()->findOrFail($data['solicitud_sobrecompra_id']);
+                if ($solicitudSobrecompra->estado !== 'aprobada' || $solicitudSobrecompra->utilizado_en) {
+                    throw ValidationException::withMessages(['solicitud_sobrecompra_id' => 'La autorización de sobrecompra no está aprobada o ya fue utilizada.']);
+                }
+                $autorizado = $solicitudSobrecompra->payload_compra;
+                if ((int) ($autorizado['proveedor_id'] ?? 0) !== (int) $data['proveedor_id']) {
+                    throw ValidationException::withMessages(['solicitud_sobrecompra_id' => 'La autorización no corresponde al proveedor seleccionado.']);
+                }
+                $resumenItems = static fn (array $items): array => collect($items)->map(fn (array $item): array => [
+                    'requerimiento_compra_item_id' => (int) ($item['requerimiento_compra_item_id'] ?? 0),
+                    'cantidad' => round((float) ($item['cantidad'] ?? 0), 2),
+                ])->sortBy('requerimiento_compra_item_id')->values()->all();
+                if ($resumenItems($autorizado['items'] ?? []) !== $resumenItems($data['items'] ?? [])) {
+                    throw ValidationException::withMessages(['solicitud_sobrecompra_id' => 'Las cantidades cambiaron; solicita una nueva autorización de sobrecompra.']);
+                }
+            }
 
             $this->validarModalidad(
                 $data['modalidad'] ?? Compra::MODALIDAD_DIRECTA,
@@ -98,7 +118,7 @@ class CompraService
                     ? max(0, $cantidadSolicitada - $cantidadVinculada)
                     : 0;
 
-                if ($cantidadExtra > 0 && ! ($data['autorizar_sobrecompra'] ?? false)) {
+                if ($cantidadExtra > 0 && ! $solicitudSobrecompra) {
                     throw ValidationException::withMessages([
                         'cantidad' => 'La cantidad supera el saldo requerido. Solicita autorización de sobrecompra.',
                     ]);
@@ -146,6 +166,10 @@ class CompraService
             }
 
             $this->recalcularTotales($compra);
+
+            if ($solicitudSobrecompra) {
+                $solicitudSobrecompra->forceFill(['compra_id' => $compra->id, 'utilizado_en' => now()])->save();
+            }
 
             foreach (array_unique($requerimientosAfectados) as $id) {
                 $this->recalcularEstadoRequerimiento($id);

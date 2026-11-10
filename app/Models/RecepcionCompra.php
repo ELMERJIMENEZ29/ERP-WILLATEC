@@ -25,6 +25,8 @@ class RecepcionCompra extends Model
         'compra_id',
         'proveedor_id',
         'fecha_recepcion',
+        'guia_remision_numero',
+        'factura_proveedor_numero',
         'estado',
         'observacion',
         'recibido_por',

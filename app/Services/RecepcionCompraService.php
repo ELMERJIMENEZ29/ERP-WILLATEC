@@ -300,6 +300,8 @@ class RecepcionCompraService
             $recepcion->forceFill([
                 'estado' => RecepcionCompra::ESTADO_CONFIRMADA,
                 'fecha_recepcion' => $data['fecha_recepcion'] ?? $recepcion->fecha_recepcion ?? now()->toDateString(),
+                'guia_remision_numero' => $data['guia_remision_numero'] ?? $recepcion->guia_remision_numero,
+                'factura_proveedor_numero' => $data['factura_proveedor_numero'] ?? $recepcion->factura_proveedor_numero,
                 'confirmado_en' => now(),
                 'observacion' => $data['observacion'] ?? $recepcion->observacion,
             ])->save();
@@ -376,6 +378,14 @@ class RecepcionCompraService
             ->map(fn ($serie) => trim((string) $serie))
             ->filter()
             ->values();
+
+        $controlaSeries = (bool) Producto::query()->whereKey($item->producto_id)->value('controla_series');
+
+        if ($seriesNormalizadas->isEmpty() && $controlaSeries) {
+            throw ValidationException::withMessages([
+                'series' => "El producto {$item->descripcion} controla series; registra una serie por cada unidad recibida.",
+            ]);
+        }
 
         if ($seriesNormalizadas->isEmpty()) {
             return;

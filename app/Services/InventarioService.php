@@ -447,6 +447,10 @@ class InventarioService
                 $productoSerieId = $seriesSalida[0]->id;
             }
 
+            if (count($seriesRegistradas) > 0 && ! $producto->controla_series) {
+                $producto->forceFill(['controla_series' => true])->save();
+            }
+
             $movimiento = InventarioMovimiento::create([
                 'producto_id' => $producto->id,
                 'producto_serie_id' => $productoSerieId,

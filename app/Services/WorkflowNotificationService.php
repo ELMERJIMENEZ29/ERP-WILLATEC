@@ -17,6 +17,16 @@ class WorkflowNotificationService
         $this->send(['superadmin', 'admin', 'contabilidad'], $title, $description, $url, $action, $metadata);
     }
 
+    public function administracion(string $title, string $description, string $url, string $action, array $metadata = []): void
+    {
+        $this->send(['superadmin', 'admin'], $title, $description, $url, $action, $metadata);
+    }
+
+    public function usuario(int $userId, string $title, string $description, string $url, string $action, array $metadata = []): void
+    {
+        User::query()->find($userId)?->notify(new WorkflowEventNotification($title, $description, $url, $action, $metadata));
+    }
+
     private function send(array $roles, string $title, string $description, string $url, string $action, array $metadata): void
     {
         User::role($roles)->get()->each->notify(

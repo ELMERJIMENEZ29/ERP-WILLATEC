@@ -39,6 +39,7 @@ class UpdateProductoRequest extends FormRequest
             'descripcion' => ['nullable', 'string'],
             'tipo_producto' => ['nullable', Rule::in(['stock', 'servicio', 'externo', 'personalizado'])],
             'controla_stock' => ['nullable', 'boolean'],
+            'controla_series' => ['nullable', 'boolean'],
             'stock_actual' => ['nullable', 'numeric', 'min:0'],
             'stock_reservado' => ['nullable', 'numeric', 'min:0'],
             'stock_minimo' => ['nullable', 'numeric', 'min:0'],
