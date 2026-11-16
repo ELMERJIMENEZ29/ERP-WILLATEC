@@ -914,6 +914,11 @@ class LicitacionController extends Controller
             abort(403, 'No se puede modificar el contenido al marcar la oportunidad como presentada.');
         }
 
+        if (($payload['estado'] ?? null) === 'cerrada'
+            && $request->user()?->hasAnyRole(['licitacion', 'superadmin'])) {
+            return;
+        }
+
         if ($this->isCreator($request, $licitacion)) {
             return;
         }
@@ -987,7 +992,7 @@ class LicitacionController extends Controller
     {
         $user = $request->user();
 
-        if (! $user || in_array($licitacion->estado, ['ganada', 'perdida', 'no_se_realizara', 'vencida'], true)) {
+        if (! $user || in_array($licitacion->estado, ['ganada', 'perdida', 'no_se_realizara', 'vencida', 'cerrada'], true)) {
             return false;
         }
 
@@ -1128,14 +1133,14 @@ class LicitacionController extends Controller
         if ($previousEstado !== $nextEstado) {
             $descripcion = 'Estado cambiado de '.$this->estadoLabel($previousEstado).' a '.$this->estadoLabel($nextEstado).'.';
 
-            if (in_array($nextEstado, ['perdida', 'no_se_realizara', 'vencida'], true) && $licitacion->motivo_cierre) {
+            if (in_array($nextEstado, ['perdida', 'no_se_realizara', 'vencida', 'cerrada'], true) && $licitacion->motivo_cierre) {
                 $descripcion .= ' Motivo: '.$licitacion->motivo_cierre.'.';
             }
 
             $this->createHistoryIfMissing($licitacion, [
                 'fecha' => $now,
                 'usuario' => $usuario,
-                'tipo' => in_array($nextEstado, ['ganada', 'perdida', 'no_se_realizara', 'vencida'], true) ? 'cierre' : 'estado',
+                'tipo' => in_array($nextEstado, ['ganada', 'perdida', 'no_se_realizara', 'vencida', 'cerrada'], true) ? 'cierre' : 'estado',
                 'descripcion' => $descripcion,
             ]);
         }
@@ -1193,6 +1198,7 @@ class LicitacionController extends Controller
             'perdida' => 'Perdida',
             'no_se_realizara' => 'No se realizara',
             'vencida' => 'Vencida',
+            'cerrada' => 'Cerrada',
             default => $estado ?: 'Sin estado',
         };
     }
@@ -1287,6 +1293,7 @@ class LicitacionController extends Controller
             'perdida',
             'no_se_realizara',
             'vencida',
+            'cerrada',
         ];
     }
 }

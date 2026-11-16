@@ -73,6 +73,7 @@ function permissionCatalog(): array
         ['key' => 'usuarios.editar', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Editar usuarios', 'description' => 'Actualizar datos de usuarios.'],
         ['key' => 'usuarios.estado', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Cambiar estado de usuarios', 'description' => 'Activar y desactivar usuarios.'],
         ['key' => 'usuarios.reset_password', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Restablecer contrasenas', 'description' => 'Restablecer contrasenas de usuarios.'],
+        ['key' => 'usuarios.seguridad', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Gestionar seguridad de usuarios', 'description' => 'Restablecer 2FA y codigos de recuperacion con doble verificacion.'],
         ['key' => 'configuracion', 'module' => 'Administracion', 'label' => 'Configuracion', 'description' => 'Ajustes generales del ERP.'],
         ['key' => 'mensajes', 'module' => 'General', 'label' => 'Mensajes', 'description' => 'Comunicaciones internas.'],
         ['key' => 'ordenes_compra', 'module' => 'Ordenes de compra', 'label' => 'Ordenes de compra', 'description' => 'OC recibidas y emitidas.'],
@@ -292,6 +293,8 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
     // USUARIOS
     Route::post('/users', [AuthController::class, 'register'])->middleware('permission:usuarios.crear');
     Route::patch('/users/{id}/reset-password', [AuthController::class, 'resetPassword'])->middleware('permission:usuarios.reset_password');
+    Route::post('/users/{id}/security/reset-2fa', [UserController::class, 'resetTwoFactor'])->middleware('permission:usuarios.seguridad');
+    Route::post('/users/{id}/security/recovery-codes', [UserController::class, 'regenerateRecoveryCodes'])->middleware('permission:usuarios.seguridad');
 
     Route::get('/notifications', [AuthController::class, 'notifications']);
     Route::patch('/notifications/{id}/read', [AuthController::class, 'markNotificationAsRead']);
