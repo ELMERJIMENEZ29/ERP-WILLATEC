@@ -65,6 +65,7 @@ class ProductoExternoController extends Controller
             $query->where(function ($query) use ($search): void {
                 $query->where('descripcion', 'like', "%{$search}%")
                     ->orWhere('codigo', 'like', "%{$search}%")
+                    ->orWhere('modelo', 'like', "%{$search}%")
                     ->orWhere('marca', 'like', "%{$search}%")
                     ->orWhere('proveedor', 'like', "%{$search}%");
             });
@@ -136,6 +137,7 @@ class ProductoExternoController extends Controller
                 'id' => $productoExterno->id,
                 'descripcion' => $productoExterno->descripcion,
                 'codigo' => $productoExterno->codigo,
+                'modelo' => $productoExterno->modelo,
                 'marca' => $productoExterno->marca,
                 'veces_cotizado' => $productoExterno->cotizacionItems()->count(),
             ],
@@ -167,7 +169,7 @@ class ProductoExternoController extends Controller
                     'nombre' => $productoExterno->descripcion,
                     'sku' => null,
                     'marca' => $productoExterno->marca,
-                    'modelo' => null,
+                    'modelo' => $productoExterno->modelo,
                     'codigo' => $codigoInterno,
                     'descripcion' => $productoExterno->descripcion,
                     'tipo_producto' => 'stock',

@@ -25,6 +25,7 @@ class CotizacionItem extends Model
         'destino_entrega',
         'nota',
         'marca',
+        'modelo',
         'codigo',
         'unidad_medida',
         'disponibilidad',

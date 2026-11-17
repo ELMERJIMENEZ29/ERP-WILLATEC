@@ -20,6 +20,7 @@ class ProductoExterno extends Model
         'producto_id',
         'descripcion',
         'marca',
+        'modelo',
         'codigo',
         'unidad_medida',
         'proveedor',
@@ -80,16 +81,15 @@ class ProductoExterno extends Model
     public static function fingerprintFrom(array $data): string
     {
         $codigo = self::normalizeFingerprintValue($data['codigo'] ?? null);
+        $modelo = self::normalizeFingerprintValue($data['modelo'] ?? null);
         $marca = self::normalizeFingerprintValue($data['marca'] ?? null);
-        $proveedor = self::normalizeFingerprintValue($data['proveedor'] ?? null);
 
-        $identity = $codigo !== ''
-            ? ['codigo', $codigo, $marca, $proveedor]
+        $identity = ($codigo !== '' || $modelo !== '')
+            ? ['identificador', $codigo, $modelo, $marca]
             : [
                 'descripcion',
                 self::normalizeFingerprintValue($data['descripcion'] ?? null),
                 $marca,
-                $proveedor,
             ];
 
         return hash('sha256', implode('|', $identity));

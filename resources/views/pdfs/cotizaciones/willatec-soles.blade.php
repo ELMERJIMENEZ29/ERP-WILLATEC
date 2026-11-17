@@ -16,8 +16,11 @@ $fechaValidez = Carbon::parse($cotizacion->fecha)
 $simbolo = $cotizacion->moneda->simbolo ?? '$';
 $codigoMoneda = $cotizacion->moneda->codigo ?? 'USD';
 $nombreMoneda = $codigoMoneda === 'PEN' ? 'Soles Peruanos (PEN)' : 'Dolares Americanos (USD)';
+$incluyeIgv = (bool) ($cotizacion->plantilla->incluye_igv ?? false);
+$textoIgv = $incluyeIgv ? 'SI incluyen IGV' : 'NO incluyen IGV';
+$textoCuotaIgv = $incluyeIgv ? 'incl. IGV' : 'sin IGV';
 $formaPago = $cotizacion->forma_pago ?? 'AL CONTADO';
-$formaPagoCalendario = in_array($formaPago, ['CRÉDITO 15 DÍAS', 'CRÉDITO 30 DÍAS', 'CRÃ‰DITO 15 DÃAS', 'CRÃ‰DITO 30 DÃAS'], true) ? ' calendario' : '';
+$formaPagoCalendario = in_array($formaPago, ['CRÉDITO 15 DÍAS', 'CRÉDITO 30 DÍAS', 'CRÃ‰DITO 15 DÃAS', 'CRÃ‰DITO 30 DÃAS'], true) ? ' calendario, contados a partir de la fecha de emisión de la factura.' : '';
 $adelantoPorcentajeRaw = $cotizacion->adelanto_porcentaje ?? null;
 $adelantoPorcentaje = $adelantoPorcentajeRaw !== null ? rtrim(rtrim(number_format((float) $adelantoPorcentajeRaw, 2, '.', ''), '0'), '.') : null;
 if ((bool) ($cotizacion->adelanto ?? false) && $adelantoPorcentaje !== null && (float) $adelantoPorcentajeRaw > 0) {
@@ -32,10 +35,11 @@ $condicionEntrega = $esMultidestino
 : 'Incluye entrega en oficinas del cliente, ' . $destinoEntrega . '.';
 $direccionEmpresaConfigurada = trim((string) data_get($empresaConfiguracion ?? null, 'direccion', ''));
 $direccionEmpresaDetalle = $direccionEmpresaConfigurada !== '' ? $direccionEmpresaConfigurada : 'Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña - Lima';
-$direccionEmpresaFooter = $direccionEmpresaConfigurada !== '' ? $direccionEmpresaConfigurada : 'Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña';
+$direccionEmpresaFooter = $direccionEmpresaConfigurada !== '' ? $direccionEmpresaConfigurada : 'Jr. Jorge Chavez Nro. 1747 - Of.1002 - Breña - Lima';
 $logoBancoNacion = public_path('img/banco-nacion-logo.png');
 $logoWillatec = public_path('img/logoWILLATEC-black.png');
 $logoHomologado = public_path('img/logo-homologado.png');
+$logoHomologado2 = public_path('img/logo-homologado-2.png');
 $logoBcp = public_path('img/bcp-logo.png');
 $logoYape = public_path('img/yape-logo.png');
 $qrYape = public_path('img/yape-qr.jpeg');
@@ -179,7 +183,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .header {
-        border-bottom: 1px solid #E3F2FD;
+        border-bottom: 2px solid #1565c0;
     }
 
     .header-left {
@@ -194,35 +198,61 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .header-left-new {
-        width: 38%;
-        padding: 10px 8px 8px 14px;
+        width: 28%;
+        padding: 10px 2px 8px 12px;
         text-align: left;
+        vertical-align: middle;
     }
 
     .header-center-new {
-        width: 22%;
-        padding: 6px 4px 8px;
+        width: 42%;
+        padding: 6px 5px 8px 5px;
         text-align: center;
-        border-left: 1px solid #DDE6F2;
-        border-right: 1px solid #DDE6F2;
+        border-left: none;
+        border-right: none;
+        vertical-align: top;
+    }
+
+    .header-center-box {
+        border-left: 1px solid #E6ECF5;
+        border-right: 1px solid #E6ECF5;
+        padding: 4px 10px 7px 10px;
+
+        margin-bottom: 5px;
     }
 
     .header-right-new {
-        width: 40%;
-        padding: 10px 14px 8px 8px;
+        width: 30%;
+        padding: 8px 10px 8px 6px;
         text-align: right;
+        vertical-align: top;
     }
 
     .logo-willatec {
-        height: 75px;
+        height: 68px;
         width: auto;
         display: block;
-        margin: 18px 0 0 0;
+        margin: 20px 0 0 0;
     }
 
     .logo-homologado-main {
         height: 65px;
         width: auto;
+    }
+
+    .logo-homologado-left {
+        width: 125px;
+        height: auto;
+        max-width: none;
+        max-height: none;
+
+        position: relative;
+        left: -8px;
+    }
+
+    .logo-homologado-right {
+        max-height: 102px;
+        max-width: 72px;
     }
 
     .mini-line {
@@ -232,10 +262,19 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .tag {
-        font-size: 8.2px;
-        color: #2C2C4A;
-        letter-spacing: 2.2px;
+        font-size: 9.2px;
+        font-weight: 700;
+        color: #5f6f86;
+
+        letter-spacing: 1.1px;
         text-transform: uppercase;
+
+        text-align: center;
+
+        margin-top: 1px;
+        margin-bottom: 12px;
+
+        white-space: nowrap;
     }
 
     .company {
@@ -245,50 +284,44 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         letter-spacing: 1px;
     }
 
-    .tag {
-        font-size: 8px;
-        color: #6B7A99;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-        margin-top: 2px;
-    }
-
     .title {
-        font-size: 25px;
+        font-size: 20px;
         font-weight: 700;
         color: #1565C0;
-        letter-spacing: 2px;
+        letter-spacing: 1.2px;
         line-height: 1;
         margin-bottom: 6px;
+        text-align: right;
     }
 
     .meta {
         width: auto;
         margin-left: auto;
-        font-size: 8.6px;
+        font-size: 7.6px;
     }
 
     .meta td {
-        padding: 1px 3px;
-        color: #6B7A99;
-        line-height: 1.25;
+        padding: 1px 2px;
+        color: #76849a;
+        line-height: 1.15;
         vertical-align: middle;
     }
 
     .meta .value {
-        color: #2C2C4A;
-        font-weight: 600;
+        padding-left: 6px;
+        color: #26354d;
+        font-weight: 700;
         text-align: right;
     }
 
     .badge {
         display: inline-block;
-        background: #E3F2FD;
+        background: #E8F4FF;
         color: #1565C0;
-        font-size: 7.8px;
-        font-weight: 600;
+        font-size: 7px;
+        font-weight: 700;
         padding: 2px 7px;
-        border-radius: 8px;
+        border-radius: 10px;
         margin-top: 4px;
     }
 
@@ -302,7 +335,13 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     }
 
     .info-left {
+        border-right: none;
+    }
+
+    .info-content-left {
         border-right: 1px solid #E0E6F0;
+
+        padding-right: 14px;
     }
 
     .section-title {
@@ -841,10 +880,11 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         width: 40%;
         text-align: center;
         color: #1565C0;
-        font-size: 7px;
+        font-size: 7.5px;
         font-weight: 700;
         letter-spacing: 2px;
         white-space: nowrap;
+        padding: 2px 0 4px
     }
 
     .partners-logos-table {
@@ -893,6 +933,67 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
     .partner-synology {
         max-height: 18px;
     }
+
+    .partners-line,
+    .partners-line-left,
+    .partners-line-right {
+        border: none !important;
+        height: 0 !important;
+    }
+
+    .homologados-table {
+    width: 92%;
+    margin: 0 auto;
+    table-layout: fixed;
+    }
+
+    .homologado-cell {
+        width: 45%;
+        text-align: center;
+        vertical-align: middle;
+        padding: 0
+    }
+
+    .homologado-cell-left {
+        width: 52%;
+
+        text-align: center;
+        vertical-align: middle;
+
+        padding: 0;
+    }
+
+    .homologado-separator {
+        width: 8%;
+
+        text-align: center;
+        vertical-align: middle;
+    }
+
+    .homologado-cell-right {
+        width: 40%;
+
+        text-align: center;
+        vertical-align: middle;
+
+        padding: 0;
+    }
+
+    .homologado-separator-inner {
+        width: 1px;
+        height: 60px;
+
+        margin: 0 auto;
+
+        border-left: 1px solid #DDE6F2;
+    }
+
+    .logo-homologado-main {
+        width: auto;
+        height: auto;
+        vertical-align: middle;
+        display:inline-block;
+    }
 </style>
 
 <div class="left-strip-fixed"></div>
@@ -907,10 +1008,53 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
             </td>
 
             <td class="header-center-new">
-                <div class="tag">¡SOMOS PROVEEDOR HOMOLOGADO!</div>
-                @if($logoHomologadoSrc = $pdfImage($logoHomologado))
-                <img src="{{ $logoHomologadoSrc }}" class="logo-homologado-main" alt="Homologado">
-                @endif
+
+                <div class="header-center-box">
+
+                    <div class="tag">
+                        ¡SOMOS PROVEEDOR HOMOLOGADO!
+                    </div>
+
+                    <table
+                        class="homologados-table"
+                        cellpadding="0"
+                        cellspacing="0"
+                    >
+                        <tr>
+
+                            <td class="homologado-cell-left">
+
+                                @if($logoHomologado2Src = $pdfImage($logoHomologado2))
+                                    <img
+                                        src="{{ $logoHomologado2Src }}"
+                                        class="logo-homologado-main logo-homologado-left"
+                                        alt="Homologado"
+                                    >
+                                @endif
+
+                            </td>
+
+                            <td class="homologado-separator">
+                                <div class="homologado-separator-inner"></div>
+                            </td>
+
+                            <td class="homologado-cell-right">
+
+                                @if($logoHomologadoSrc = $pdfImage($logoHomologado))
+                                    <img
+                                        src="{{ $logoHomologadoSrc }}"
+                                        class="logo-homologado-main logo-homologado-right"
+                                        alt="Homologado"
+                                    >
+                                @endif
+
+                            </td>
+
+                        </tr>
+                    </table>
+
+                </div>
+
             </td>
 
             <td class="header-right-new">
@@ -935,7 +1079,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                     </tr>
                 </table>
 
-                <span class="badge">Válido {{ $validezDias }} días calendarios</span>
+                <span class="badge">Válido {{ $validezDias }} días calendario</span>
             </td>
         </tr>
     </table>
@@ -951,6 +1095,12 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         <table class="partners-logos-table" cellpadding="0" cellspacing="0">
             <tr>
                 <td class="partner-logo-cell">
+                    @if($logoMicrosoftSrc = $pdfImage($logoMicrosoft))
+                    <img src="{{ $logoMicrosoftSrc }}" class="partner-logo partner-microsoft">
+                    @endif
+                </td>
+                <td class="partner-separator"></td>
+                <td class="partner-logo-cell">
                     @if($logoDellSrc = $pdfImage($logoDell))
                     <img src="{{ $logoDellSrc }}" class="partner-logo partner-dell">
                     @endif
@@ -959,12 +1109,6 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                 <td class="partner-logo-cell">
                     @if($logoHpSrc = $pdfImage($logoHp))
                     <img src="{{ $logoHpSrc }}" class="partner-logo partner-hp">
-                    @endif
-                </td>
-                <td class="partner-separator"></td>
-                <td class="partner-logo-cell">
-                    @if($logoMicrosoftSrc = $pdfImage($logoMicrosoft))
-                    <img src="{{ $logoMicrosoftSrc }}" class="partner-logo partner-microsoft">
                     @endif
                 </td>
                 <td class="partner-separator"></td>
@@ -985,13 +1129,15 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
         <table class="info" cellpadding="0" cellspacing="0">
             <tr>
                 <td class="info-cell info-left">
-                    <div class="section-title">Datos del cliente</div>
-                    <div class="name">{{ $cotizacion->cliente_nombre ?? 'Cliente' }}</div>
-                    <div class="detail">
-                        RUC / DNI: <b>{{ $cotizacion->cliente_ruc ?? '-' }}</b><br>
-                        Contacto: <b>{{ $cotizacion->cliente_contacto ?? '-' }}</b> &nbsp; Teléfono: <b>{{ $cotizacion->cliente_telefono ?? '-' }}</b><br>
-                        Correo: <b>{{ $cotizacion->cliente_correo ?? '-' }}</b><br>
-                        Asunto: <b>{{ $cotizacion->titulo ?? '-' }}</b>
+                    <div class="info-content-left">
+                        <div class="section-title">Datos del cliente</div>
+                        <div class="name">{{ $cotizacion->cliente_nombre ?? 'Cliente' }}</div>
+                        <div class="detail">
+                            RUC / DNI: <b>{{ $cotizacion->cliente_ruc ?? '-' }}</b><br>
+                            Contacto: <b>{{ $cotizacion->cliente_contacto ?? '-' }}</b> &nbsp; Teléfono: <b>{{ $cotizacion->cliente_telefono ?? '-' }}</b><br>
+                            Correo: <b>{{ $cotizacion->cliente_correo ?? '-' }}</b><br>
+                            Asunto: <b>{{ $cotizacion->titulo ?? '-' }}</b>
+                        </div>
                     </div>
                 </td>
                 <td class="info-cell">
@@ -1226,15 +1372,17 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                             @endif
 
 
-                            @if(
-                            !empty($item->codigo)
-                            && trim($item->codigo) !== '-'
-                            )
+                            @php
+                                $identificadorItem = trim((string) ($item->modelo ?: $item->codigo));
+                                $identificadorLabel = filled($item->modelo) ? 'Modelo' : 'Código';
+                            @endphp
+
+                            @if($identificadorItem !== '' && $identificadorItem !== '-')
 
                             <span class="muted">
 
-                                Modelo / Código:
-                                {{ $item->codigo }}
+                                {{ $identificadorLabel }}:
+                                {{ $identificadorItem }}
 
                             </span>
 
@@ -1485,9 +1633,9 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                     <div class="section-title">Condiciones comerciales</div>
                     <div class="condition"><span>&rsaquo;</span> Forma de Pago: {{ $formaPago }}{{ $formaPagoCalendario }}</div>
                     <div class="condition"><span>&rsaquo;</span> {{ $condicionEntrega }}</div>
-                    <div class="condition"><span>&rsaquo;</span> Precios en {{ $nombreMoneda }} y NO incluyen IGV.</div>
+                    <div class="condition"><span>&rsaquo;</span> Precios en {{ $nombreMoneda }} y {{ $textoIgv }}.</div>
                     <div class="condition"><span>&rsaquo;</span> Precios sujetos a cambio sin previo aviso.</div>
-                    <div class="condition"><span>&rsaquo;</span> WILLATEC S.A.C, Incorporado al Régimen de Buenos Contribuyentes Resolución de Intendencia N° 0230050266292 (Emitido - Sunat)</div>
+                    <div class="condition"><span>&rsaquo;</span> WILLATEC S.A.C, Incorporado al Régimen de Buenos Contribuyentes; Resolución de Intendencia N° 0230050266292.</div>
                     <div class="note">
                         El precio del producto esta sujeto al stock y nuevo ingreso de importacion de la marca.<br>
                         Para productos importados, el tiempo de entrega puede variar entre 20 y 25 dias calendario.
@@ -1508,8 +1656,8 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                             <td class="total-amount">{{ $simbolo }} {{ number_format((float) $cotizacion->total, 2) }}</td>
                         </tr>
                         @if($cotizacion->cuota_mensual)
-                            <tr>
-                                <td colspan="2" style="border: 1px solid #B9CBE5; background: #F2F7FC; color: #1F3B63; font-weight: 700; text-align: center; padding: 7px 8px;">Cuota Mensual: {{ $simbolo }} {{ number_format((float) $cotizacion->total / max(1, (int) ($cotizacion->cuota_mensual_meses ?? 12)), 2) }} incl. IGV &nbsp;|&nbsp; Periodo: {{ (int) ($cotizacion->cuota_mensual_meses ?? 12) }} meses</td>
+                              <tr>
+                                  <td colspan="2" style="border: 1px solid #B9CBE5; background: #F2F7FC; color: #1F3B63; font-weight: 700; text-align: center; padding: 7px 8px;">Cuota Mensual: {{ $simbolo }} {{ number_format((float) $cotizacion->total / max(1, (int) ($cotizacion->cuota_mensual_meses ?? 12)), 2) }} {{ $textoCuotaIgv }} &nbsp;|&nbsp; Periodo: {{ (int) ($cotizacion->cuota_mensual_meses ?? 12) }} meses</td>
                             </tr>
                         @endif
                         <tr class="currency">

@@ -795,6 +795,7 @@ class CotizacionController extends Controller
             'costo_base' => 'required|numeric|min:0',
             'margen' => 'required|numeric|min:0',
             'nota' => 'nullable|string',
+            'modelo' => 'nullable|string|max:255',
             'garantia_meses' => 'nullable|integer|min:0|max:255',
             'disponibilidad_tipo' => 'required|in:stock,importacion',
             'disponibilidad_dias' => 'required|integer|min:1|max:200',
@@ -847,6 +848,7 @@ class CotizacionController extends Controller
                 'margen' => $margen,
                 'nota' => $request->nota,
                 'marca' => $request->marca,
+                'modelo' => $request->modelo,
                 'codigo' => $request->codigo,
                 'unidad_medida' => $request->unidad_medida ?? 'UND',
                 'garantia_meses' => $request->garantia_meses,
@@ -1127,6 +1129,7 @@ class CotizacionController extends Controller
             $query->where(function ($query) use ($search): void {
                 $query->where('descripcion', 'like', "%{$search}%")
                     ->orWhere('marca', 'like', "%{$search}%")
+                    ->orWhere('modelo', 'like', "%{$search}%")
                     ->orWhere('codigo', 'like', "%{$search}%")
                     ->orWhere('proveedor', 'like', "%{$search}%")
                     ->orWhereHas('proveedores', function ($query) use ($search): void {
@@ -1745,6 +1748,7 @@ class CotizacionController extends Controller
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.nota' => 'nullable|string',
+            'items.*.modelo' => 'nullable|string|max:255',
             'items.*.tipo' => 'nullable|string|in:catalogo,personalizado,externo',
             'items.*.producto_externo_id' => 'nullable|exists:productos_externos,id',
             'items.*.imagen' => 'sometimes|nullable',
@@ -1848,6 +1852,7 @@ class CotizacionController extends Controller
                     'orden' => $index + 1,
                     'nota' => $item['nota'] ?? null,
                     'marca' => $item['marca'] ?? null,
+                    'modelo' => $item['modelo'] ?? null,
                     'codigo' => $item['codigo'] ?? null,
                     'unidad_medida' => $item['unidad_medida'] ?? 'UND',
                     'garantia_meses' => $item['garantia_meses'] ?? null,
@@ -1956,6 +1961,7 @@ class CotizacionController extends Controller
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.nota' => 'nullable|string',
+            'items.*.modelo' => 'nullable|string|max:255',
             'items.*.tipo' => 'nullable|string|in:catalogo,personalizado,externo',
             'items.*.producto_externo_id' => 'nullable|exists:productos_externos,id',
             'items.*.imagen' => 'sometimes|nullable',
@@ -2073,6 +2079,7 @@ class CotizacionController extends Controller
                     'orden' => $index + 1,
                     'nota' => $item['nota'] ?? null,
                     'marca' => $item['marca'] ?? null,
+                    'modelo' => $item['modelo'] ?? null,
                     'codigo' => $item['codigo'] ?? null,
                     'unidad_medida' => $item['unidad_medida'] ?? 'UND',
                     'garantia_meses' => $item['garantia_meses'] ?? null,
@@ -2570,6 +2577,7 @@ class CotizacionController extends Controller
                 'orden' => $index + 1,
                 'nota' => $item['nota'] ?? null,
                 'marca' => $item['marca'] ?? null,
+                'modelo' => $item['modelo'] ?? null,
                 'codigo' => $item['codigo'] ?? null,
                 'unidad_medida' => $item['unidad_medida'] ?? 'UND',
                 'garantia_meses' => $item['garantia_meses'] ?? null,
@@ -2650,6 +2658,7 @@ class CotizacionController extends Controller
             'items.*.costo_base' => 'required|numeric|min:0',
             'items.*.margen' => 'required|numeric|min:0',
             'items.*.nota' => 'nullable|string',
+            'items.*.modelo' => 'nullable|string|max:255',
             'items.*.marca' => 'nullable|string|max:255',
             'items.*.codigo' => 'nullable|string|max:255',
             'items.*.unidad_medida' => 'nullable|string|max:50',
@@ -2744,6 +2753,7 @@ class CotizacionController extends Controller
         $fallback = 'pdfs.cotizaciones.willatec-dolares';
         $formatoPdf = trim($formatoPdf);
         $formatoPdf = match ($formatoPdf) {
+            'willatec-dolares', 'willatec-soles', 'willatec-soles-estado' => 'willatec-soles',
             'gsd-privado' => 'alquiler-privado',
             'gsd-estado' => 'alquiler-estado',
             default => $formatoPdf,
@@ -2943,6 +2953,49 @@ class CotizacionController extends Controller
             return (int) $item['producto_externo_id'];
         }
 
+        $codigo = trim((string) ($item['codigo'] ?? ''));
+        $modelo = trim((string) ($item['modelo'] ?? ''));
+        $marca = trim((string) ($item['marca'] ?? ''));
+        $identificadores = array_values(array_unique(array_filter([$codigo, $modelo])));
+
+        // Reutiliza registros antiguos aunque el proveedor cambie o el modelo
+        // haya sido guardado historicamente dentro del campo codigo.
+        $existente = ProductoExterno::query()
+            ->when($identificadores !== [], function ($query) use ($identificadores, $marca): void {
+                $query->where(function ($identityQuery) use ($identificadores): void {
+                    foreach ($identificadores as $identificador) {
+                        $identityQuery
+                            ->orWhere('codigo', $identificador)
+                            ->orWhere('modelo', $identificador);
+                    }
+                });
+
+                if ($marca !== '') {
+                    $query->where(function ($brandQuery) use ($marca): void {
+                        $brandQuery
+                            ->whereRaw('LOWER(marca) = ?', [mb_strtolower($marca)])
+                            ->orWhereNull('marca')
+                            ->orWhere('marca', '');
+                    });
+                }
+            })
+            ->when($identificadores === [], function ($query) use ($item, $marca): void {
+                $query->where('descripcion', $item['descripcion'] ?? '')
+                    ->where(function ($brandQuery) use ($marca): void {
+                        if ($marca === '') {
+                            $brandQuery->whereNull('marca')->orWhere('marca', '');
+                        } else {
+                            $brandQuery->whereRaw('LOWER(marca) = ?', [mb_strtolower($marca)]);
+                        }
+                    });
+            })
+            ->latest('id')
+            ->first();
+
+        if ($existente) {
+            return (int) $existente->id;
+        }
+
         $fingerprint = ProductoExterno::fingerprintFrom($item);
 
         $productoExterno = ProductoExterno::firstOrCreate(
@@ -2950,6 +3003,7 @@ class CotizacionController extends Controller
             [
                 'descripcion' => $item['descripcion'],
                 'marca' => $item['marca'] ?? null,
+                'modelo' => $item['modelo'] ?? null,
                 'codigo' => $item['codigo'] ?? null,
                 'unidad_medida' => $item['unidad_medida'] ?? 'UND',
                 'proveedor' => $item['proveedor'] ?? null,
