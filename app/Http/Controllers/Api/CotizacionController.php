@@ -1752,6 +1752,7 @@ class CotizacionController extends Controller
             'items.*.tipo' => 'nullable|string|in:catalogo,personalizado,externo',
             'items.*.producto_externo_id' => 'nullable|exists:productos_externos,id',
             'items.*.imagen' => 'sometimes|nullable',
+            'items.*.imagen_eliminada' => 'sometimes|boolean',
             'items.*.proveedores' => 'nullable|array',
             'items.*.proveedores.*.proveedor_id' => 'nullable|integer|exists:proveedores,id',
             'items.*.proveedores.*.nombre' => 'required|string|max:255',
@@ -1965,6 +1966,7 @@ class CotizacionController extends Controller
             'items.*.tipo' => 'nullable|string|in:catalogo,personalizado,externo',
             'items.*.producto_externo_id' => 'nullable|exists:productos_externos,id',
             'items.*.imagen' => 'sometimes|nullable',
+            'items.*.imagen_eliminada' => 'sometimes|boolean',
             'items.*.proveedores' => 'nullable|array',
             'items.*.proveedores.*.proveedor_id' => 'nullable|integer|exists:proveedores,id',
             'items.*.proveedores.*.nombre' => 'required|string|max:255',
@@ -2672,6 +2674,7 @@ class CotizacionController extends Controller
             'items.*.producto_id' => 'nullable|exists:productos,id',
             'items.*.producto_externo_id' => 'nullable|exists:productos_externos,id',
             'items.*.imagen' => 'sometimes|nullable',
+            'items.*.imagen_eliminada' => 'sometimes|boolean',
             'items.*.proveedores' => 'nullable|array',
             'items.*.proveedores.*.proveedor_id' => 'nullable|integer|exists:proveedores,id',
             'items.*.proveedores.*.nombre' => 'required|string|max:255',
@@ -3049,6 +3052,10 @@ class CotizacionController extends Controller
     {
         $field = "items.$index.imagen";
 
+        if (filter_var($item['imagen_eliminada'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            return null;
+        }
+
         if ($request->hasFile($field)) {
             $request->validate([
                 $field => 'image|max:2048',
@@ -3075,6 +3082,10 @@ class CotizacionController extends Controller
      */
     private function resolveCotizacionItemImagenFromPayload(array $item): ?string
     {
+        if (filter_var($item['imagen_eliminada'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            return null;
+        }
+
         foreach (['imagen', 'imagen_path'] as $key) {
             if (! empty($item[$key]) && is_string($item[$key])) {
                 return $this->normalizePublicStoragePath($item[$key]);
