@@ -27,13 +27,16 @@ class FacturaUblParser
 
         $id = $this->text($xpath, '/*[local-name()="Invoice" or local-name()="CreditNote" or local-name()="DebitNote"]/cbc:ID') ?? '';
         [$serie, $numero] = $this->separarSerieNumero($id);
+        $fechaVencimiento = $this->text($xpath, '/*[local-name()="Invoice" or local-name()="CreditNote" or local-name()="DebitNote"]/cbc:DueDate')
+            ?? $this->text($xpath, '//*[local-name()="PaymentTerms"]/*[local-name()="PaymentDueDate"]');
 
         return [
             'tipo_comprobante' => $this->tipoComprobante($xpath),
             'serie' => $serie,
             'numero' => $numero,
             'fecha_emision' => $this->text($xpath, '/*[local-name()="Invoice" or local-name()="CreditNote" or local-name()="DebitNote"]/cbc:IssueDate'),
-            'fecha_vencimiento' => $this->text($xpath, '/*[local-name()="Invoice" or local-name()="CreditNote" or local-name()="DebitNote"]/cbc:DueDate'),
+            'fecha_vencimiento' => $fechaVencimiento,
+            'fecha_vencimiento_origen' => $fechaVencimiento ? 'xml' : null,
             'moneda_codigo' => $this->text($xpath, '/*[local-name()="Invoice" or local-name()="CreditNote" or local-name()="DebitNote"]/cbc:DocumentCurrencyCode')
                 ?? $this->attribute($xpath, '//*[local-name()="LegalMonetaryTotal"]/*[local-name()="PayableAmount"]', 'currencyID'),
             'emisor_ruc' => $this->partyRuc($xpath, 'AccountingSupplierParty'),
@@ -45,6 +48,11 @@ class FacturaUblParser
             'subtotal' => (float) ($this->text($xpath, '//*[local-name()="LegalMonetaryTotal"]/cbc:LineExtensionAmount') ?? 0),
             'igv' => (float) ($this->text($xpath, '//*[local-name()="TaxTotal"]/cbc:TaxAmount') ?? 0),
             'total' => (float) ($this->text($xpath, '//*[local-name()="LegalMonetaryTotal"]/cbc:PayableAmount') ?? 0),
+            'detraccion_porcentaje' => $this->decimal($this->text($xpath, '//*[local-name()="PaymentTerms"][contains(translate(string(.), "DETRACCION", "detraccion"), "detraccion")]/*[local-name()="PaymentPercent"]')),
+            'detraccion_monto_original' => $this->decimal($this->text($xpath, '//*[local-name()="PaymentTerms"][contains(translate(string(.), "DETRACCION", "detraccion"), "detraccion")]/*[local-name()="Amount"]')) ?? 0,
+            'detraccion_codigo' => $this->text($xpath, '//*[local-name()="PaymentTerms"][contains(translate(string(.), "DETRACCION", "detraccion"), "detraccion")]/*[local-name()="PaymentMeansID" or local-name()="PaymentMeansCode"]'),
+            'detraccion_cuenta' => $this->text($xpath, '//*[local-name()="PaymentMeans"]//*[local-name()="PayeeFinancialAccount"]/*[local-name()="ID"]'),
+            'documento_referencia' => $this->text($xpath, '//*[local-name()="BillingReference"]//*[local-name()="DocumentReference"]/*[local-name()="ID"]'),
             'items' => $this->items($xpath),
         ];
     }
@@ -86,6 +94,11 @@ class FacturaUblParser
         $node = $xpath->query($query)?->item(0);
 
         return $node ? trim($node->textContent) : null;
+    }
+
+    private function decimal(?string $value): ?float
+    {
+        return $value === null || trim($value) === '' ? null : (float) str_replace(',', '.', trim($value));
     }
 
     private function partyRuc(DOMXPath $xpath, string $party): ?string

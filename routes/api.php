@@ -1,15 +1,15 @@
-﻿<?php
+<?php
 
 use App\Http\Controllers\Api\AlertaOperativaController;
 use App\Http\Controllers\Api\AuditoriaController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ChequeController;
 use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\CompraController;
 use App\Http\Controllers\Api\ComprobanteController;
 use App\Http\Controllers\Api\CotizacionController;
 use App\Http\Controllers\Api\CuentaPorCobrarController;
 use App\Http\Controllers\Api\CuentaPorPagarController;
-use App\Http\Controllers\Api\ChequeController;
 use App\Http\Controllers\Api\EmpresaConfiguracionController;
 use App\Http\Controllers\Api\HostingController;
 use App\Http\Controllers\Api\InventarioController;
@@ -26,8 +26,8 @@ use App\Http\Controllers\Api\ProductoSkuController;
 use App\Http\Controllers\Api\ProveedorController;
 use App\Http\Controllers\Api\RecepcionCompraController;
 use App\Http\Controllers\Api\RequerimientoCompraController;
-use App\Http\Controllers\Api\SolicitudSobrecompraController;
 use App\Http\Controllers\Api\SnakeScoreController;
+use App\Http\Controllers\Api\SolicitudSobrecompraController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WooCommercePedidoController;
@@ -39,119 +39,125 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
-function permissionCatalog(): array
-{
-    return [
-        ['key' => 'superadmin', 'module' => 'Administracion', 'label' => 'Control total', 'description' => 'Permisos reservados del superadministrador.'],
-        ['key' => 'auditoria', 'module' => 'Administracion', 'label' => 'Auditoria', 'description' => 'Revision de eventos y trazabilidad.'],
-        ['key' => 'dashboard', 'module' => 'General', 'label' => 'Dashboard', 'description' => 'Panel principal del sistema.'],
-        ['key' => 'productos', 'module' => 'Productos', 'label' => 'Ver productos', 'description' => 'Acceso al modulo de productos.'],
-        ['key' => 'productos.crear', 'module' => 'Productos', 'parent' => 'productos', 'label' => 'Crear productos', 'description' => 'Registrar productos nuevos.'],
-        ['key' => 'productos.editar', 'module' => 'Productos', 'parent' => 'productos', 'label' => 'Editar productos', 'description' => 'Modificar datos de productos.'],
-        ['key' => 'productos.eliminar', 'module' => 'Productos', 'parent' => 'productos', 'label' => 'Eliminar productos', 'description' => 'Eliminar productos.'],
-        ['key' => 'productos.normalizar_sku', 'module' => 'Productos', 'parent' => 'productos', 'label' => 'Normalizar SKU', 'description' => 'Previsualizar y aplicar normalizacion de SKU.'],
-        ['key' => 'clientes', 'module' => 'Clientes', 'label' => 'CRUD clientes', 'description' => 'Permisos generales de clientes.'],
-        ['key' => 'clientes.crear', 'module' => 'Clientes', 'parent' => 'clientes', 'label' => 'Agregar cliente', 'description' => 'Crear clientes nuevos.'],
-        ['key' => 'clientes.editar', 'module' => 'Clientes', 'parent' => 'clientes', 'label' => 'Editar cliente', 'description' => 'Actualizar datos de clientes.'],
-        ['key' => 'clientes.eliminar', 'module' => 'Clientes', 'parent' => 'clientes', 'label' => 'Eliminar cliente', 'description' => 'Eliminar clientes.'],
-        ['key' => 'cotizaciones', 'module' => 'Cotizaciones', 'label' => 'Cotizaciones', 'description' => 'Creacion y gestion comercial.'],
-        ['key' => 'cotizaciones.crear', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Crear cotizacion', 'description' => 'Registrar cotizaciones.'],
-        ['key' => 'cotizaciones.editar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Editar cotizacion', 'description' => 'Modificar cotizaciones.'],
-        ['key' => 'cotizaciones.eliminar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Eliminar cotizacion', 'description' => 'Eliminar cotizaciones.'],
-        ['key' => 'cotizaciones.items', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Gestionar items', 'description' => 'Agregar, editar y eliminar items.'],
-        ['key' => 'cotizaciones.costos', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Gestionar costos', 'description' => 'Agregar y eliminar costos adicionales.'],
-        ['key' => 'cotizaciones.revision', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Enviar a revision', 'description' => 'Enviar cotizaciones y modificaciones a revision.'],
-        ['key' => 'cotizaciones.aprobar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Aprobar cotizacion', 'description' => 'Aprobar cotizaciones y modificaciones.'],
-        ['key' => 'cotizaciones.rechazar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Rechazar cotizacion', 'description' => 'Rechazar cotizaciones y modificaciones.'],
-        ['key' => 'cotizaciones.delegar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Delegar cotizacion', 'description' => 'Delegar cotizaciones.'],
-        ['key' => 'cotizaciones.exportar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Exportar cotizacion', 'description' => 'Generar PDF de cotizaciones.'],
-        ['key' => 'cotizaciones.oc', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Registrar OC', 'description' => 'Registrar OC asociadas a cotizaciones.'],
-        ['key' => 'licitaciones', 'module' => 'Oportunidades', 'label' => 'Oportunidades', 'description' => 'Seguimiento de licitaciones y privados.'],
-        ['key' => 'licitaciones.crear', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Crear oportunidad', 'description' => 'Registrar oportunidades.'],
-        ['key' => 'licitaciones.editar', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Editar oportunidad', 'description' => 'Modificar oportunidades.'],
-        ['key' => 'licitaciones.eliminar', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Eliminar oportunidad', 'description' => 'Eliminar oportunidades.'],
-        ['key' => 'licitaciones.asignar', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Asignar oportunidad', 'description' => 'Asignar oportunidades a ejecutivos.'],
-        ['key' => 'licitaciones.comentar', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Comentar oportunidad', 'description' => 'Agregar comentarios.'],
-        ['key' => 'licitaciones.archivos', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Gestionar archivos', 'description' => 'Subir y eliminar archivos.'],
-        ['key' => 'licitaciones.cotizaciones', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Relacionar cotizaciones', 'description' => 'Vincular cotizaciones.'],
-        ['key' => 'licitaciones.cotizaciones_pdf', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Descargar PDF de cotizacion', 'description' => 'Descargar el PDF de una cotizacion vinculada y aprobada.'],
-        ['key' => 'usuarios', 'module' => 'Administracion', 'label' => 'Usuarios', 'description' => 'Administracion de usuarios.'],
-        ['key' => 'usuarios.consultar', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Consultar usuarios', 'description' => 'Ver usuarios del sistema.'],
-        ['key' => 'usuarios.crear', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Crear usuarios', 'description' => 'Registrar usuarios.'],
-        ['key' => 'usuarios.editar', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Editar usuarios', 'description' => 'Actualizar datos de usuarios.'],
-        ['key' => 'usuarios.estado', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Cambiar estado de usuarios', 'description' => 'Activar y desactivar usuarios.'],
-        ['key' => 'usuarios.reset_password', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Restablecer contrasenas', 'description' => 'Restablecer contrasenas de usuarios.'],
-        ['key' => 'configuracion', 'module' => 'Administracion', 'label' => 'Configuracion', 'description' => 'Ajustes generales del ERP.'],
-        ['key' => 'mensajes', 'module' => 'General', 'label' => 'Mensajes', 'description' => 'Comunicaciones internas.'],
-        ['key' => 'ordenes_compra', 'module' => 'Ordenes de compra', 'label' => 'Ordenes de compra', 'description' => 'OC recibidas y emitidas.'],
-        ['key' => 'ordenes_compra.consultar', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Consultar OC', 'description' => 'Ver ordenes de compra y atenciones.'],
-        ['key' => 'ordenes_compra.crear', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Crear OC', 'description' => 'Registrar ordenes de compra.'],
-        ['key' => 'ordenes_compra.items', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Gestionar items OC', 'description' => 'Actualizar items y asociar productos.'],
-        ['key' => 'ordenes_compra.editar', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Editar OC', 'description' => 'Modificar ordenes de compra.'],
-        ['key' => 'ordenes_compra.cancelar', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Cancelar OC', 'description' => 'Cancelar ordenes de compra.'],
-        ['key' => 'ordenes_compra.documentos', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Gestionar documentos OC', 'description' => 'Subir y eliminar documentos.'],
-        ['key' => 'ordenes_compra.atenciones', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Gestionar atenciones', 'description' => 'Registrar y confirmar atenciones.'],
-        ['key' => 'ordenes_compra.requerimientos', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Gestionar requerimientos', 'description' => 'Consultar y generar requerimientos.'],
-        ['key' => 'ordenes_compra.emitir', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Emitir OC', 'description' => 'Registrar y actualizar OC emitidas.'],
-        ['key' => 'ordenes_compra.pdf', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Ver PDF de OC', 'description' => 'Generar y consultar PDF de OC.'],
-        ['key' => 'compras.recepciones', 'module' => 'Compras', 'parent' => 'compras', 'label' => 'Gestionar recepciones', 'description' => 'Crear, confirmar y cancelar recepciones de compra.'],
-        ['key' => 'compras.sobrecompra', 'module' => 'Compras', 'parent' => 'compras', 'label' => 'Autorizar sobrecompras', 'description' => 'Permitir compras por encima del saldo requerido y enviar el excedente a stock.'],
-        ['key' => 'contabilidad.cheques', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar cheques', 'description' => 'Registrar, entregar, cobrar y adjuntar evidencia de cheques.'],
-        ['key' => 'contabilidad.bancos', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar bancos', 'description' => 'Agregar y administrar bancos para cheques.'],
-        ['key' => 'contabilidad.comprobantes', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar comprobantes', 'description' => 'Registrar, consultar y anular comprobantes.'],
-        ['key' => 'contabilidad.cxp', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar cuentas por pagar', 'description' => 'Consultar cuentas por pagar y su trazabilidad.'],
-        ['key' => 'contabilidad.cxp.pagos', 'module' => 'Contabilidad', 'parent' => 'contabilidad.cxp', 'label' => 'Registrar pagos CxP', 'description' => 'Registrar y anular pagos de cuentas por pagar.'],
-        ['key' => 'contabilidad.cxc', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar cuentas por cobrar', 'description' => 'Consultar cuentas por cobrar y su trazabilidad.'],
-        ['key' => 'contabilidad.alertas', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Consultar alertas contables', 'description' => 'Consultar pendientes contables y de compras.'],
-        ['key' => 'inventario', 'module' => 'Inventario', 'label' => 'Ver inventario', 'description' => 'Acceso a kardex y movimientos.'],
-        ['key' => 'inventario.kardex_entrada', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Registrar entrada Kardex', 'description' => 'Permite crear entradas de inventario.'],
-        ['key' => 'inventario.kardex_salida', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Registrar salida Kardex', 'description' => 'Permite crear salidas de inventario.'],
-        ['key' => 'inventario.consultar', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Consultar movimientos', 'description' => 'Consultar inventario y movimientos.'],
-        ['key' => 'inventario.ajustar', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Ajustar stock', 'description' => 'Ajustar existencias manualmente.'],
-        ['key' => 'inventario.documentos', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Gestionar documentos', 'description' => 'Adjuntar documentos a movimientos.'],
-        ['key' => 'servicios', 'module' => 'Servicios', 'label' => 'Servicios', 'description' => 'Licencias, hosting y servicios.'],
-        ['key' => 'servicios.consultar', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Consultar servicios', 'description' => 'Ver licencias y hostings.'],
-        ['key' => 'servicios.crear', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Crear servicios', 'description' => 'Registrar licencias y hostings.'],
-        ['key' => 'servicios.editar', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Editar servicios', 'description' => 'Actualizar licencias y hostings.'],
-        ['key' => 'servicios.eliminar', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Eliminar servicios', 'description' => 'Eliminar licencias y hostings.'],
-        ['key' => 'servicios.renovar', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Renovar servicios', 'description' => 'Renovar licencias y hostings.'],
-        ['key' => 'servicios.documentos', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Gestionar documentos de servicios', 'description' => 'Subir y eliminar documentos.'],
-        ['key' => 'servicios.cotizaciones', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Relacionar cotizaciones de servicios', 'description' => 'Enlazar y desenlazar cotizaciones.'],
-        ['key' => 'soporte_ti', 'module' => 'Soporte TI', 'label' => 'Soporte TI', 'description' => 'Modulo de mesa de ayuda.'],
-        ['key' => 'control_pagos', 'module' => 'Control adm', 'label' => 'Control de pagos', 'description' => 'Seguimiento administrativo y contable.'],
-        ['key' => 'proveedores', 'module' => 'Productos', 'label' => 'Proveedores', 'description' => 'Consultar y gestionar proveedores.'],
-        ['key' => 'proveedores.consultar', 'module' => 'Productos', 'parent' => 'proveedores', 'label' => 'Consultar proveedores', 'description' => 'Ver proveedores registrados.'],
-        ['key' => 'proveedores.crear', 'module' => 'Productos', 'parent' => 'proveedores', 'label' => 'Crear proveedores', 'description' => 'Registrar proveedores.'],
-        ['key' => 'proveedores.editar', 'module' => 'Productos', 'parent' => 'proveedores', 'label' => 'Editar proveedores', 'description' => 'Actualizar proveedores.'],
-        ['key' => 'productos_externos', 'module' => 'Productos', 'label' => 'Productos externos', 'description' => 'Gestionar productos externos y su historial.'],
-        ['key' => 'productos_externos.consultar', 'module' => 'Productos', 'parent' => 'productos_externos', 'label' => 'Consultar productos externos', 'description' => 'Ver productos externos e historial.'],
-        ['key' => 'productos_externos.convertir', 'module' => 'Productos', 'parent' => 'productos_externos', 'label' => 'Convertir producto externo', 'description' => 'Convertir productos externos a internos.'],
-        ['key' => 'woocommerce', 'module' => 'Integraciones', 'label' => 'WooCommerce', 'description' => 'Gestionar pedidos y sincronizacion.'],
-        ['key' => 'woocommerce.consultar', 'module' => 'Integraciones', 'parent' => 'woocommerce', 'label' => 'Consultar WooCommerce', 'description' => 'Ver pedidos y registros.'],
-        ['key' => 'woocommerce.sincronizar', 'module' => 'Integraciones', 'parent' => 'woocommerce', 'label' => 'Sincronizar WooCommerce', 'description' => 'Ejecutar sincronizaciones.'],
-        ['key' => 'woocommerce.reservar', 'module' => 'Integraciones', 'parent' => 'woocommerce', 'label' => 'Reservar pedidos', 'description' => 'Reservar pedidos de WooCommerce.'],
-        ['key' => 'woocommerce.productos', 'module' => 'Integraciones', 'parent' => 'woocommerce', 'label' => 'Gestionar productos WooCommerce', 'description' => 'Mapear y sincronizar productos.'],
-    ];
-}
-
-function ensureRolePermissionsCatalog(): void
-{
-    foreach (permissionCatalog() as $permission) {
-        Permission::firstOrCreate([
-            'name' => $permission['key'],
-            'guard_name' => 'web',
-        ]);
+if (! function_exists('permissionCatalog')) {
+    function permissionCatalog(): array
+    {
+        return [
+            ['key' => 'superadmin', 'module' => 'Administracion', 'label' => 'Control total', 'description' => 'Permisos reservados del superadministrador.'],
+            ['key' => 'auditoria', 'module' => 'Administracion', 'label' => 'Auditoria', 'description' => 'Revision de eventos y trazabilidad.'],
+            ['key' => 'dashboard', 'module' => 'General', 'label' => 'Dashboard', 'description' => 'Panel principal del sistema.'],
+            ['key' => 'productos', 'module' => 'Productos', 'label' => 'Ver productos', 'description' => 'Acceso al modulo de productos.'],
+            ['key' => 'productos.crear', 'module' => 'Productos', 'parent' => 'productos', 'label' => 'Crear productos', 'description' => 'Registrar productos nuevos.'],
+            ['key' => 'productos.editar', 'module' => 'Productos', 'parent' => 'productos', 'label' => 'Editar productos', 'description' => 'Modificar datos de productos.'],
+            ['key' => 'productos.eliminar', 'module' => 'Productos', 'parent' => 'productos', 'label' => 'Eliminar productos', 'description' => 'Eliminar productos.'],
+            ['key' => 'productos.normalizar_sku', 'module' => 'Productos', 'parent' => 'productos', 'label' => 'Normalizar SKU', 'description' => 'Previsualizar y aplicar normalizacion de SKU.'],
+            ['key' => 'clientes', 'module' => 'Clientes', 'label' => 'CRUD clientes', 'description' => 'Permisos generales de clientes.'],
+            ['key' => 'clientes.crear', 'module' => 'Clientes', 'parent' => 'clientes', 'label' => 'Agregar cliente', 'description' => 'Crear clientes nuevos.'],
+            ['key' => 'clientes.editar', 'module' => 'Clientes', 'parent' => 'clientes', 'label' => 'Editar cliente', 'description' => 'Actualizar datos de clientes.'],
+            ['key' => 'clientes.eliminar', 'module' => 'Clientes', 'parent' => 'clientes', 'label' => 'Eliminar cliente', 'description' => 'Eliminar clientes.'],
+            ['key' => 'cotizaciones', 'module' => 'Cotizaciones', 'label' => 'Cotizaciones', 'description' => 'Creacion y gestion comercial.'],
+            ['key' => 'cotizaciones.crear', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Crear cotizacion', 'description' => 'Registrar cotizaciones.'],
+            ['key' => 'cotizaciones.editar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Editar cotizacion', 'description' => 'Modificar cotizaciones.'],
+            ['key' => 'cotizaciones.eliminar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Eliminar cotizacion', 'description' => 'Eliminar cotizaciones.'],
+            ['key' => 'cotizaciones.items', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Gestionar items', 'description' => 'Agregar, editar y eliminar items.'],
+            ['key' => 'cotizaciones.costos', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Gestionar costos', 'description' => 'Agregar y eliminar costos adicionales.'],
+            ['key' => 'cotizaciones.revision', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Enviar a revision', 'description' => 'Enviar cotizaciones y modificaciones a revision.'],
+            ['key' => 'cotizaciones.aprobar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Aprobar cotizacion', 'description' => 'Aprobar cotizaciones y modificaciones.'],
+            ['key' => 'cotizaciones.rechazar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Rechazar cotizacion', 'description' => 'Rechazar cotizaciones y modificaciones.'],
+            ['key' => 'cotizaciones.delegar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Delegar cotizacion', 'description' => 'Delegar cotizaciones.'],
+            ['key' => 'cotizaciones.exportar', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Exportar cotizacion', 'description' => 'Generar PDF de cotizaciones.'],
+            ['key' => 'cotizaciones.oc', 'module' => 'Cotizaciones', 'parent' => 'cotizaciones', 'label' => 'Registrar OC', 'description' => 'Registrar OC asociadas a cotizaciones.'],
+            ['key' => 'licitaciones', 'module' => 'Oportunidades', 'label' => 'Oportunidades', 'description' => 'Seguimiento de licitaciones y privados.'],
+            ['key' => 'licitaciones.crear', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Crear oportunidad', 'description' => 'Registrar oportunidades.'],
+            ['key' => 'licitaciones.editar', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Editar oportunidad', 'description' => 'Modificar oportunidades.'],
+            ['key' => 'licitaciones.eliminar', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Eliminar oportunidad', 'description' => 'Eliminar oportunidades.'],
+            ['key' => 'licitaciones.asignar', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Asignar oportunidad', 'description' => 'Asignar oportunidades a ejecutivos.'],
+            ['key' => 'licitaciones.comentar', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Comentar oportunidad', 'description' => 'Agregar comentarios.'],
+            ['key' => 'licitaciones.archivos', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Gestionar archivos', 'description' => 'Subir y eliminar archivos.'],
+            ['key' => 'licitaciones.cotizaciones', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Relacionar cotizaciones', 'description' => 'Vincular cotizaciones.'],
+            ['key' => 'licitaciones.cotizaciones_pdf', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Descargar PDF de cotizacion', 'description' => 'Descargar el PDF de una cotizacion vinculada y aprobada.'],
+            ['key' => 'usuarios', 'module' => 'Administracion', 'label' => 'Usuarios', 'description' => 'Administracion de usuarios.'],
+            ['key' => 'usuarios.consultar', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Consultar usuarios', 'description' => 'Ver usuarios del sistema.'],
+            ['key' => 'usuarios.crear', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Crear usuarios', 'description' => 'Registrar usuarios.'],
+            ['key' => 'usuarios.editar', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Editar usuarios', 'description' => 'Actualizar datos de usuarios.'],
+            ['key' => 'usuarios.estado', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Cambiar estado de usuarios', 'description' => 'Activar y desactivar usuarios.'],
+            ['key' => 'usuarios.reset_password', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Restablecer contrasenas', 'description' => 'Restablecer contrasenas de usuarios.'],
+            ['key' => 'configuracion', 'module' => 'Administracion', 'label' => 'Configuracion', 'description' => 'Ajustes generales del ERP.'],
+            ['key' => 'mensajes', 'module' => 'General', 'label' => 'Mensajes', 'description' => 'Comunicaciones internas.'],
+            ['key' => 'ordenes_compra', 'module' => 'Ordenes de compra', 'label' => 'Ordenes de compra', 'description' => 'OC recibidas y emitidas.'],
+            ['key' => 'ordenes_compra.consultar', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Consultar OC', 'description' => 'Ver ordenes de compra y atenciones.'],
+            ['key' => 'ordenes_compra.crear', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Crear OC', 'description' => 'Registrar ordenes de compra.'],
+            ['key' => 'ordenes_compra.items', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Gestionar items OC', 'description' => 'Actualizar items y asociar productos.'],
+            ['key' => 'ordenes_compra.editar', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Editar OC', 'description' => 'Modificar ordenes de compra.'],
+            ['key' => 'ordenes_compra.cancelar', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Cancelar OC', 'description' => 'Cancelar ordenes de compra.'],
+            ['key' => 'ordenes_compra.documentos', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Gestionar documentos OC', 'description' => 'Subir y eliminar documentos.'],
+            ['key' => 'ordenes_compra.atenciones', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Gestionar atenciones', 'description' => 'Registrar y confirmar atenciones.'],
+            ['key' => 'ordenes_compra.requerimientos', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Gestionar requerimientos', 'description' => 'Consultar y generar requerimientos.'],
+            ['key' => 'ordenes_compra.emitir', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Emitir OC', 'description' => 'Registrar y actualizar OC emitidas.'],
+            ['key' => 'ordenes_compra.pdf', 'module' => 'Ordenes de compra', 'parent' => 'ordenes_compra', 'label' => 'Ver PDF de OC', 'description' => 'Generar y consultar PDF de OC.'],
+            ['key' => 'compras.recepciones', 'module' => 'Compras', 'parent' => 'compras', 'label' => 'Gestionar recepciones', 'description' => 'Crear, confirmar y cancelar recepciones de compra.'],
+            ['key' => 'compras.sobrecompra', 'module' => 'Compras', 'parent' => 'compras', 'label' => 'Autorizar sobrecompras', 'description' => 'Permitir compras por encima del saldo requerido y enviar el excedente a stock.'],
+            ['key' => 'contabilidad.cheques', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar cheques', 'description' => 'Registrar, entregar, cobrar y adjuntar evidencia de cheques.'],
+            ['key' => 'contabilidad.bancos', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar bancos', 'description' => 'Agregar y administrar bancos para cheques.'],
+            ['key' => 'contabilidad.comprobantes', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar comprobantes', 'description' => 'Registrar, consultar y anular comprobantes.'],
+            ['key' => 'contabilidad.cxp', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar cuentas por pagar', 'description' => 'Consultar cuentas por pagar y su trazabilidad.'],
+            ['key' => 'contabilidad.cxp.pagos', 'module' => 'Contabilidad', 'parent' => 'contabilidad.cxp', 'label' => 'Registrar pagos CxP', 'description' => 'Registrar y anular pagos de cuentas por pagar.'],
+            ['key' => 'contabilidad.cxc', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Gestionar cuentas por cobrar', 'description' => 'Consultar cuentas por cobrar y su trazabilidad.'],
+            ['key' => 'contabilidad.alertas', 'module' => 'Contabilidad', 'parent' => 'contabilidad', 'label' => 'Consultar alertas contables', 'description' => 'Consultar pendientes contables y de compras.'],
+            ['key' => 'inventario', 'module' => 'Inventario', 'label' => 'Ver inventario', 'description' => 'Acceso a kardex y movimientos.'],
+            ['key' => 'inventario.kardex_entrada', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Registrar entrada Kardex', 'description' => 'Permite crear entradas de inventario.'],
+            ['key' => 'inventario.kardex_salida', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Registrar salida Kardex', 'description' => 'Permite crear salidas de inventario.'],
+            ['key' => 'inventario.consultar', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Consultar movimientos', 'description' => 'Consultar inventario y movimientos.'],
+            ['key' => 'inventario.ajustar', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Ajustar stock', 'description' => 'Ajustar existencias manualmente.'],
+            ['key' => 'inventario.documentos', 'module' => 'Inventario', 'parent' => 'inventario', 'label' => 'Gestionar documentos', 'description' => 'Adjuntar documentos a movimientos.'],
+            ['key' => 'servicios', 'module' => 'Servicios', 'label' => 'Servicios', 'description' => 'Licencias, hosting y servicios.'],
+            ['key' => 'servicios.consultar', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Consultar servicios', 'description' => 'Ver licencias y hostings.'],
+            ['key' => 'servicios.crear', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Crear servicios', 'description' => 'Registrar licencias y hostings.'],
+            ['key' => 'servicios.editar', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Editar servicios', 'description' => 'Actualizar licencias y hostings.'],
+            ['key' => 'servicios.eliminar', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Eliminar servicios', 'description' => 'Eliminar licencias y hostings.'],
+            ['key' => 'servicios.renovar', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Renovar servicios', 'description' => 'Renovar licencias y hostings.'],
+            ['key' => 'servicios.documentos', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Gestionar documentos de servicios', 'description' => 'Subir y eliminar documentos.'],
+            ['key' => 'servicios.cotizaciones', 'module' => 'Servicios', 'parent' => 'servicios', 'label' => 'Relacionar cotizaciones de servicios', 'description' => 'Enlazar y desenlazar cotizaciones.'],
+            ['key' => 'soporte_ti', 'module' => 'Soporte TI', 'label' => 'Soporte TI', 'description' => 'Modulo de mesa de ayuda.'],
+            ['key' => 'control_pagos', 'module' => 'Control adm', 'label' => 'Control de pagos', 'description' => 'Seguimiento administrativo y contable.'],
+            ['key' => 'proveedores', 'module' => 'Productos', 'label' => 'Proveedores', 'description' => 'Consultar y gestionar proveedores.'],
+            ['key' => 'proveedores.consultar', 'module' => 'Productos', 'parent' => 'proveedores', 'label' => 'Consultar proveedores', 'description' => 'Ver proveedores registrados.'],
+            ['key' => 'proveedores.crear', 'module' => 'Productos', 'parent' => 'proveedores', 'label' => 'Crear proveedores', 'description' => 'Registrar proveedores.'],
+            ['key' => 'proveedores.editar', 'module' => 'Productos', 'parent' => 'proveedores', 'label' => 'Editar proveedores', 'description' => 'Actualizar proveedores.'],
+            ['key' => 'productos_externos', 'module' => 'Productos', 'label' => 'Productos externos', 'description' => 'Gestionar productos externos y su historial.'],
+            ['key' => 'productos_externos.consultar', 'module' => 'Productos', 'parent' => 'productos_externos', 'label' => 'Consultar productos externos', 'description' => 'Ver productos externos e historial.'],
+            ['key' => 'productos_externos.convertir', 'module' => 'Productos', 'parent' => 'productos_externos', 'label' => 'Convertir producto externo', 'description' => 'Convertir productos externos a internos.'],
+            ['key' => 'woocommerce', 'module' => 'Integraciones', 'label' => 'WooCommerce', 'description' => 'Gestionar pedidos y sincronizacion.'],
+            ['key' => 'woocommerce.consultar', 'module' => 'Integraciones', 'parent' => 'woocommerce', 'label' => 'Consultar WooCommerce', 'description' => 'Ver pedidos y registros.'],
+            ['key' => 'woocommerce.sincronizar', 'module' => 'Integraciones', 'parent' => 'woocommerce', 'label' => 'Sincronizar WooCommerce', 'description' => 'Ejecutar sincronizaciones.'],
+            ['key' => 'woocommerce.reservar', 'module' => 'Integraciones', 'parent' => 'woocommerce', 'label' => 'Reservar pedidos', 'description' => 'Reservar pedidos de WooCommerce.'],
+            ['key' => 'woocommerce.productos', 'module' => 'Integraciones', 'parent' => 'woocommerce', 'label' => 'Gestionar productos WooCommerce', 'description' => 'Mapear y sincronizar productos.'],
+        ];
     }
 }
 
-function normalizeGrantedPermissions(array $permissions): array
-{
-    $catalogKeys = array_column(permissionCatalog(), 'key');
+if (! function_exists('ensureRolePermissionsCatalog')) {
+    function ensureRolePermissionsCatalog(): void
+    {
+        foreach (permissionCatalog() as $permission) {
+            Permission::firstOrCreate([
+                'name' => $permission['key'],
+                'guard_name' => 'web',
+            ]);
+        }
+    }
+}
 
-    return array_values(array_unique(array_intersect(
-        $permissions,
-        $catalogKeys
-    )));
+if (! function_exists('normalizeGrantedPermissions')) {
+    function normalizeGrantedPermissions(array $permissions): array
+    {
+        $catalogKeys = array_column(permissionCatalog(), 'key');
+
+        return array_values(array_unique(array_intersect(
+            $permissions,
+            $catalogKeys
+        )));
+    }
 }
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:20,1');
@@ -629,6 +635,9 @@ Route::prefix('contabilidad/comprobantes')->middleware(['auth:sanctum', 'token.i
     Route::patch('/{comprobante}/anular', [ComprobanteController::class, 'anular'])
         ->middleware('permission:contabilidad.comprobantes|contabilidad');
 
+    Route::post('/{comprobante}/notas-credito', [ComprobanteController::class, 'registrarNotaCredito'])
+        ->middleware('permission:contabilidad.comprobantes|contabilidad');
+
     Route::post('/{comprobante}/cuenta-por-pagar', [CuentaPorPagarController::class, 'storeDesdeComprobante'])
         ->middleware('permission:contabilidad.cxp|contabilidad');
 
@@ -651,6 +660,12 @@ Route::prefix('contabilidad/cuentas-por-pagar')->middleware(['auth:sanctum', 'to
 
     Route::patch('/{cuentaPorPagar}/anular', [CuentaPorPagarController::class, 'anular'])
         ->middleware('permission:contabilidad.cxp.pagos|contabilidad.cxp|contabilidad');
+
+    Route::patch('/{cuentaPorPagar}/seguimiento', [CuentaPorPagarController::class, 'actualizarSeguimiento'])
+        ->middleware('permission:contabilidad.cxp|contabilidad');
+
+    Route::post('/{cuentaPorPagar}/ampliar-vencimiento', [CuentaPorPagarController::class, 'ampliarVencimiento'])
+        ->middleware('permission:contabilidad.cxp|contabilidad');
 });
 
 Route::patch('/contabilidad/pagos/{pago}/anular', [CuentaPorPagarController::class, 'anularPago'])
@@ -678,6 +693,9 @@ Route::prefix('contabilidad/cuentas-por-cobrar')->middleware(['auth:sanctum', 't
         ->middleware('permission:contabilidad.cxc|contabilidad');
 
     Route::patch('/{cuentaPorCobrar}/anular', [CuentaPorCobrarController::class, 'anular'])
+        ->middleware('permission:contabilidad.cxc|contabilidad');
+
+    Route::patch('/{cuentaPorCobrar}/seguimiento', [CuentaPorCobrarController::class, 'actualizarSeguimiento'])
         ->middleware('permission:contabilidad.cxc|contabilidad');
 });
 
@@ -751,4 +769,3 @@ Route::prefix('hostings')->middleware(['auth:sanctum', 'token.idle'])->group(fun
     Route::put('/{hosting}', [HostingController::class, 'update'])->middleware('permission:servicios.editar');
     Route::delete('/{hosting}', [HostingController::class, 'destroy'])->middleware('permission:servicios.eliminar');
 });
-

@@ -21,6 +21,8 @@ class Cobro extends Model
         'fecha_cobro',
         'monto',
         'moneda_id',
+        'tipo_cambio',
+        'monto_moneda_cuenta',
         'metodo_cobro',
         'referencia',
         'estado',
@@ -34,6 +36,8 @@ class Cobro extends Model
         return [
             'fecha_cobro' => 'date:Y-m-d',
             'monto' => 'decimal:2',
+            'tipo_cambio' => 'decimal:6',
+            'monto_moneda_cuenta' => 'decimal:2',
         ];
     }
 

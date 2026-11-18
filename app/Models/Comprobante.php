@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class Comprobante extends Model
@@ -18,12 +19,16 @@ class Comprobante extends Model
 
     public const TIPO_OPERACION_VENTA = 'venta';
 
+    public const TIPO_OPERACION_GASTO = 'gasto';
+
     public const ESTADO_REGISTRADO = 'registrado';
 
     public const ESTADO_ANULADO = 'anulado';
 
     protected $fillable = [
         'tipo_operacion',
+        'categoria_gasto',
+        'centro_costo',
         'compra_id',
         'oc_recibida_id',
         'cotizacion_id',
@@ -38,13 +43,20 @@ class Comprobante extends Model
         'numero',
         'fecha_emision',
         'fecha_vencimiento',
+        'fecha_vencimiento_origen',
+        'condicion_pago',
         'moneda_id',
         'subtotal',
         'igv',
         'total',
+        'detraccion_porcentaje',
+        'detraccion_monto_original',
+        'detraccion_codigo',
+        'detraccion_cuenta',
         'estado',
         'xml_hash',
         'archivo_path',
+        'xml_path',
         'observacion',
         'creado_por',
     ];
@@ -57,6 +69,8 @@ class Comprobante extends Model
             'subtotal' => 'decimal:2',
             'igv' => 'decimal:2',
             'total' => 'decimal:2',
+            'detraccion_porcentaje' => 'decimal:4',
+            'detraccion_monto_original' => 'decimal:2',
         ];
     }
 
@@ -64,7 +78,7 @@ class Comprobante extends Model
 
     public function getArchivoUrlAttribute(): ?string
     {
-        return $this->archivo_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->archivo_path) : null;
+        return $this->archivo_path ? Storage::disk('public')->url($this->archivo_path) : null;
     }
 
     public function compra(): BelongsTo
@@ -115,5 +129,10 @@ class Comprobante extends Model
     public function cuentaPorCobrar(): HasOne
     {
         return $this->hasOne(CuentaPorCobrar::class);
+    }
+
+    public function notasCredito(): HasMany
+    {
+        return $this->hasMany(NotaCredito::class);
     }
 }

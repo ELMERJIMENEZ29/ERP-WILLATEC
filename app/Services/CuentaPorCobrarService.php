@@ -52,6 +52,9 @@ class CuentaPorCobrarService
                 'total' => $comprobante->total,
                 'monto_cobrado' => 0,
                 'saldo' => $comprobante->total,
+                'detraccion_monto_original' => $comprobante->detraccion_monto_original ?? 0,
+                'detraccion_monto_programado' => $comprobante->detraccion_monto_original ?? 0,
+                'estado_operativo' => 'por_validar_factura',
                 'estado' => CuentaPorCobrar::ESTADO_PENDIENTE,
                 'observacion' => $data['observacion'] ?? null,
                 'creado_por' => $userId,
@@ -98,16 +101,16 @@ class CuentaPorCobrarService
                 }
             }
 
-            if (! empty($data['moneda_id']) && (int) $data['moneda_id'] !== (int) $cuenta->moneda_id) {
-                throw ValidationException::withMessages([
-                    'moneda_id' => 'La moneda del cobro debe coincidir con la moneda de la cuenta.',
-                ]);
-            }
-
             $saldoActual = $this->saldoActual($cuenta);
             $monto = round((float) $data['monto'], 2);
+            $monedaCobro = (int) ($data['moneda_id'] ?? $cuenta->moneda_id);
+            $esOtraMoneda = $monedaCobro !== (int) $cuenta->moneda_id;
+            if ($esOtraMoneda && empty($data['tipo_cambio'])) {
+                throw ValidationException::withMessages(['tipo_cambio' => 'Indica el tipo de cambio para un cobro en moneda diferente.']);
+            }
+            $montoCuenta = round($monto * ($esOtraMoneda ? (float) $data['tipo_cambio'] : 1), 2);
 
-            if ($monto > $saldoActual + 0.00001) {
+            if ($montoCuenta > $saldoActual + 0.00001) {
                 throw ValidationException::withMessages([
                     'monto' => 'El cobro supera el saldo pendiente de la cuenta por cobrar.',
                 ]);
@@ -118,6 +121,8 @@ class CuentaPorCobrarService
                 'fecha_cobro' => $data['fecha_cobro'] ?? now()->toDateString(),
                 'monto' => $monto,
                 'moneda_id' => $data['moneda_id'] ?? $cuenta->moneda_id,
+                'tipo_cambio' => $esOtraMoneda ? $data['tipo_cambio'] : 1,
+                'monto_moneda_cuenta' => $montoCuenta,
                 'metodo_cobro' => $data['metodo_cobro'] ?? null,
                 'referencia' => $data['referencia'] ?? null,
                 'estado' => Cobro::ESTADO_REGISTRADO,
@@ -180,7 +185,7 @@ class CuentaPorCobrarService
         $cobrado = (float) Cobro::query()
             ->where('cuenta_por_cobrar_id', $cuenta->id)
             ->where('estado', Cobro::ESTADO_REGISTRADO)
-            ->sum('monto');
+            ->get()->sum(fn (Cobro $cobro) => (float) ($cobro->monto_moneda_cuenta ?? $cobro->monto));
 
         $total = (float) $cuenta->total;
         $saldo = max(round($total - $cobrado, 2), 0);

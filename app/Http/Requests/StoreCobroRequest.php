@@ -17,6 +17,7 @@ class StoreCobroRequest extends FormRequest
             'fecha_cobro' => ['nullable', 'date'],
             'monto' => ['required', 'numeric', 'gt:0'],
             'moneda_id' => ['nullable', 'integer', 'exists:monedas,id'],
+            'tipo_cambio' => ['nullable', 'numeric', 'gt:0'],
             'metodo_cobro' => ['nullable', 'string', 'max:50'],
             'referencia' => ['nullable', 'string', 'max:120'],
             'idempotency_key' => ['nullable', 'string', 'max:120'],

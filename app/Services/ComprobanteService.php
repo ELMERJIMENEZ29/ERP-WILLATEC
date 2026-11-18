@@ -24,6 +24,11 @@ class ComprobanteService
                 $data['moneda_id'] ??= $compra->moneda_id;
             }
 
+            if (empty($data['fecha_vencimiento'])) {
+                $data['fecha_vencimiento'] = $data['fecha_emision'] ?? now()->toDateString();
+                $data['fecha_vencimiento_origen'] = 'contado';
+            }
+
             if (($data['tipo_operacion'] ?? null) === Comprobante::TIPO_OPERACION_VENTA && ! empty($data['oc_recibida_id'])) {
                 $oc = OcRecibida::query()->findOrFail($data['oc_recibida_id']);
                 $data['cliente_id'] = $oc->cliente_id;
@@ -62,8 +67,11 @@ class ComprobanteService
                 ]);
             }
 
-            if ($comprobante->tipo_operacion === Comprobante::TIPO_OPERACION_COMPRA) {
+            if (in_array($comprobante->tipo_operacion, [Comprobante::TIPO_OPERACION_COMPRA, Comprobante::TIPO_OPERACION_GASTO], true)) {
                 $this->cuentaPorPagarService->vincularComprobanteProvisional($comprobante);
+                if ($comprobante->tipo_operacion === Comprobante::TIPO_OPERACION_GASTO) {
+                    $this->cuentaPorPagarService->crearDesdeComprobante($comprobante, [], $userId);
+                }
             }
 
             return $comprobante->fresh($this->relaciones());
@@ -125,6 +133,7 @@ class ComprobanteService
             'items.producto',
             'cuentaPorPagar:id,comprobante_id,estado',
             'cuentaPorCobrar:id,comprobante_id,estado',
+            'notasCredito.items',
         ];
     }
 

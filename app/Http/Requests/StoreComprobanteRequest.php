@@ -22,6 +22,7 @@ class StoreComprobanteRequest extends FormRequest
                 Rule::in([
                     Comprobante::TIPO_OPERACION_COMPRA,
                     Comprobante::TIPO_OPERACION_VENTA,
+                    Comprobante::TIPO_OPERACION_GASTO,
                 ]),
             ],
             'compra_id' => ['nullable', 'integer', 'exists:compras,id'],
@@ -29,6 +30,8 @@ class StoreComprobanteRequest extends FormRequest
             'cotizacion_id' => ['nullable', 'integer', 'exists:cotizaciones,id'],
             'cliente_id' => ['nullable', 'integer', 'exists:clientes,id'],
             'proveedor_id' => ['nullable', 'integer', 'exists:proveedores,id'],
+            'categoria_gasto' => ['nullable', Rule::in(['combustible', 'servicios', 'viaticos', 'limpieza', 'oficina', 'otros'])],
+            'centro_costo' => ['nullable', 'string', 'max:120'],
             'emisor_ruc' => ['nullable', 'string', 'max:20'],
             'emisor_nombre' => ['nullable', 'string', 'max:255'],
             'receptor_ruc' => ['nullable', 'string', 'max:20'],
@@ -38,11 +41,18 @@ class StoreComprobanteRequest extends FormRequest
             'numero' => ['required', 'string', 'max:40'],
             'fecha_emision' => ['nullable', 'date'],
             'fecha_vencimiento' => ['nullable', 'date'],
+            'fecha_vencimiento_origen' => ['nullable', Rule::in(['xml', 'manual', 'contado'])],
+            'condicion_pago' => ['nullable', Rule::in(['contado', 'cheque_30_dias', 'credito_15_dias', 'credito_30_dias', 'credito_45_dias', 'credito_60_dias', 'efectivo_dev', 'tarjeta_dev'])],
             'moneda_id' => ['nullable', 'integer', 'exists:monedas,id'],
             'subtotal' => ['nullable', 'numeric', 'min:0'],
             'igv' => ['nullable', 'numeric', 'min:0'],
             'total' => ['required', 'numeric', 'min:0'],
+            'detraccion_porcentaje' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'detraccion_monto_original' => ['nullable', 'numeric', 'min:0'],
+            'detraccion_codigo' => ['nullable', 'string', 'max:20'],
+            'detraccion_cuenta' => ['nullable', 'string', 'max:80'],
             'xml_hash' => ['nullable', 'string', 'size:64'],
+            'xml_path' => ['nullable', 'string', 'max:255'],
             'archivo_path' => ['nullable', 'string', 'max:255'],
             'observacion' => ['nullable', 'string', 'max:5000'],
             'items' => ['required', 'array', 'min:1'],
@@ -70,6 +80,10 @@ class StoreComprobanteRequest extends FormRequest
                         'compra_id',
                         'Un comprobante de compra debe estar vinculado a una compra.'
                     );
+                }
+
+                if ($this->input('tipo_operacion') === Comprobante::TIPO_OPERACION_GASTO && ! $this->input('categoria_gasto')) {
+                    $validator->errors()->add('categoria_gasto', 'Selecciona una categoría para el gasto.');
                 }
 
                 if (

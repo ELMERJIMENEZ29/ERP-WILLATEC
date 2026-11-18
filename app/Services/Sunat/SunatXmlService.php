@@ -9,6 +9,7 @@ use App\Models\Moneda;
 use App\Models\OcRecibida;
 use App\Models\Proveedor;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 
 class SunatXmlService
 {
@@ -21,6 +22,8 @@ class SunatXmlService
         $xml = (string) file_get_contents($file->getRealPath());
         $hash = hash('sha256', $xml);
         $data = $this->parser->parse($xml);
+        $xmlPath = "contabilidad/comprobantes/xml/{$hash}.xml";
+        Storage::disk('public')->put($xmlPath, $xml);
 
         $companyRuc = trim((string) config('app.company_ruc', env('COMPANY_RUC', '')));
         $tipoOperacion = 'observado';
@@ -38,6 +41,7 @@ class SunatXmlService
             'tipo_operacion_sugerida' => $tipoOperacion,
             'company_ruc_configurado' => $companyRuc !== '',
             'xml_hash' => $hash,
+            'xml_path' => $xmlPath,
             'moneda_id' => $this->monedaId($data['moneda_codigo'] ?? null),
             'duplicado' => $this->duplicado($data, $hash),
             'vinculos_sugeridos' => $this->vinculosSugeridos($data, $tipoOperacion),

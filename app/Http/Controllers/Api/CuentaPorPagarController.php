@@ -12,6 +12,7 @@ use App\Services\CuentaPorPagarService;
 use App\Services\WorkflowNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CuentaPorPagarController extends Controller
 {
@@ -41,11 +42,22 @@ class CuentaPorPagarController extends Controller
                 'proveedor',
                 'moneda',
                 'creadoPor',
+                'cheques.banco',
+                'prorrogas.creadoPor',
+                'cuentaOrigen.comprobante',
             ])
             ->latest('id');
 
         if ($request->filled('estado')) {
             $query->where('estado', $request->string('estado'));
+        }
+
+        if ($request->filled('tipo_operacion')) {
+            $tipo = (string) $request->input('tipo_operacion');
+            $query->where(function ($q) use ($tipo): void {
+                $q->whereHas('comprobante', fn ($comprobante) => $comprobante->where('tipo_operacion', $tipo))
+                    ->orWhereHas('cuentaOrigen.comprobante', fn ($comprobante) => $comprobante->where('tipo_operacion', $tipo));
+            });
         }
 
         if ($request->filled('proveedor_id')) {
@@ -61,7 +73,8 @@ class CuentaPorPagarController extends Controller
 
             $query->where(function ($query) use ($buscar): void {
                 $query
-                    ->whereHas('comprobante', function ($q) use ($buscar): void {
+                    ->where('beneficiario', 'like', "%{$buscar}%")
+                    ->orWhereHas('comprobante', function ($q) use ($buscar): void {
                         $q->where('serie', 'like', "%{$buscar}%")
                             ->orWhere('numero', 'like', "%{$buscar}%")
                             ->orWhere('emisor_nombre', 'like', "%{$buscar}%")
@@ -121,6 +134,9 @@ class CuentaPorPagarController extends Controller
         );
         if ($cuenta->pagos()->count() > $pagosAntes) {
             $this->notifications->contabilidad('Pago registrado', "Se registró un pago de {$request->validated('monto')} en la CxP #{$cuenta->id}. Saldo: {$cuenta->saldo}.", '/contabilidad/cuentas-por-pagar', 'pago_registrado', ['cuenta_por_pagar_id' => $cuenta->id]);
+            if (in_array($request->validated('metodo_pago') ?? null, ['efectivo_dev', 'tarjeta_dev'], true)) {
+                $this->notifications->contabilidad('Devolución pendiente', "Se generó una devolución a {$request->validated('pagado_por')} por {$request->validated('monto_desembolsado')}.", '/contabilidad/cuentas-por-pagar', 'devolucion_creada', ['cuenta_origen_id' => $cuenta->id]);
+            }
         }
 
         return response()->json($cuenta, 201);
@@ -138,5 +154,47 @@ class CuentaPorPagarController extends Controller
         return response()->json(
             $this->cuentaPorPagarService->anularCuenta($cuentaPorPagar)
         );
+    }
+
+    public function actualizarSeguimiento(Request $request, CuentaPorPagar $cuentaPorPagar): JsonResponse
+    {
+        $data = $request->validate([
+            'estado_operativo' => ['nullable', 'in:registrado,observado,programado_para_pago,reprogramacion_pago,vencido,cancelado'],
+            'fecha_estimada_pago' => ['nullable', 'date'],
+            'detraccion_monto_programado' => ['nullable', 'numeric', 'min:0'],
+            'detraccion_fecha_programada' => ['nullable', 'date'],
+            'detraccion_fecha_pago' => ['nullable', 'date'],
+            'condicion_pago' => ['nullable', 'in:contado,cheque_30_dias,credito_15_dias,credito_30_dias,credito_45_dias,credito_60_dias,efectivo_dev,tarjeta_dev'],
+        ]);
+        $cuentaPorPagar->update($data);
+
+        return response()->json($cuentaPorPagar->fresh($this->cuentaPorPagarService->relaciones()));
+    }
+
+    public function ampliarVencimiento(Request $request, CuentaPorPagar $cuentaPorPagar): JsonResponse
+    {
+        $data = $request->validate([
+            'fecha_nueva' => ['required', 'date', 'after_or_equal:today'],
+            'motivo' => ['required', 'string', 'min:5', 'max:2000'],
+        ]);
+        if (in_array($cuentaPorPagar->estado, [CuentaPorPagar::ESTADO_PAGADA, CuentaPorPagar::ESTADO_ANULADA], true)) {
+            return response()->json(['message' => 'No se puede ampliar una cuenta pagada o anulada.'], 422);
+        }
+
+        DB::transaction(function () use ($cuentaPorPagar, $data, $request): void {
+            $cuentaPorPagar->prorrogas()->create([
+                'fecha_anterior' => $cuentaPorPagar->fecha_vencimiento,
+                'fecha_nueva' => $data['fecha_nueva'],
+                'motivo' => $data['motivo'],
+                'creado_por' => $request->user()?->id,
+            ]);
+            $cuentaPorPagar->update([
+                'fecha_vencimiento' => $data['fecha_nueva'],
+                'fecha_estimada_pago' => $data['fecha_nueva'],
+                'estado_operativo' => 'reprogramacion_pago',
+            ]);
+        });
+
+        return response()->json($cuentaPorPagar->fresh($this->cuentaPorPagarService->relaciones()));
     }
 }

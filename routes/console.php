@@ -27,3 +27,8 @@ Schedule::command('servicios:procesar-renovaciones')
     ->dailyAt('00:10')
     ->timezone('America/Lima')
     ->withoutOverlapping();
+
+Schedule::command('cheques:enviar-alertas')
+    ->dailyAt('09:00')
+    ->timezone('America/Lima')
+    ->withoutOverlapping();

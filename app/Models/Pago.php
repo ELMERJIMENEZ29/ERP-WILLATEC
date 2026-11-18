@@ -21,6 +21,11 @@ class Pago extends Model
         'fecha_pago',
         'monto',
         'moneda_id',
+        'tipo_cambio',
+        'monto_moneda_cuenta',
+        'monto_desembolsado',
+        'numero_cuotas',
+        'pagado_por',
         'metodo_pago',
         'referencia',
         'estado',
@@ -34,6 +39,10 @@ class Pago extends Model
         return [
             'fecha_pago' => 'date:Y-m-d',
             'monto' => 'decimal:2',
+            'tipo_cambio' => 'decimal:6',
+            'monto_moneda_cuenta' => 'decimal:2',
+            'monto_desembolsado' => 'decimal:2',
+            'numero_cuotas' => 'integer',
         ];
     }
 

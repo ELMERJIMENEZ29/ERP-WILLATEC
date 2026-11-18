@@ -140,4 +140,18 @@ class CuentaPorCobrarController extends Controller
             $this->cuentaPorCobrarService->anularCuenta($cuentaPorCobrar)
         );
     }
+
+    public function actualizarSeguimiento(Request $request, CuentaPorCobrar $cuentaPorCobrar): JsonResponse
+    {
+        $data = $request->validate([
+            'estado_operativo' => ['nullable', 'in:por_validar_factura,registrado,observado,aceptado_para_pago,vencido,cancelado'],
+            'fecha_estimada_pago' => ['nullable', 'date'],
+            'detraccion_monto_programado' => ['nullable', 'numeric', 'min:0'],
+            'detraccion_fecha_programada' => ['nullable', 'date'],
+            'detraccion_fecha_pago' => ['nullable', 'date'],
+        ]);
+        $cuentaPorCobrar->update($data);
+
+        return response()->json($cuentaPorCobrar->fresh($this->cuentaPorCobrarService->relaciones()));
+    }
 }
