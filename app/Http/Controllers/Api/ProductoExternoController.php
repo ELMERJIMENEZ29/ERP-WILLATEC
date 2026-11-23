@@ -82,7 +82,7 @@ class ProductoExternoController extends Controller
     {
         $items = CotizacionItem::query()
             ->with([
-                'cotizacion:id,numero,titulo,fecha,user_id,cliente_id,cliente_nombre,moneda_id,estado_cotizacion_id',
+                'cotizacion:id,numero,titulo,fecha,created_at,user_id,cliente_id,cliente_nombre,moneda_id,estado_cotizacion_id',
                 'cotizacion.user:id,nombres,apellidos,email',
                 'cotizacion.cliente:id,nombre',
                 'cotizacion.moneda:id,codigo,simbolo',
@@ -91,7 +91,6 @@ class ProductoExternoController extends Controller
             ])
             ->where('producto_externo_id', $productoExterno->id)
             ->latest('created_at')
-            ->limit(50)
             ->get()
             ->map(function (CotizacionItem $item): array {
                 $cotizacion = $item->cotizacion;
@@ -123,6 +122,7 @@ class ProductoExternoController extends Controller
                         'fecha' => $cotizacion?->fecha
                             ? Carbon::parse($cotizacion->fecha)->toDateString()
                             : null,
+                        'created_at' => optional($cotizacion?->created_at)->toIso8601String(),
                         'cliente_nombre' => $cotizacion?->cliente_nombre ?: $cotizacion?->cliente?->nombre,
                         'estado' => $cotizacion?->estadoCotizacion?->nombre,
                         'moneda' => $cotizacion?->moneda?->codigo,

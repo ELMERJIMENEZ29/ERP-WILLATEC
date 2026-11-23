@@ -490,6 +490,9 @@ Route::prefix('cotizaciones')->middleware(['auth:sanctum', 'token.idle'])->group
     Route::get('/{cotizacion}/versiones', [CotizacionController::class, 'versiones'])
         ->middleware('permission:cotizaciones');
 
+    Route::get('/{cotizacion}/versiones/{version}/exportar-pdf', [CotizacionController::class, 'exportarVersionPdf'])
+        ->middleware('permission:cotizaciones.exportar|licitaciones.cotizaciones_pdf|licitaciones.cotizaciones|licitaciones');
+
     Route::post('/{cotizacion}/solicitar-modificacion', [CotizacionController::class, 'solicitarModificacion'])
         ->middleware('permission:cotizaciones.revision');
 

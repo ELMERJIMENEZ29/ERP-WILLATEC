@@ -1310,6 +1310,18 @@ class CotizacionController extends Controller
                 'propuesta' => $this->buildCotizacionEditablePayloadFromSnapshot($versionSeleccionada->snapshot),
                 'requested_by' => $request->user()->id,
             ]);
+
+            CotizacionHistorial::create([
+                'cotizacion_id' => $cotizacion->id,
+                'estado_anterior_id' => $cotizacion->estado_cotizacion_id,
+                'estado_nuevo_id' => $cotizacion->estado_cotizacion_id,
+                'comentario' => sprintf(
+                    'Modificacion V%s creada: %s',
+                    $modificacion->version_number,
+                    $modificacion->motivo
+                ),
+                'user_id' => $request->user()->id,
+            ]);
         });
 
         if ($modificacion) {
@@ -1485,10 +1497,21 @@ class CotizacionController extends Controller
             'motivo' => 'nullable|string|max:1000',
         ]);
 
+        $motivoCancelacion = $request->input('motivo') ?: 'Modificacion cancelada por el usuario.';
+
         $modificacion->update([
             'estado' => CotizacionModificacion::ESTADO_CANCELADA,
-            'comentario_revision' => $request->input('motivo') ?: 'Modificacion cancelada por el usuario.',
+            'comentario_revision' => $motivoCancelacion,
             'submitted_at' => null,
+        ]);
+
+        $modificacion->loadMissing('cotizacion');
+        CotizacionHistorial::create([
+            'cotizacion_id' => $modificacion->cotizacion_id,
+            'estado_anterior_id' => $modificacion->cotizacion?->estado_cotizacion_id,
+            'estado_nuevo_id' => $modificacion->cotizacion?->estado_cotizacion_id,
+            'comentario' => sprintf('Modificacion V%s cancelada: %s', $modificacion->version_number, $motivoCancelacion),
+            'user_id' => $request->user()->id,
         ]);
 
         return response()->json([
@@ -1509,11 +1532,22 @@ class CotizacionController extends Controller
             'comentario_revision' => 'required|string|max:1000',
         ]);
 
+        $comentarioRechazo = $request->string('comentario_revision')->toString();
+
         $modificacion->update([
             'estado' => CotizacionModificacion::ESTADO_RECHAZADA,
             'reviewed_by' => $request->user()->id,
-            'comentario_revision' => $request->string('comentario_revision')->toString(),
+            'comentario_revision' => $comentarioRechazo,
             'reviewed_at' => now(),
+        ]);
+
+        $modificacion->loadMissing('cotizacion');
+        CotizacionHistorial::create([
+            'cotizacion_id' => $modificacion->cotizacion_id,
+            'estado_anterior_id' => $modificacion->cotizacion?->estado_cotizacion_id,
+            'estado_nuevo_id' => $modificacion->cotizacion?->estado_cotizacion_id,
+            'comentario' => sprintf('Modificacion V%s rechazada: %s', $modificacion->version_number, $comentarioRechazo),
+            'user_id' => $request->user()->id,
         ]);
 
         $modificacion->refresh()->load(['cotizacion', 'solicitante', 'revisor']);
@@ -1571,6 +1605,17 @@ class CotizacionController extends Controller
             'reviewed_at' => now(),
         ]);
 
+        CotizacionHistorial::create([
+            'cotizacion_id' => $cotizacion->id,
+            'estado_anterior_id' => $cotizacion->estado_cotizacion_id,
+            'estado_nuevo_id' => $cotizacion->estado_cotizacion_id,
+            'comentario' => sprintf(
+                'Modificacion V%s aprobada y aplicada como nueva version vigente.',
+                $nextVersionNumber
+            ),
+            'user_id' => $request->user()->id,
+        ]);
+
         return $version;
     }
 
@@ -1622,6 +1667,121 @@ class CotizacionController extends Controller
             'Content-Disposition' => $this->buildUtf8AttachmentDisposition($filename),
             'X-Suggested-Filename' => $this->buildAsciiPdfFilenameFallback($filename),
         ]);
+    }
+
+    public function exportarVersionPdf(Request $request, Cotizacion $cotizacion, CotizacionVersion $version)
+    {
+        if ((int) $version->cotizacion_id !== (int) $cotizacion->id) {
+            abort(404, 'La version no pertenece a esta cotizacion.');
+        }
+
+        $cotizacion = $this->cotizacionDesdeSnapshot($cotizacion, $version);
+        $user = $request->user();
+        $soloPdfDesdeOportunidad = $user?->can('licitaciones.cotizaciones_pdf')
+            || ($user?->can('licitaciones') && ! $user?->can('cotizaciones.exportar'));
+
+        if ($request->boolean('desde_oportunidad') || $soloPdfDesdeOportunidad) {
+            $this->ensureCanExportPdfFromOpportunity($cotizacion);
+        }
+
+        if (! $cotizacion->plantilla || ! $cotizacion->plantilla->activo) {
+            abort(404, 'Plantilla no disponible');
+        }
+
+        $vista = $this->resolveCotizacionPdfView((string) $cotizacion->plantilla->formato_pdf);
+        $empresaConfiguracion = EmpresaConfiguracion::current();
+        $pdf = Pdf::loadView($vista, compact('cotizacion', 'empresaConfiguracion'))
+            ->setPaper('A4', 'portrait')
+            ->setOptions([
+                'isRemoteEnabled' => false,
+                'isLocalEnabled' => true,
+                'chroot' => public_path(),
+            ]);
+
+        $filename = $this->buildCotizacionPdfFilename($cotizacion, $version->numero_version);
+
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => $this->buildUtf8AttachmentDisposition($filename),
+            'X-Suggested-Filename' => $this->buildAsciiPdfFilenameFallback($filename),
+        ]);
+    }
+
+    private function cotizacionDesdeSnapshot(Cotizacion $cotizacion, CotizacionVersion $version): Cotizacion
+    {
+        $snapshot = is_array($version->snapshot) ? $version->snapshot : [];
+        $header = is_array($snapshot['cotizacion'] ?? null) ? $snapshot['cotizacion'] : [];
+
+        $cotizacion->forceFill(array_intersect_key($header, array_flip([
+            'numero',
+            'fecha',
+            'validez_dias',
+            'forma_pago',
+            'adelanto',
+            'adelanto_porcentaje',
+            'cuota_mensual',
+            'cuota_mensual_meses',
+            'entrega_provincia',
+            'entrega_destino',
+            'entrega_multidestino',
+            'tipo_cambio',
+            'titulo',
+            'modo_distribucion',
+            'moneda_id',
+            'subtotal',
+            'igv',
+            'total',
+            'ganancia',
+            'total_gasto',
+            'cliente_id',
+            'plantilla_id',
+            'estado_cotizacion_id',
+            'user_id',
+            'plataforma_id',
+            'cliente_nombre',
+            'cliente_ruc',
+            'cliente_contacto',
+            'cliente_telefono',
+            'cliente_correo',
+            'delegado_id',
+            'delegado_cotizacion_id',
+        ])));
+
+        $items = collect($snapshot['items'] ?? [])->map(function (array $item) use ($cotizacion): CotizacionItem {
+            $itemAttributes = $item;
+            unset($itemAttributes['proveedores'], $itemAttributes['destinos_entrega']);
+
+            $itemModel = new CotizacionItem();
+            $itemModel->forceFill($itemAttributes);
+            $itemModel->setAttribute('cotizacion_id', $cotizacion->id);
+            $itemModel->setRelation('proveedores', collect($item['proveedores'] ?? [])->map(function (array $provider): CotizacionItemProveedor {
+                $providerModel = new CotizacionItemProveedor();
+                $providerModel->forceFill($provider);
+                return $providerModel;
+            })->values());
+            $itemModel->setRelation('destinosEntrega', collect($item['destinos_entrega'] ?? [])->map(function (array $destination): CotizacionItemDestino {
+                $destinationModel = new CotizacionItemDestino();
+                $destinationModel->forceFill($destination);
+                return $destinationModel;
+            })->values());
+
+            return $itemModel;
+        })->values();
+
+        $costos = collect($snapshot['costos'] ?? [])->map(function (array $cost): CotizacionCostosAdicional {
+            $costModel = new CotizacionCostosAdicional();
+            $costModel->forceFill($cost);
+            return $costModel;
+        })->values();
+
+        $cotizacion->setRelation('items', $items);
+        $cotizacion->setRelation('costosAdicionales', $costos);
+        $cotizacion->setRelation('cliente', Cliente::find($cotizacion->cliente_id) ?: $cotizacion->cliente);
+        $cotizacion->setRelation('plantilla', Plantilla::find($cotizacion->plantilla_id) ?: $cotizacion->plantilla);
+        $cotizacion->setRelation('moneda', Moneda::find($cotizacion->moneda_id) ?: $cotizacion->moneda);
+        $cotizacion->setRelation('user', User::find($cotizacion->user_id) ?: $cotizacion->user);
+
+        return $cotizacion;
     }
 
     private function ensureCanExportPdfFromOpportunity(Cotizacion $cotizacion): void
@@ -2254,6 +2414,7 @@ class CotizacionController extends Controller
                         'destino_entrega',
                         'nota',
                         'marca',
+                        'modelo',
                         'codigo',
                         'unidad_medida',
                         'disponibilidad',
@@ -2588,6 +2749,7 @@ class CotizacionController extends Controller
                 'proveedor' => $this->primerProveedorNombre($item['proveedores'] ?? null, $item['proveedor'] ?? null),
                 'link_proveedor' => $this->primerProveedorLink($item['proveedores'] ?? null, $item['link_proveedor'] ?? null),
                 'producto_id' => $item['producto_id'] ?? null,
+                'producto_externo_id' => $item['producto_externo_id'] ?? null,
                 'tipo' => $item['tipo'] ?? 'personalizado',
                 'imagen' => $this->resolveCotizacionItemImagenFromPayload($item),
                 'moneda_id' => $monedaId,
@@ -2713,14 +2875,16 @@ class CotizacionController extends Controller
         }
     }
 
-    private function buildCotizacionPdfFilename(Cotizacion $cotizacion): string
+    private function buildCotizacionPdfFilename(Cotizacion $cotizacion, ?string $version = null): string
     {
         $fecha = Carbon::parse($cotizacion->fecha ?? $cotizacion->created_at)->format('Y-m-d');
 
         $cliente = $this->sanitizePdfFilenamePart($cotizacion->cliente_nombre ?? 'Cliente');
         $titulo = $this->sanitizePdfFilenamePart($cotizacion->titulo ?? 'Cotizacion');
 
-        return "{$fecha} COT. N-{$cotizacion->numero} - {$cliente} - {$titulo}.pdf";
+        $versionSuffix = filled($version) ? " - {$version}" : '';
+
+        return "{$fecha} COT. N-{$cotizacion->numero}{$versionSuffix} - {$cliente} - {$titulo}.pdf";
     }
 
     private function buildUtf8AttachmentDisposition(string $filename): string
