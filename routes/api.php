@@ -542,6 +542,7 @@ Route::prefix('oc-recibidas')->middleware(['auth:sanctum', 'token.idle'])->group
     Route::get('/', [OcRecibidaController::class, 'index'])->middleware('permission:ordenes_compra.consultar');
     Route::post('/', [OcRecibidaController::class, 'store'])->middleware('permission:ordenes_compra.crear');
     Route::get('/{ocRecibida}', [OcRecibidaController::class, 'show'])->middleware('permission:ordenes_compra.consultar');
+    Route::patch('/{ocRecibida}/fecha-recepcion', [OcRecibidaController::class, 'updateFechaRecepcion'])->middleware('permission:ordenes_compra.editar');
     Route::patch('/{ocRecibida}/items', [OcRecibidaController::class, 'updateItems'])->middleware('permission:ordenes_compra.items');
     Route::patch('/{ocRecibida}/items/{item}/asociar-producto', [OcRecibidaController::class, 'asociarProductoInterno'])->middleware('permission:ordenes_compra.items');
     Route::patch('/{ocRecibida}/cancelar', [OcRecibidaController::class, 'cancelar'])->middleware('permission:ordenes_compra.cancelar');

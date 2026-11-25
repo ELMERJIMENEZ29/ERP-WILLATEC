@@ -151,6 +151,25 @@ class OcRecibidaController extends Controller
         );
     }
 
+    public function updateFechaRecepcion(Request $request, OcRecibida $ocRecibida)
+    {
+        $this->ensureCanEditOc($request, $ocRecibida);
+        $this->ensureOcIsNotCancelled($ocRecibida, 'No se puede editar una OC recibida cancelada.');
+
+        $validated = $request->validate([
+            'fecha_recepcion' => 'required|date',
+        ]);
+
+        $ocRecibida->update([
+            'fecha_recepcion' => $validated['fecha_recepcion'],
+        ]);
+
+        return response()->json([
+            'message' => 'Fecha de recepción actualizada correctamente.',
+            'oc_recibida' => $ocRecibida->refresh(),
+        ]);
+    }
+
     public function store(Request $request)
     {
         $this->normalizeBooleanItemFields($request, ['seleccionado']);

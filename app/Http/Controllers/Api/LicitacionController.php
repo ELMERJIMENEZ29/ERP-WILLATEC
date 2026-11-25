@@ -19,6 +19,7 @@ use App\Notifications\OportunidadComentarioNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -150,7 +151,21 @@ class LicitacionController extends Controller
 
     public function procesarAlertasVencimiento()
     {
-        $exitCode = Artisan::call('oportunidades:enviar-alertas');
+        $lock = Cache::lock('oportunidades-alertas-http', 120);
+
+        if (! $lock->get()) {
+            return response()->json([
+                'ok' => true,
+                'skipped' => true,
+                'message' => 'El proceso de alertas ya se encuentra en ejecución.',
+            ], 202);
+        }
+
+        try {
+            $exitCode = Artisan::call('oportunidades:enviar-alertas');
+        } finally {
+            optional($lock)->release();
+        }
 
         return response()->json([
             'ok' => $exitCode === 0,
