@@ -53,9 +53,10 @@ class ClienteController extends Controller
 
         $request->validate([
             'nombre' => 'required|string|max:255',
-            'ruc' => 'nullable|string|max:11',
+            'ruc' => 'nullable|string|max:11', // RUC (11) o DNI (8)
             'correo' => 'nullable|email|max:255',
             'telefono' => 'nullable|string|max:20',
+            'forma_pago' => 'nullable|in:AL CONTADO,CRÉDITO 15 DÍAS,CRÉDITO 30 DÍAS',
 
             'tipo_cliente_id' => 'nullable|exists:tipo_clientes,id',
             'moneda_id' => 'nullable|exists:monedas,id',
@@ -68,6 +69,7 @@ class ClienteController extends Controller
             'telefono' => $request->telefono,
             'direccion' => $request->direccion,
             'estado' => $request->estado ?? 'activo',
+            'forma_pago' => $request->input('forma_pago', 'AL CONTADO'),
             'tipo_cliente_id' => $request->tipo_cliente_id,
             'moneda_id' => $request->moneda_id,
         ]);
@@ -107,9 +109,10 @@ class ClienteController extends Controller
 
         $request->validate([
             'nombre' => 'required|string|max:255',
-            'ruc' => 'nullable|string|max:11',
+            'ruc' => 'nullable|string|max:11', // RUC (11) o DNI (8)
             'correo' => 'nullable|email|max:255',
             'telefono' => 'nullable|string|max:20',
+            'forma_pago' => 'nullable|in:AL CONTADO,CRÉDITO 15 DÍAS,CRÉDITO 30 DÍAS',
 
             'tipo_cliente_id' => 'nullable|exists:tipo_clientes,id',
             'moneda_id' => 'nullable|exists:monedas,id',
@@ -122,6 +125,7 @@ class ClienteController extends Controller
             'ruc',
             'correo',
             'telefono',
+            'forma_pago',
             'tipo_cliente_id',
             'moneda_id',
             'estado',

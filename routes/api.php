@@ -67,6 +67,7 @@ function permissionCatalog(): array
         ['key' => 'licitaciones.archivos', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Gestionar archivos', 'description' => 'Subir y eliminar archivos.'],
         ['key' => 'licitaciones.cotizaciones', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Relacionar cotizaciones', 'description' => 'Vincular cotizaciones.'],
         ['key' => 'licitaciones.cotizaciones_pdf', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Descargar PDF de cotizacion', 'description' => 'Descargar el PDF de una cotizacion vinculada y aprobada.'],
+        ['key' => 'licitaciones.marcar_atendida', 'module' => 'Oportunidades', 'parent' => 'licitaciones', 'label' => 'Marcar licitacion como atendida', 'description' => 'Presentar una licitacion con evidencia y marcarla como atendida.'],
         ['key' => 'usuarios', 'module' => 'Administracion', 'label' => 'Usuarios', 'description' => 'Administracion de usuarios.'],
         ['key' => 'usuarios.consultar', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Consultar usuarios', 'description' => 'Ver usuarios del sistema.'],
         ['key' => 'usuarios.crear', 'module' => 'Administracion', 'parent' => 'usuarios', 'label' => 'Crear usuarios', 'description' => 'Registrar usuarios.'],

@@ -1027,7 +1027,7 @@ class LicitacionController extends Controller
         }
 
         if ($licitacion->tipo === 'licitacion') {
-            return $user->hasRole('licitacion') || $this->isCreator($request, $licitacion);
+            return $user->can('licitaciones.marcar_atendida') || $this->isCreator($request, $licitacion);
         }
 
         if ((int) ($licitacion->asignado_a ?: $licitacion->ejecutivo_id) !== (int) $user->id) {

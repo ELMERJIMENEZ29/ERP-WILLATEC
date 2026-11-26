@@ -18,6 +18,7 @@ class Cliente extends Model
         'telefono',
         'correo',
         'estado',
+        'forma_pago',
         'tipo_cliente_id',
         'moneda_id',
     ];
