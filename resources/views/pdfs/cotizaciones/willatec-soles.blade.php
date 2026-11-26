@@ -1167,7 +1167,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                         <th class="center" style="width:36px">Und.</th>
                         <th class="right" style="width:68px">P. Unit.</th>
                         <th class="right" style="width:68px">Subtotal</th>
-                        <th class="center" style="width:86px">Disponibilidad</th>
+                        <th class="center" style="width:86px">Plazo de Entrega</th>
                     </tr>
                 </thead>
                 @forelse($cotizacion->items as $item)
@@ -1556,7 +1556,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
 
                             <div class="import">
 
-                                IMPORTACION
+                                IMPORTACIÓN
 
                                 <br>
 
@@ -1564,7 +1564,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                                     $item
                                         ->disponibilidad_dias
                                 }}
-                                dias c.
+                                días calendario.
 
                                 <br>
 
@@ -1584,7 +1584,7 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                                     $item
                                         ->disponibilidad_dias
                                 }}
-                                dias c.
+                                días calendario.
 
                                 <br>
 
@@ -1637,8 +1637,10 @@ $logoFooter = public_path('img/logoWILLATEC-white.png');
                     <div class="condition"><span>&rsaquo;</span> Precios sujetos a cambio sin previo aviso.</div>
                     <div class="condition"><span>&rsaquo;</span> WILLATEC S.A.C, Incorporado al Régimen de Buenos Contribuyentes; Resolución de Intendencia N° 0230050266292.</div>
                     <div class="note">
+                        El plazo de entrega indicado es máximo y podrá cumplirse antes de lo previsto.<br>
                         El precio del producto esta sujeto al stock y nuevo ingreso de importacion de la marca.<br>
                         Para productos importados, el tiempo de entrega puede variar entre 20 y 25 dias calendario.
+                        
                     </div>
                 </td>
                 <td class="totals-cell">
