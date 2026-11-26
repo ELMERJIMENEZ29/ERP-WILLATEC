@@ -1027,7 +1027,15 @@ class LicitacionController extends Controller
         }
 
         if ($licitacion->tipo === 'licitacion') {
-            return $user->can('licitaciones.marcar_atendida') || $this->isCreator($request, $licitacion);
+            // `can()` depende de la cache de permisos de Spatie. Durante una
+            // actualización de permisos puede quedar desfasada respecto a
+            // los permisos ya cargados en la relación del usuario.
+            $hasPermission = $user->can('licitaciones.marcar_atendida')
+                || $user->roles->contains(fn ($role) => $role->permissions->contains(
+                    fn ($permission) => $permission->name === 'licitaciones.marcar_atendida'
+                ));
+
+            return $hasPermission || $this->isCreator($request, $licitacion);
         }
 
         if ((int) ($licitacion->asignado_a ?: $licitacion->ejecutivo_id) !== (int) $user->id) {

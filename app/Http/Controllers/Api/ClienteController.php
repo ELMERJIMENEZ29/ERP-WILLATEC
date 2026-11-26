@@ -14,6 +14,7 @@ class ClienteController extends Controller
         $request->validate([
             'estado' => 'nullable|string|max:50',
             'tipo_cliente_id' => 'nullable|integer|exists:tipo_clientes,id',
+            'forma_pago' => 'nullable|string|max:50',
             'search' => 'nullable|string|max:100',
             'per_page' => 'nullable|integer|min:1|max:100',
         ]);
@@ -26,6 +27,10 @@ class ClienteController extends Controller
 
         if ($request->filled('tipo_cliente_id')) {
             $query->where('tipo_cliente_id', $request->integer('tipo_cliente_id'));
+        }
+
+        if ($request->filled('forma_pago')) {
+            $query->where('forma_pago', $request->string('forma_pago')->toString());
         }
 
         if ($request->filled('search')) {
@@ -69,7 +74,7 @@ class ClienteController extends Controller
             'telefono' => $request->telefono,
             'direccion' => $request->direccion,
             'estado' => $request->estado ?? 'activo',
-            'forma_pago' => $request->input('forma_pago', 'AL CONTADO'),
+            'forma_pago' => $request->input('forma_pago', 'CRÉDITO 30 DÍAS'),
             'tipo_cliente_id' => $request->tipo_cliente_id,
             'moneda_id' => $request->moneda_id,
         ]);

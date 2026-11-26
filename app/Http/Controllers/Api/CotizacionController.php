@@ -384,7 +384,7 @@ class CotizacionController extends Controller
             'titulo' => $request->titulo ?? 'Cotizacion'.$numero,
             'tipo_cambio' => 1, // luego lo conectamos a API
             'validez_dias' => $request->integer('validez_dias') ?: 10,
-            'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
+            'forma_pago' => $request->forma_pago ?? 'CRÉDITO 30 DÍAS',
             'adelanto' => $request->boolean('adelanto'),
             'adelanto_porcentaje' => $request->boolean('adelanto')
                 ? $request->input('adelanto_porcentaje')
@@ -1952,7 +1952,7 @@ class CotizacionController extends Controller
                 'titulo' => $request->titulo ?? 'Cotizacion'.$numero,
                 'tipo_cambio' => 1, // luego lo conectamos a API
                 'validez_dias' => $request->integer('validez_dias') ?: 10,
-                'forma_pago' => $request->forma_pago ?? 'AL CONTADO',
+                'forma_pago' => $request->forma_pago ?? 'CRÉDITO 30 DÍAS',
                 'adelanto' => $request->boolean('adelanto'),
                 'adelanto_porcentaje' => $request->boolean('adelanto')
                     ? $request->input('adelanto_porcentaje')
