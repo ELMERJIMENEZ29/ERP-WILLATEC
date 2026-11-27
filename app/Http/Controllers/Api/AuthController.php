@@ -379,6 +379,27 @@ class AuthController extends Controller
         ]);
     }
 
+    public function markAllNotificationsAsRead(Request $request)
+    {
+        $request->user()->notifications()->whereNull('read_at')->update([
+            'read_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Notificaciones marcadas como leídas',
+        ]);
+    }
+
+    public function deleteNotification(Request $request, $id)
+    {
+        $notification = $request->user()->notifications()->where('id', $id)->firstOrFail();
+        $notification->delete();
+
+        return response()->json([
+            'message' => 'Notificación eliminada',
+        ]);
+    }
+
     public function register(Request $request)
     {
         $request->validate([

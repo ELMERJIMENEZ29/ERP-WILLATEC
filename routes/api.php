@@ -299,6 +299,8 @@ Route::middleware(['auth:sanctum', 'token.idle'])->group(function () {
 
     Route::get('/notifications', [AuthController::class, 'notifications']);
     Route::patch('/notifications/{id}/read', [AuthController::class, 'markNotificationAsRead']);
+    Route::patch('/notifications/read-all', [AuthController::class, 'markAllNotificationsAsRead']);
+    Route::delete('/notifications/{id}', [AuthController::class, 'deleteNotification']);
     Route::get('/notification-preferences', [NotificationPreferenceController::class, 'show']);
     Route::put('/notification-preferences', [NotificationPreferenceController::class, 'update']);
     Route::post('/notification-preferences/sound', [NotificationPreferenceController::class, 'uploadSound']);
